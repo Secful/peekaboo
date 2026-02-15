@@ -78,7 +78,7 @@ def _parse_llm_response(llm_text: str) -> dict:
 class BedrockAPIAnalyzer:
     """Analyzes API endpoints using AWS Bedrock with Claude."""
 
-    def __init__(self, region_name: str = "us-east-1", model_id: str = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"):
+    def __init__(self, region_name: str = "us-east-1", model_id: str = "us.anthropic.claude-3-5-sonnet-20241022-v2:0") -> None:
         """
         Initialize Bedrock client.
 

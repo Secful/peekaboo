@@ -6,7 +6,7 @@ import base64
 import re
 from dataclasses import asdict
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable, Awaitable
 from urllib.parse import urlparse
 
 # Third-party
@@ -24,7 +24,7 @@ from .constants import (
 )
 
 
-def _templatize(path):
+def _templatize(path: str) -> str:
     """Replace ID-like path segments with placeholders."""
     parts = path.strip("/").split("/")
     result = []
@@ -40,7 +40,7 @@ def _templatize(path):
     return "/" + "/".join(result) if result else "/"
 
 
-def _is_static(req_url):
+def _is_static(req_url: str) -> bool:
     """Check if a URL points to a static file."""
     # Parse URL and get path without query parameters
     parsed_path = urlparse(req_url).path.lower()
@@ -80,7 +80,7 @@ async def _interact(page: Page):
             pass
 
 
-def _classify(req_url, method, resource_type, response) -> str:
+def _classify(req_url: str, method: str, resource_type: str, response: Response) -> str:
     """Classify whether a URL is an API endpoint."""
     parsed = urlparse(req_url)
     path = parsed.path
@@ -114,7 +114,7 @@ class APICrawler:
     def __init__(self, domain: str, max_pages: int = 50, max_depth: int = 3,
                  timeout: int = 30000, include_subdomains: bool = True,
                  api_filter: str = "all", proxy_config: Optional[dict] = None,
-                 concurrent_pages: int = 5, fast_mode: bool = False):
+                 concurrent_pages: int = 5, fast_mode: bool = False) -> None:
         self.context = None
         self.domain = domain.lower().replace("https://", "").replace("http://", "").rstrip("/")
         self.max_pages = max_pages
@@ -138,7 +138,7 @@ class APICrawler:
         # Callback to push events to the dashboard
         self._on_event = None
 
-    def on_event(self, callback):
+    def on_event(self, callback: Callable[[dict], Awaitable[None]]) -> None:
         """Register a callback for crawler events."""
         self._on_event = callback
 
@@ -565,7 +565,7 @@ class APICrawler:
         except Exception:
             pass
 
-    def _is_in_scope(self, href):
+    def _is_in_scope(self, href: str) -> bool:
         """Check if a link is within crawling scope."""
         try:
             host = urlparse(href).hostname or ""
