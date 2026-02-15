@@ -1408,12 +1408,16 @@ function exportSummaryToHTML() {
       bottom: 0;
       left: 0;
       right: 0;
-      background: linear-gradient(transparent, rgba(0,0,0,0.8));
-      padding: 2rem 1rem 1rem;
+      background: linear-gradient(transparent, rgba(0,0,0,0.95));
+      padding: 2.5rem 1.5rem 1.5rem;
       color: #00ff88;
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       text-align: center;
       font-family: 'JetBrains Mono', monospace;
+      word-break: break-all;
+      font-weight: 500;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      border-top: 2px solid rgba(0, 255, 136, 0.3);
     }
 
     .carousel-nav {
@@ -1594,7 +1598,10 @@ function exportSummaryToHTML() {
             ${capturedScreenshots.map((screenshot, index) => `
               <div class="carousel-slide">
                 <img src="data:image/jpeg;base64,${screenshot.image}" alt="Screenshot ${index + 1} of ${targetDomain}">
-                <div class="carousel-slide-caption">${screenshot.url}</div>
+                <div class="carousel-slide-caption">
+                  <div style="font-size: 0.75rem; color: #8b92a7; margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.05em;">Source URL</div>
+                  ${screenshot.url}
+                </div>
               </div>
             `).join('')}
           </div>
