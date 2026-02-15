@@ -46,6 +46,10 @@ class APICrawler:
         self.seen_signatures: set[str] = set()
         self.queue: list[tuple[str, int]] = []
 
+        # Track if we've tried www fallback for the initial URL
+        self._tried_www_fallback = False
+        self._start_url = None
+
         # Callback to push events to the dashboard
         self._on_event = None
 
@@ -110,6 +114,7 @@ class APICrawler:
             self.context = await browser.new_context(**context_options)
 
             start_url = f"https://{self.domain}"
+            self._start_url = start_url
             self.queue.append((start_url, 0))
 
             # Process pages with controlled concurrency
@@ -193,11 +198,49 @@ class APICrawler:
                 error_msg = str(nav_error)
 
                 print(f"[WARNING] Navigation failed for {page_url}: {error_type} - {error_msg}")
-                await self._emit("crawl_error", {"url": page_url, "error": f"{error_type}: {error_msg}"})
-                await self._emit("status", {"message": f"⚠️ Skipped {page_url} (navigation failed). Continuing scan..."})
 
-                # Navigation failed, but don't stop the scan - just skip this page
-                return
+                # Check if this is a connection error or timeout on the start URL
+                # If so, try with www prefix
+                if (not self._tried_www_fallback and
+                    page_url == self._start_url and
+                    ("ERR_CONNECTION_REFUSED" in error_msg or "TimeoutError" in error_type or "Timeout" in error_msg) and
+                    not self.domain.startswith("www.")):
+
+                    self._tried_www_fallback = True
+                    www_domain = f"www.{self.domain}"
+                    www_url = f"https://{www_domain}"
+
+                    failure_reason = "Connection refused" if "ERR_CONNECTION_REFUSED" in error_msg else "Timeout/Connection failed"
+                    await self._emit("status", {"message": f"⚠️ {failure_reason} for {self.domain}, trying {www_domain}..."})
+                    print(f"[INFO] Retrying with www prefix due to {failure_reason}: {www_url}")
+
+                    try:
+                        # Try with www prefix
+                        response = await page.goto(www_url, wait_until="load", timeout=self.timeout)
+
+                        # Success! Update domain for future requests
+                        self.domain = www_domain
+                        self._start_url = www_url
+                        page_url = www_url
+
+                        # Mark www URL as visited to avoid duplicate crawls
+                        self.visited_pages.add(www_url)
+
+                        await self._emit("status", {"message": f"✅ Successfully connected to {www_domain}"})
+                        print(f"[SUCCESS] Connected to {www_url}, updating domain to {www_domain}")
+
+                        # Continue with normal page processing (don't return)
+                    except Exception as www_error:
+                        # www prefix also failed
+                        print(f"[ERROR] www prefix also failed: {www_error}")
+                        await self._emit("crawl_error", {"url": www_url, "error": f"Both {self.domain} and {www_domain} failed"})
+                        await self._emit("status", {"message": f"❌ Could not connect to {self.domain} or {www_domain}"})
+                        return
+                else:
+                    # Not the start URL or already tried www, just skip this page
+                    await self._emit("crawl_error", {"url": page_url, "error": f"{error_type}: {error_msg}"})
+                    await self._emit("status", {"message": f"⚠️ Skipped {page_url} (navigation failed). Continuing scan..."})
+                    return
 
             # Check for HTTP error status codes
             if response and response.status >= 400:

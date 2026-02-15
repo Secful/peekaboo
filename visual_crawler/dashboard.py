@@ -254,12 +254,32 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     justify-content: center; padding: 2rem; text-align: center;
   }
   .placeholder-logo {
-    font-size: 3rem; font-weight: 800;
-    background: linear-gradient(135deg, var(--green) 0%, var(--purple-light) 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    margin-bottom: 1rem; letter-spacing: -0.03em;
-    filter: drop-shadow(0 0 20px var(--glow));
+    font-size: 5rem;
+    margin-bottom: 1rem;
+    animation: peekaboo 2s ease-in-out infinite;
+    user-select: none;
   }
+
+  @keyframes peekaboo {
+    0%, 100% {
+      transform: scale(1) rotate(0deg);
+      opacity: 1;
+    }
+    25% {
+      transform: scale(0.7) rotate(-5deg);
+      opacity: 0.6;
+    }
+    50% {
+      transform: scale(1.15) rotate(5deg);
+      opacity: 1;
+      filter: drop-shadow(0 0 30px rgba(0, 255, 136, 0.5));
+    }
+    75% {
+      transform: scale(0.85) rotate(-3deg);
+      opacity: 0.8;
+    }
+  }
+
   .placeholder-subtitle {
     color: var(--text-muted); font-size: 0.85rem; font-weight: 500;
     text-transform: uppercase; letter-spacing: 0.15em;
@@ -693,6 +713,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     box-shadow: inset 3px 0 0 var(--purple);
   }
 </style>
+<!-- PDF Generation Library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 <!-- Start Form Overlay -->
@@ -861,6 +884,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <button class="control-btn hidden" id="pauseBtn" onclick="togglePause()">
           ⏸ Pause Scan
         </button>
+        <button class="control-btn hidden" id="findingsBtn" onclick="showCurrentFindings()">
+          📊 Current Findings
+        </button>
         <button class="control-btn hidden" id="stopBtn" onclick="stopScan()">
           ⏹ Terminate Scan
         </button>
@@ -888,8 +914,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="label">Live Preview</div>
       <div class="screenshot-box" id="screenshotBox">
         <div class="placeholder">
-          <div class="placeholder-logo">SALT SECURITY</div>
-          <div class="placeholder-subtitle">API Discovery Scanner</div>
+          <div class="placeholder-logo">👀</div>
+          <div class="placeholder-subtitle">Peekaboo is watching...</div>
         </div>
       </div>
       <div class="current-url" id="currentUrl">&nbsp;</div>
@@ -1003,7 +1029,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <div class="summary-overlay" id="summaryOverlay">
   <div class="summary-modal">
     <div class="summary-header">
-      <h2>✅ Scan Complete</h2>
+      <h2 id="summaryTitle">✅ Scan Complete</h2>
       <button class="summary-close" onclick="closeSummary()">×</button>
     </div>
     <div class="summary-stats">
@@ -1029,13 +1055,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
     </div>
     <div class="summary-domains" id="summaryDomainsSection">
-      <div class="summary-domains-title">🌐 Discovered Hosts</div>
-      <div class="summary-domain-list" id="summaryDomainList">
+      <div class="summary-domains-title">🏠 Target & Subdomains</div>
+      <div class="summary-domain-list" id="summarySubdomainList">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+    <div class="summary-domains" id="summaryExternalSection" style="margin-top: 1rem;">
+      <div class="summary-domains-title">🌐 External Domains</div>
+      <div class="summary-domain-list" id="summaryExternalList">
         <!-- Populated by JavaScript -->
       </div>
     </div>
     <div class="summary-actions">
       <button class="summary-btn summary-btn-secondary" onclick="closeSummary()">Close</button>
+      <button class="summary-btn summary-btn-primary" onclick="exportSummaryToHTML()" style="background: var(--green); color: var(--bg);">📄 Export HTML Report</button>
       <button class="summary-btn summary-btn-primary" onclick="startNewScan()">New Scan</button>
     </div>
   </div>
@@ -1054,6 +1087,7 @@ let currentPage = 1;
 const itemsPerPage = 50;
 let uiPaused = false; // Track if UI updates are paused
 let scanStartTime = null; // Track scan start time for duration calculation
+let capturedScreenshots = []; // Store up to 5 screenshots for report carousel
 
 // Human-friendly HTTP status code explanations
 const statusExplanations = {
@@ -1154,6 +1188,7 @@ function startScan(event) {
   document.getElementById('startOverlay').classList.add('hidden');
   document.getElementById('statusText').textContent = 'Connecting...';
   document.getElementById('pauseBtn').classList.remove('hidden');
+  document.getElementById('findingsBtn').classList.remove('hidden');
   document.getElementById('stopBtn').classList.remove('hidden');
   document.getElementById('newScanBtn').classList.add('hidden');
   uiPaused = false; // Reset pause state
@@ -1181,6 +1216,7 @@ function startScan(event) {
     document.getElementById('liveDot').classList.add('done');
     document.getElementById('statusText').textContent = 'Disconnected';
     document.getElementById('pauseBtn').classList.add('hidden');
+    document.getElementById('findingsBtn').classList.add('hidden');
     document.getElementById('stopBtn').classList.add('hidden');
     document.getElementById('newScanBtn').classList.remove('hidden');
     document.getElementById('domainIndicator').classList.add('hidden');
@@ -1232,6 +1268,7 @@ function stopScan() {
   document.getElementById('liveDot').classList.add('done');
   document.getElementById('statusText').textContent = 'Stopped';
   document.getElementById('pauseBtn').classList.add('hidden');
+  document.getElementById('findingsBtn').classList.add('hidden');
   document.getElementById('stopBtn').classList.add('hidden');
   document.getElementById('newScanBtn').classList.remove('hidden');
   document.getElementById('domainIndicator').classList.add('hidden');
@@ -1247,6 +1284,8 @@ function newScan() {
   targetDomain = '';
   currentPage = 1; // Reset pagination
   uiPaused = false; // Reset pause state
+  scanStartTime = null; // Reset scan timer
+  capturedScreenshots = []; // Clear screenshots
 
   // Reset pause button
   const pauseBtn = document.getElementById('pauseBtn');
@@ -1267,8 +1306,8 @@ function newScan() {
   document.getElementById('statQueue').textContent = '0';
   document.getElementById('screenshotBox').innerHTML = `
     <div class="placeholder">
-      <div class="placeholder-logo">SALT SECURITY</div>
-      <div class="placeholder-subtitle">API Discovery Scanner</div>
+      <div class="placeholder-logo">👀</div>
+      <div class="placeholder-subtitle">Peekaboo is watching...</div>
     </div>
   `;
   document.getElementById('currentUrl').textContent = '\u00A0';
@@ -1314,6 +1353,13 @@ function handleEvent(msg) {
       break;
 
     case 'screenshot':
+      // Store up to 5 screenshots for report carousel
+      if (capturedScreenshots.length < 5) {
+        capturedScreenshots.push({
+          image: msg.image,
+          url: msg.url
+        });
+      }
       if (!uiPaused) {
         const box = document.getElementById('screenshotBox');
         box.innerHTML = `<img src="data:image/jpeg;base64,${msg.image}" alt="screenshot">`;
@@ -1352,6 +1398,7 @@ function handleEvent(msg) {
       document.getElementById('statusText').textContent =
         `Done — ${msg.total_endpoints} endpoints found`;
       document.getElementById('pauseBtn').classList.add('hidden');
+      document.getElementById('findingsBtn').classList.add('hidden');
       document.getElementById('stopBtn').classList.add('hidden');
       document.getElementById('newScanBtn').classList.remove('hidden');
       document.getElementById('statQueue').textContent = '0';  // Clear queue count
@@ -1862,19 +1909,55 @@ function showScanSummary(msg) {
   document.getElementById('summarySkipped').textContent = msg.pages_skipped > 0 ? `${msg.pages_skipped} skipped` : '';
   document.getElementById('summaryDuration').textContent = durationText;
   document.getElementById('summaryRate').textContent = pagesPerMin > 0 ? `${pagesPerMin} pages/min` : '';
-  document.getElementById('summaryHosts').textContent = hosts.size;
-  document.getElementById('summarySubdomains').textContent = `${subdomainCount} subdomains`;
+  // Count external domains
+  const externalCount = hostArray.filter(h => h !== targetDomain && !h.endsWith(`.${targetDomain}`)).length;
 
-  // Populate host list
-  const domainList = document.getElementById('summaryDomainList');
-  domainList.innerHTML = '';
+  document.getElementById('summaryHosts').textContent = hosts.size;
+  document.getElementById('summarySubdomains').textContent = `${subdomainCount} subdomains, ${externalCount} external`;
+
+  // Separate subdomains from external domains
+  const subdomains = [];
+  const externalDomains = [];
   const sortedHosts = hostArray.sort();
+
   sortedHosts.forEach(host => {
-    const tag = document.createElement('div');
-    tag.className = 'summary-domain-tag';
-    tag.textContent = host;
-    domainList.appendChild(tag);
+    if (host === targetDomain || host.endsWith(`.${targetDomain}`)) {
+      subdomains.push(host);
+    } else {
+      externalDomains.push(host);
+    }
   });
+
+  // Populate subdomain list
+  const subdomainList = document.getElementById('summarySubdomainList');
+  subdomainList.innerHTML = '';
+  if (subdomains.length > 0) {
+    subdomains.forEach(host => {
+      const tag = document.createElement('div');
+      tag.className = 'summary-domain-tag';
+      tag.textContent = host;
+      subdomainList.appendChild(tag);
+    });
+  } else {
+    subdomainList.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">None</span>';
+  }
+
+  // Populate external domain list
+  const externalList = document.getElementById('summaryExternalList');
+  externalList.innerHTML = '';
+  if (externalDomains.length > 0) {
+    externalDomains.forEach(host => {
+      const tag = document.createElement('div');
+      tag.className = 'summary-domain-tag';
+      tag.textContent = host;
+      externalList.appendChild(tag);
+    });
+  } else {
+    externalList.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">None</span>';
+  }
+
+  // Update title for final results
+  document.getElementById('summaryTitle').textContent = '✅ Scan Complete';
 
   // Show modal with animation
   setTimeout(() => {
@@ -1884,6 +1967,1310 @@ function showScanSummary(msg) {
 
 function closeSummary() {
   document.getElementById('summaryOverlay').classList.remove('show');
+}
+
+function exportSummaryToPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  // PDF Settings
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 20;
+  let yPos = margin;
+
+  // Title
+  doc.setFontSize(22);
+  doc.setTextColor(74, 29, 150); // Purple
+  doc.text('Peekaboo API Discovery Report', margin, yPos);
+  yPos += 10;
+
+  // Target Domain
+  doc.setFontSize(14);
+  doc.setTextColor(0, 255, 136); // Green
+  doc.text(`Target: ${targetDomain}`, margin, yPos);
+  yPos += 8;
+
+  // Scan Date
+  doc.setFontSize(10);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, margin, yPos);
+  yPos += 12;
+
+  // Summary Statistics
+  doc.setFontSize(16);
+  doc.setTextColor(0, 0, 0);
+  doc.text('Scan Summary', margin, yPos);
+  yPos += 8;
+
+  doc.setFontSize(10);
+  const stats = [
+    ['Total Endpoints', document.getElementById('summaryEndpoints').textContent],
+    ['API Endpoints', document.getElementById('summaryApiCount').textContent],
+    ['Pages Visited', document.getElementById('summaryPages').textContent],
+    ['Duration', document.getElementById('summaryDuration').textContent],
+    ['Hosts Discovered', document.getElementById('summaryHosts').textContent],
+    ['Breakdown', document.getElementById('summarySubdomains').textContent]
+  ];
+
+  doc.autoTable({
+    startY: yPos,
+    head: [['Metric', 'Value']],
+    body: stats,
+    theme: 'grid',
+    headStyles: { fillColor: [74, 29, 150], textColor: [255, 255, 255] },
+    margin: { left: margin, right: margin }
+  });
+
+  yPos = doc.lastAutoTable.finalY + 12;
+
+  // Subdomains Section
+  if (yPos > pageHeight - 40) {
+    doc.addPage();
+    yPos = margin;
+  }
+
+  doc.setFontSize(14);
+  doc.setTextColor(74, 29, 150);
+  doc.text('Target & Subdomains', margin, yPos);
+  yPos += 6;
+
+  const subdomainList = document.getElementById('summarySubdomainList');
+  const subdomainTags = Array.from(subdomainList.querySelectorAll('.summary-domain-tag'));
+  const subdomains = subdomainTags.map(tag => [tag.textContent]);
+
+  if (subdomains.length > 0) {
+    doc.autoTable({
+      startY: yPos,
+      body: subdomains,
+      theme: 'grid',
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 9 }
+    });
+    yPos = doc.lastAutoTable.finalY + 12;
+  } else {
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.text('None', margin, yPos);
+    yPos += 12;
+  }
+
+  // External Domains Section
+  if (yPos > pageHeight - 40) {
+    doc.addPage();
+    yPos = margin;
+  }
+
+  doc.setFontSize(14);
+  doc.setTextColor(74, 29, 150);
+  doc.text('External Domains', margin, yPos);
+  yPos += 6;
+
+  const externalList = document.getElementById('summaryExternalList');
+  const externalTags = Array.from(externalList.querySelectorAll('.summary-domain-tag'));
+  const externals = externalTags.map(tag => [tag.textContent]);
+
+  if (externals.length > 0) {
+    doc.autoTable({
+      startY: yPos,
+      body: externals,
+      theme: 'grid',
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 9 }
+    });
+    yPos = doc.lastAutoTable.finalY + 12;
+  } else {
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.text('None', margin, yPos);
+    yPos += 12;
+  }
+
+  // Discovered Endpoints Section
+  if (endpoints.length > 0) {
+    doc.addPage();
+    yPos = margin;
+
+    doc.setFontSize(16);
+    doc.setTextColor(0, 0, 0);
+    doc.text('Discovered Endpoints', margin, yPos);
+    yPos += 8;
+
+    // Group endpoints by API confidence
+    const apiEndpoints = endpoints.filter(ep => ep.api_confidence === 'API');
+    const maybeApiEndpoints = endpoints.filter(ep => ep.api_confidence === 'Maybe API');
+    const otherEndpoints = endpoints.filter(ep => !ep.api_confidence || ep.api_confidence === 'Not API');
+
+    // API Endpoints
+    if (apiEndpoints.length > 0) {
+      doc.setFontSize(12);
+      doc.setTextColor(0, 255, 136);
+      doc.text(`Confirmed APIs (${apiEndpoints.length})`, margin, yPos);
+      yPos += 6;
+
+      const apiData = apiEndpoints.slice(0, 50).map(ep => [
+        ep.method,
+        ep.host,
+        ep.path,
+        ep.response_status || 'N/A'
+      ]);
+
+      doc.autoTable({
+        startY: yPos,
+        head: [['Method', 'Host', 'Path', 'Status']],
+        body: apiData,
+        theme: 'striped',
+        headStyles: { fillColor: [0, 255, 136], textColor: [0, 0, 0] },
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 8, cellPadding: 2 },
+        columnStyles: {
+          0: { cellWidth: 20 },
+          1: { cellWidth: 50 },
+          2: { cellWidth: 80 },
+          3: { cellWidth: 20 }
+        }
+      });
+
+      yPos = doc.lastAutoTable.finalY + 8;
+
+      if (apiEndpoints.length > 50) {
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`(Showing first 50 of ${apiEndpoints.length} endpoints)`, margin, yPos);
+      }
+    }
+
+    // Maybe API Endpoints
+    if (maybeApiEndpoints.length > 0) {
+      if (yPos > pageHeight - 40) {
+        doc.addPage();
+        yPos = margin;
+      }
+
+      yPos += 4;
+      doc.setFontSize(12);
+      doc.setTextColor(255, 165, 0);
+      doc.text(`Potential APIs (${maybeApiEndpoints.length})`, margin, yPos);
+      yPos += 6;
+
+      const maybeData = maybeApiEndpoints.slice(0, 30).map(ep => [
+        ep.method,
+        ep.host,
+        ep.path
+      ]);
+
+      doc.autoTable({
+        startY: yPos,
+        head: [['Method', 'Host', 'Path']],
+        body: maybeData,
+        theme: 'striped',
+        headStyles: { fillColor: [255, 165, 0], textColor: [0, 0, 0] },
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 7, cellPadding: 1.5 }
+      });
+
+      if (maybeApiEndpoints.length > 30) {
+        yPos = doc.lastAutoTable.finalY + 4;
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`(Showing first 30 of ${maybeApiEndpoints.length} endpoints)`, margin, yPos);
+      }
+    }
+  }
+
+  // Footer on last page
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text(
+      `Page ${i} of ${totalPages} | Generated by Peekaboo API Discovery Scanner`,
+      pageWidth / 2,
+      pageHeight - 10,
+      { align: 'center' }
+    );
+  }
+
+  // Save PDF
+  const filename = `peekaboo-report-${targetDomain}-${new Date().toISOString().split('T')[0]}.pdf`;
+  doc.save(filename);
+}
+
+function exportSummaryToHTML() {
+  // Gather data
+  const scanDate = new Date().toLocaleString();
+  const totalEndpoints = document.getElementById('summaryEndpoints').textContent;
+  const apiCount = document.getElementById('summaryApiCount').textContent;
+  const pagesVisited = document.getElementById('summaryPages').textContent;
+  const duration = document.getElementById('summaryDuration').textContent;
+  const hostsCount = document.getElementById('summaryHosts').textContent;
+  const breakdown = document.getElementById('summarySubdomains').textContent;
+
+  // Get subdomain and external domain lists
+  const subdomainList = document.getElementById('summarySubdomainList');
+  const subdomainTags = Array.from(subdomainList.querySelectorAll('.summary-domain-tag'));
+  const subdomains = subdomainTags.map(tag => tag.textContent);
+
+  const externalList = document.getElementById('summaryExternalList');
+  const externalTags = Array.from(externalList.querySelectorAll('.summary-domain-tag'));
+  const externals = externalTags.map(tag => tag.textContent);
+
+  // Group endpoints by API confidence
+  const apiEndpoints = endpoints.filter(ep => ep.api_confidence === 'API');
+  const maybeApiEndpoints = endpoints.filter(ep => ep.api_confidence === 'Maybe API');
+  const otherEndpoints = endpoints.filter(ep => !ep.api_confidence || ep.api_confidence === 'Not API');
+
+  // Generate HTML
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peekaboo API Discovery Report - ${targetDomain}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0a0e17 0%, #1a1f2e 100%);
+      color: #ffffff;
+      padding: 2rem;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: #13161f;
+      border-radius: 16px;
+      padding: 3rem;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding-bottom: 2rem;
+      border-bottom: 2px solid #2a2f3f;
+    }
+
+    .header .logo-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .header .salt-logo {
+      height: 3rem;
+      width: auto;
+      color: #00ff88;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      background: linear-gradient(135deg, #00ff88, #4a1d96);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+      font-weight: 800;
+    }
+
+    .header .subtitle {
+      font-size: 1rem;
+      color: #8b92a7;
+      margin-bottom: 1.5rem;
+    }
+
+    .header .target {
+      font-size: 1.5rem;
+      color: #00ff88;
+      font-weight: 600;
+      margin: 1rem 0;
+    }
+
+    .header .meta {
+      color: #8b92a7;
+      font-size: 0.95rem;
+    }
+
+    .section {
+      margin-bottom: 2.5rem;
+    }
+
+    .section-title {
+      font-size: 1.5rem;
+      color: #00ff88;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 700;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: #1a1e2b;
+      padding: 1.5rem;
+      border-radius: 12px;
+      border: 1px solid #2a2f3f;
+      transition: transform 0.2s;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      border-color: #4a1d96;
+    }
+
+    .stat-label {
+      color: #8b92a7;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #00ff88;
+    }
+
+    .stat-subtext {
+      color: #8b92a7;
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+
+    .domain-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .domain-tag {
+      background: #1a1e2b;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px solid #2a2f3f;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: #ffffff;
+    }
+
+    .domain-tag.subdomain {
+      border-color: #4a1d96;
+      background: linear-gradient(135deg, rgba(74, 29, 150, 0.1), rgba(74, 29, 150, 0.05));
+    }
+
+    .domain-tag.external {
+      border-color: #f59e0b;
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin-top: 1rem;
+      border-radius: 8px;
+      border: 1px solid #2a2f3f;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    thead {
+      background: #4a1d96;
+      color: #ffffff;
+      position: sticky;
+      top: 0;
+    }
+
+    th {
+      padding: 1rem;
+      text-align: left;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.8rem;
+      letter-spacing: 0.05em;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid #2a2f3f;
+      transition: background 0.2s;
+    }
+
+    tbody tr:hover {
+      background: #1a1e2b;
+    }
+
+    td {
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+    }
+
+    .method-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .method-GET { background: #00ff88; color: #0a0e17; }
+    .method-POST { background: #3b82f6; color: #ffffff; }
+    .method-PUT { background: #f59e0b; color: #ffffff; }
+    .method-PATCH { background: #8b5cf6; color: #ffffff; }
+    .method-DELETE { background: #ef4444; color: #ffffff; }
+    .method-default { background: #6b7280; color: #ffffff; }
+
+    .status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.75rem;
+    }
+
+    .status-2xx { background: #10b981; color: #ffffff; }
+    .status-3xx { background: #3b82f6; color: #ffffff; }
+    .status-4xx { background: #f59e0b; color: #ffffff; }
+    .status-5xx { background: #ef4444; color: #ffffff; }
+
+    .endpoint-path {
+      color: #00ff88;
+      word-break: break-all;
+    }
+
+    .endpoint-host {
+      color: #8b92a7;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 2rem;
+      color: #8b92a7;
+      font-style: italic;
+    }
+
+    .footer {
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 2px solid #2a2f3f;
+      text-align: center;
+      color: #8b92a7;
+      font-size: 0.9rem;
+    }
+
+    .footer strong {
+      color: #00ff88;
+    }
+
+    .contact-btn {
+      display: inline-block;
+      margin-top: 1.5rem;
+      padding: 0.75rem 2rem;
+      background: linear-gradient(135deg, #00ff88, #00cc6a);
+      color: #0a0e17;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+    }
+
+    .contact-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0, 255, 136, 0.4);
+    }
+
+    .filter-controls {
+      background: #1a1e2b;
+      padding: 1.5rem;
+      border-radius: 12px;
+      border: 1px solid #2a2f3f;
+      margin-bottom: 1.5rem;
+    }
+
+    .filter-row {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filter-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #8b92a7;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      min-width: 80px;
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 300px;
+      padding: 0.75rem 1rem;
+      background: #13161f;
+      border: 1px solid #2a2f3f;
+      border-radius: 8px;
+      color: #ffffff;
+      font-size: 0.9rem;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .search-box:focus {
+      outline: none;
+      border-color: #00ff88;
+      box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.1);
+    }
+
+    .filter-buttons {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      padding: 0.5rem 1rem;
+      background: #13161f;
+      border: 1px solid #2a2f3f;
+      border-radius: 6px;
+      color: #ffffff;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+
+    .filter-btn:hover {
+      border-color: #4a1d96;
+      background: #1a1e2b;
+    }
+
+    .filter-btn.active {
+      background: #00ff88;
+      color: #0a0e17;
+      border-color: #00ff88;
+    }
+
+    .filter-btn.clear {
+      background: #ef4444;
+      border-color: #ef4444;
+      color: #ffffff;
+    }
+
+    .filter-btn.clear:hover {
+      background: #dc2626;
+      border-color: #dc2626;
+    }
+
+    .results-count {
+      color: #8b92a7;
+      font-size: 0.9rem;
+      padding: 0.5rem 0;
+    }
+
+    .results-count strong {
+      color: #00ff88;
+    }
+
+    .domain-search {
+      margin-bottom: 1rem;
+    }
+
+    .screenshot-section {
+      margin: 2rem 0;
+      padding: 1.5rem;
+      background: #1a1e2b;
+      border-radius: 12px;
+      border: 1px solid #2a2f3f;
+    }
+
+    .screenshot-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #00ff88;
+    }
+
+    .screenshot-container {
+      position: relative;
+      width: 100%;
+      max-width: 800px;
+      margin: 0 auto;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      border: 2px solid #2a2f3f;
+    }
+
+    .screenshot-container img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .screenshot-caption {
+      margin-top: 0.75rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #8b92a7;
+      font-style: italic;
+    }
+
+    .carousel-container {
+      position: relative;
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+      overflow: hidden;
+      border-radius: 12px;
+      background: #1a1e2b;
+    }
+
+    .carousel-wrapper {
+      position: relative;
+      width: 100%;
+      padding-bottom: 56.25%; /* 16:9 aspect ratio */
+    }
+
+    .carousel-slides {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      transition: transform 0.5s ease-in-out;
+    }
+
+    .carousel-slide {
+      min-width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0a0e17;
+    }
+
+    .carousel-slide img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .carousel-slide-caption {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(transparent, rgba(0,0,0,0.8));
+      padding: 2rem 1rem 1rem;
+      color: #00ff88;
+      font-size: 0.85rem;
+      text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .carousel-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(74, 29, 150, 0.8);
+      border: none;
+      color: #ffffff;
+      font-size: 1.5rem;
+      width: 3rem;
+      height: 3rem;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.3s;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .carousel-nav:hover {
+      background: rgba(0, 255, 136, 0.9);
+      color: #0a0e17;
+      transform: translateY(-50%) scale(1.1);
+    }
+
+    .carousel-nav.prev {
+      left: 1rem;
+    }
+
+    .carousel-nav.next {
+      right: 1rem;
+    }
+
+    .carousel-dots {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .carousel-dot {
+      width: 0.75rem;
+      height: 0.75rem;
+      border-radius: 50%;
+      background: #2a2f3f;
+      border: 2px solid #4a1d96;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .carousel-dot.active {
+      background: #00ff88;
+      transform: scale(1.3);
+    }
+
+    .carousel-dot:hover {
+      background: #6b2fc7;
+      transform: scale(1.2);
+    }
+
+    .carousel-counter {
+      text-align: center;
+      margin-top: 0.5rem;
+      color: #8b92a7;
+      font-size: 0.85rem;
+    }
+
+    .cta-section {
+      margin: 3rem 0;
+      padding: 3rem 2rem;
+      background: linear-gradient(135deg, rgba(74, 29, 150, 0.2), rgba(0, 255, 136, 0.1));
+      border-radius: 16px;
+      border: 2px solid #4a1d96;
+      text-align: center;
+    }
+
+    .cta-title {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #00ff88, #4a1d96);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .cta-subtitle {
+      font-size: 1.1rem;
+      color: #8b92a7;
+      margin-bottom: 2rem;
+    }
+
+    .cta-button {
+      display: inline-block;
+      padding: 1rem 2.5rem;
+      background: linear-gradient(135deg, #00ff88, #00cc6a);
+      color: #0a0e17;
+      text-decoration: none;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 16px rgba(0, 255, 136, 0.3);
+    }
+
+    .cta-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 255, 136, 0.5);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media print {
+      body { background: white; color: black; }
+      .container { box-shadow: none; }
+      .stat-card:hover { transform: none; }
+      tbody tr:hover { background: transparent; }
+      .filter-controls { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo-container">
+        <svg class="salt-logo" version="1.1" viewBox="0 0 152.63 40.25" xmlns="http://www.w3.org/2000/svg">
+          <path d="m31.09 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m23.88 11.7c1.2315 0 2.23-0.9984 2.23-2.23s-0.9985-2.23-2.23-2.23c-1.2316 0-2.23 0.99844-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m16.66 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m9.44 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m2.23 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.99841-2.23-2.23-2.23c-1.2316 0-2.23 0.99844-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m9.44 26.06c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2315-0.9984-2.23-2.23-2.23s-2.23 0.9985-2.23 2.23c0 1.2316 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m2.23 18.94c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.99841-2.23-2.23-2.23-1.2316 0-2.23 0.9984-2.23 2.23 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m23.88 4.46c1.2315 0 2.23-0.9984 2.23-2.23 0-1.2316-0.9985-2.23-2.23-2.23-1.2316 0-2.23 0.99841-2.23 2.23 0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m16.66 4.46c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2316-0.9984-2.23-2.23-2.23s-2.23 0.99841-2.23 2.23c0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m9.44 4.46c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2316-0.9984-2.23-2.23-2.23s-2.23 0.99841-2.23 2.23c0 1.2316 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m2.23 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.99841-2.23-2.23-2.23c-1.2316 0-2.23 0.9984-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m9.44 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.9984-2.23 2.23 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m16.66 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.9984-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m23.88 33.02c1.2315 0 2.23-0.9984 2.23-2.23s-0.9985-2.23-2.23-2.23c-1.2316 0-2.23 0.9984-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m31.09 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.9984-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m9.44 18.94c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.23-2.23-2.23s-2.23 0.9984-2.23 2.23c0 1.2315 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m23.88 26.06c1.2315 0 2.23-0.9984 2.23-2.23 0-1.2315-0.9985-2.23-2.23-2.23-1.2316 0-2.23 0.9985-2.23 2.23 0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m23.88 18.94c1.2315 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9985-2.23-2.23-2.23-1.2316 0-2.23 0.9984-2.23 2.23 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m31.09 26.06c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2315-0.9984-2.23-2.23-2.23s-2.23 0.9985-2.23 2.23c0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m9.44 40.25c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.2301-2.23-2.2301s-2.23 0.9985-2.23 2.2301c0 1.2315 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m16.66 40.25c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.2301-2.23-2.2301s-2.23 0.9985-2.23 2.2301c0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m23.88 40.25c1.2315 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9985-2.2301-2.23-2.2301-1.2316 0-2.23 0.9985-2.23 2.2301 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+          <path d="m67.28 18.85-7.33-1.1c-3.31-0.53-4.41-2.34-4.41-4.63 0-3.27 2.21-5.52 7.41-5.52 5.52 0 7.99 2.69 8.38 6.66h3.53c-0.4-5.65-4.19-9.53-11.87-9.53s-11.16 3.75-11.16 8.47c0 4.41 2.34 6.93 7.46 7.68l6.93 1.06c3.71 0.62 5.34 2.16 5.34 5.25 0 3.4-1.85 5.47-7.9 5.47-6.8 0-9.13-3.31-9.22-7.86h-3.57c0 5.78 3.27 10.72 12.8 10.72 8.16 0 11.61-3.22 11.61-8.83 0-4.72-2.78-7.02-7.99-7.86z" fill="#fff"></path>
+          <path d="m89.69 5.52-11.12 29.35h3.66l2.85-7.45h10.48c1.65 0 2.99-1.33 3-2.98l3.97 10.44h3.71l-11.12-29.35h-5.43zm-3.49 18.89 6.18-16.24 6.17 16.24z" fill="#fff"></path>
+          <path d="m125.63 31.99h13.84v-2.9h-10.27v-23.57h-3.57z" fill="#fff"></path>
+          <path d="m150.39 5.52h-13.58v2.9h4.99v23.57h3.57v-23.57h5.02z" fill="#fff"></path>
+        </svg>
+      </div>
+      <h1>👀 Peekaboo API Discovery Report</h1>
+      <div class="subtitle">Revealing Hidden APIs in Plain Sight</div>
+      <div class="target">${targetDomain}</div>
+      <div class="meta">Generated on ${scanDate}</div>
+    </div>
+
+    ${capturedScreenshots.length > 0 ? `
+    <div class="screenshot-section">
+      <div class="screenshot-header">
+        📸 Application Screenshots (${capturedScreenshots.length})
+      </div>
+      <div class="carousel-container">
+        <div class="carousel-wrapper">
+          <div class="carousel-slides" id="carouselSlides">
+            ${capturedScreenshots.map((screenshot, index) => `
+              <div class="carousel-slide">
+                <img src="data:image/jpeg;base64,${screenshot.image}" alt="Screenshot ${index + 1} of ${targetDomain}">
+                <div class="carousel-slide-caption">${screenshot.url}</div>
+              </div>
+            `).join('')}
+          </div>
+          ${capturedScreenshots.length > 1 ? `
+            <button class="carousel-nav prev" onclick="moveCarousel(-1)" aria-label="Previous">‹</button>
+            <button class="carousel-nav next" onclick="moveCarousel(1)" aria-label="Next">›</button>
+          ` : ''}
+        </div>
+      </div>
+      ${capturedScreenshots.length > 1 ? `
+        <div class="carousel-dots" id="carouselDots">
+          ${capturedScreenshots.map((_, index) => `
+            <div class="carousel-dot ${index === 0 ? 'active' : ''}" onclick="goToSlide(${index})"></div>
+          `).join('')}
+        </div>
+        <div class="carousel-counter">
+          <span id="currentSlide">1</span> of ${capturedScreenshots.length}
+        </div>
+      ` : ''}
+    </div>
+    ` : ''}
+
+    <div class="section">
+      <div class="section-title">📊 Scan Summary</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Endpoints</div>
+          <div class="stat-value">${totalEndpoints}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">API Endpoints</div>
+          <div class="stat-value">${apiEndpoints.length}</div>
+          <div class="stat-subtext">${apiCount}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pages Visited</div>
+          <div class="stat-value">${pagesVisited}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Duration</div>
+          <div class="stat-value">${duration}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Hosts Discovered</div>
+          <div class="stat-value">${hostsCount}</div>
+          <div class="stat-subtext">${breakdown}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">🏠 Target & Subdomains (<span id="subdomainCount">${subdomains.length}</span>)</div>
+      ${subdomains.length > 0 ? `
+        <div class="domain-search">
+          <input type="text" class="search-box" id="subdomainSearch" placeholder="Search subdomains..." onkeyup="filterDomains('subdomain')">
+        </div>
+        <div class="domain-grid" id="subdomainGrid">
+          ${subdomains.map(domain => `<div class="domain-tag subdomain" data-domain="${domain.toLowerCase()}">${domain}</div>`).join('')}
+        </div>
+      ` : '<div class="empty-state">No subdomains discovered</div>'}
+    </div>
+
+    <div class="section">
+      <div class="section-title">🌐 External Domains (<span id="externalCount">${externals.length}</span>)</div>
+      ${externals.length > 0 ? `
+        <div class="domain-search">
+          <input type="text" class="search-box" id="externalSearch" placeholder="Search external domains..." onkeyup="filterDomains('external')">
+        </div>
+        <div class="domain-grid" id="externalGrid">
+          ${externals.map(domain => `<div class="domain-tag external" data-domain="${domain.toLowerCase()}">${domain}</div>`).join('')}
+        </div>
+      ` : '<div class="empty-state">No external domains discovered</div>'}
+    </div>
+
+    ${(() => {
+      // Filter to only show domain/subdomain endpoints
+      const domainEndpoints = apiEndpoints.filter(ep => {
+        const host = (ep.host || '').toLowerCase();
+        return host === targetDomain || host.endsWith('.' + targetDomain);
+      });
+
+      // Limit to 5 endpoints
+      const previewEndpoints = domainEndpoints.slice(0, 5);
+      const hasMore = domainEndpoints.length > 5;
+
+      return previewEndpoints.length > 0 ? `
+    <div class="section">
+      <div class="section-title">✅ Confirmed API Endpoints (Showing ${previewEndpoints.length} of ${domainEndpoints.length})</div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>Host</th>
+              <th>Path</th>
+              <th>Status</th>
+              <th>Detection</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${previewEndpoints.map(ep => {
+              const statusClass = ep.response_status ?
+                'status-' + Math.floor(ep.response_status / 100) + 'xx' : '';
+              const methodClass = 'method-' + (ep.method || 'default');
+              return `
+                <tr>
+                  <td><span class="method-badge ${methodClass}">${ep.method}</span></td>
+                  <td class="endpoint-host">${ep.host}</td>
+                  <td class="endpoint-path">${ep.path}</td>
+                  <td>${ep.response_status ?
+                    '<span class="status-badge ' + statusClass + '">' + ep.response_status + '</span>' :
+                    'N/A'}</td>
+                  <td>${ep.detection_reason || 'N/A'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      ${hasMore ? `
+      <div class="cta-section">
+        <div class="cta-title">🔍 Wanna See More?</div>
+        <div class="cta-subtitle">
+          This report shows a preview of ${previewEndpoints.length} API endpoints.<br>
+          ${domainEndpoints.length - previewEndpoints.length} more endpoints discovered for ${targetDomain}
+        </div>
+        <a href="https://salt.security/contact-us" target="_blank" class="cta-button">
+          📧 Contact Salt Security
+        </a>
+      </div>
+      ` : ''}
+    </div>
+      ` : '';
+    })()}
+
+    ${maybeApiEndpoints.length > 0 ? `
+    <div class="section">
+      <div class="section-title">⚠️ Potential API Endpoints (<span id="maybeCount">${maybeApiEndpoints.length}</span>)</div>
+
+      <div class="filter-controls">
+        <div class="filter-row">
+          <div class="filter-label">Search:</div>
+          <input type="text" class="search-box" id="maybeSearch" placeholder="Search by host, path, or method..." onkeyup="filterEndpoints('maybe')">
+        </div>
+
+        <div class="filter-row">
+          <div class="filter-label">Method:</div>
+          <div class="filter-buttons">
+            <button class="filter-btn" onclick="toggleMethodFilter('maybe', 'GET')">GET</button>
+            <button class="filter-btn" onclick="toggleMethodFilter('maybe', 'POST')">POST</button>
+            <button class="filter-btn" onclick="toggleMethodFilter('maybe', 'PUT')">PUT</button>
+            <button class="filter-btn" onclick="toggleMethodFilter('maybe', 'PATCH')">PATCH</button>
+            <button class="filter-btn" onclick="toggleMethodFilter('maybe', 'DELETE')">DELETE</button>
+          </div>
+        </div>
+
+        <div class="filter-row">
+          <button class="filter-btn clear" onclick="clearFilters('maybe')">Clear All Filters</button>
+        </div>
+
+        <div class="results-count" id="maybeResults">Showing <strong>${maybeApiEndpoints.length}</strong> of ${maybeApiEndpoints.length} endpoints</div>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>Host</th>
+              <th>Path</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="maybeTableBody">
+            ${maybeApiEndpoints.map(ep => {
+              const statusClass = ep.response_status ?
+                'status-' + Math.floor(ep.response_status / 100) + 'xx' : '';
+              const methodClass = 'method-' + (ep.method || 'default');
+              const statusPrefix = ep.response_status ? Math.floor(ep.response_status / 100).toString() : '';
+              return `
+                <tr class="endpoint-row"
+                    data-method="${(ep.method || '').toUpperCase()}"
+                    data-host="${(ep.host || '').toLowerCase()}"
+                    data-path="${(ep.path || '').toLowerCase()}"
+                    data-status="${statusPrefix}"
+                    data-search="${(ep.method + ' ' + ep.host + ' ' + ep.path).toLowerCase()}">
+                  <td><span class="method-badge ${methodClass}">${ep.method}</span></td>
+                  <td class="endpoint-host">${ep.host}</td>
+                  <td class="endpoint-path">${ep.path}</td>
+                  <td>${ep.response_status ?
+                    '<span class="status-badge ' + statusClass + '">' + ep.response_status + '</span>' :
+                    'N/A'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    ` : ''}
+
+    <div class="footer">
+      <p>Generated by <strong>Peekaboo</strong> - Visual API Discovery Scanner</p>
+      <p>🔐 <strong>Salt Security</strong> • ${scanDate}</p>
+      <p style="margin-top: 0.5rem; font-size: 0.85rem;">Protecting Modern Applications from API Attacks</p>
+      <a href="https://salt.security/contact-us" target="_blank" class="contact-btn">
+        📧 Contact Salt Security
+      </a>
+      <p style="margin-top: 1rem; font-size: 0.8rem;">
+        Learn how Salt Security can help protect your digital assets
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // Filter state
+    const filterState = {
+      api: { methods: new Set(), statuses: new Set(), search: '' },
+      maybe: { methods: new Set(), statuses: new Set(), search: '' }
+    };
+
+    // Filter domains
+    function filterDomains(type) {
+      const searchId = type === 'subdomain' ? 'subdomainSearch' : 'externalSearch';
+      const gridId = type === 'subdomain' ? 'subdomainGrid' : 'externalGrid';
+      const countId = type === 'subdomain' ? 'subdomainCount' : 'externalCount';
+
+      const searchTerm = document.getElementById(searchId).value.toLowerCase();
+      const grid = document.getElementById(gridId);
+      const tags = grid.querySelectorAll('.domain-tag');
+
+      let visibleCount = 0;
+      tags.forEach(tag => {
+        const domain = tag.getAttribute('data-domain');
+        if (domain.includes(searchTerm)) {
+          tag.classList.remove('hidden');
+          visibleCount++;
+        } else {
+          tag.classList.add('hidden');
+        }
+      });
+
+      document.getElementById(countId).textContent = visibleCount;
+    }
+
+    // Toggle method filter
+    function toggleMethodFilter(type, method) {
+      const btn = event.target;
+      btn.classList.toggle('active');
+
+      if (filterState[type].methods.has(method)) {
+        filterState[type].methods.delete(method);
+      } else {
+        filterState[type].methods.add(method);
+      }
+
+      filterEndpoints(type);
+    }
+
+    // Toggle status filter
+    function toggleStatusFilter(type, status) {
+      const btn = event.target;
+      btn.classList.toggle('active');
+
+      if (filterState[type].statuses.has(status)) {
+        filterState[type].statuses.delete(status);
+      } else {
+        filterState[type].statuses.add(status);
+      }
+
+      filterEndpoints(type);
+    }
+
+    // Filter endpoints
+    function filterEndpoints(type) {
+      const searchId = type === 'api' ? 'apiSearch' : 'maybeSearch';
+      const tableId = type === 'api' ? 'apiTableBody' : 'maybeTableBody';
+      const resultsId = type === 'api' ? 'apiResults' : 'maybeResults';
+      const countId = type === 'api' ? 'apiCount' : 'maybeCount';
+
+      const searchTerm = document.getElementById(searchId).value.toLowerCase();
+      filterState[type].search = searchTerm;
+
+      const tbody = document.getElementById(tableId);
+      const rows = tbody.querySelectorAll('.endpoint-row');
+      const totalRows = rows.length;
+
+      let visibleCount = 0;
+      rows.forEach(row => {
+        const method = row.getAttribute('data-method');
+        const status = row.getAttribute('data-status');
+        const searchText = row.getAttribute('data-search');
+
+        // Check method filter
+        const methodMatch = filterState[type].methods.size === 0 ||
+                           filterState[type].methods.has(method);
+
+        // Check status filter
+        const statusMatch = filterState[type].statuses.size === 0 ||
+                           filterState[type].statuses.has(status);
+
+        // Check search
+        const searchMatch = searchTerm === '' || searchText.includes(searchTerm);
+
+        if (methodMatch && statusMatch && searchMatch) {
+          row.classList.remove('hidden');
+          visibleCount++;
+        } else {
+          row.classList.add('hidden');
+        }
+      });
+
+      document.getElementById(countId).textContent = visibleCount;
+      document.getElementById(resultsId).innerHTML =
+        'Showing <strong>' + visibleCount + '</strong> of ' + totalRows + ' endpoints';
+    }
+
+    // Clear all filters
+    function clearFilters(type) {
+      // Clear filter state
+      filterState[type].methods.clear();
+      filterState[type].statuses.clear();
+      filterState[type].search = '';
+
+      // Clear search box
+      const searchId = type === 'api' ? 'apiSearch' : 'maybeSearch';
+      document.getElementById(searchId).value = '';
+
+      // Remove active class from all filter buttons in this section
+      const section = document.getElementById(type === 'api' ? 'apiTableBody' : 'maybeTableBody')
+                             .closest('.section');
+      section.querySelectorAll('.filter-btn.active').forEach(btn => {
+        btn.classList.remove('active');
+      });
+
+      // Re-filter to show all
+      filterEndpoints(type);
+    }
+
+    // Carousel functionality
+    let currentSlideIndex = 0;
+
+    function moveCarousel(direction) {
+      const slides = document.getElementById('carouselSlides');
+      const totalSlides = slides.children.length;
+
+      currentSlideIndex += direction;
+
+      if (currentSlideIndex < 0) {
+        currentSlideIndex = totalSlides - 1;
+      } else if (currentSlideIndex >= totalSlides) {
+        currentSlideIndex = 0;
+      }
+
+      updateCarousel();
+    }
+
+    function goToSlide(index) {
+      currentSlideIndex = index;
+      updateCarousel();
+    }
+
+    function updateCarousel() {
+      const slides = document.getElementById('carouselSlides');
+      const dots = document.querySelectorAll('.carousel-dot');
+      const counter = document.getElementById('currentSlide');
+
+      // Move slides
+      slides.style.transform = 'translateX(-' + (currentSlideIndex * 100) + '%)';
+
+      // Update dots
+      dots.forEach((dot, index) => {
+        dot.classList.toggle('active', index === currentSlideIndex);
+      });
+
+      // Update counter
+      if (counter) {
+        counter.textContent = currentSlideIndex + 1;
+      }
+    }
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') moveCarousel(-1);
+      if (e.key === 'ArrowRight') moveCarousel(1);
+    });
+  </scr` + `ipt>
+</body>
+</html>`;
+
+  // Create and download the HTML file
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `peekaboo-report-${targetDomain}-${new Date().toISOString().split('T')[0]}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function startNewScan() {
@@ -1897,6 +3284,88 @@ function showAbout() {
 
 function closeAbout() {
   document.getElementById('aboutOverlay').classList.remove('show');
+}
+
+function showCurrentFindings() {
+  // Calculate current duration
+  const duration = scanStartTime ? Math.round((Date.now() - scanStartTime) / 1000) : 0;
+  const minutes = Math.floor(duration / 60);
+  const seconds = duration % 60;
+  const durationText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+  // Calculate current rate
+  const currentPages = parseInt(document.getElementById('statPages').textContent) || 0;
+  const pagesPerMin = minutes > 0 ? Math.round(currentPages / (duration / 60)) : 0;
+
+  // Count API endpoints so far
+  const apiCount = endpoints.filter(ep => ep.api_confidence === 'API').length;
+
+  // Count subdomains
+  const hostArray = Array.from(hosts);
+  const subdomainCount = hostArray.filter(h => h !== targetDomain && h.endsWith(`.${targetDomain}`)).length;
+
+  // Get current queue size
+  const queueSize = parseInt(document.getElementById('statQueue').textContent) || 0;
+
+  // Update modal content with current stats
+  document.getElementById('summaryEndpoints').textContent = endpoints.length;
+  document.getElementById('summaryApiCount').textContent = `${apiCount} confirmed APIs`;
+  document.getElementById('summaryPages').textContent = currentPages;
+  document.getElementById('summarySkipped').textContent = queueSize > 0 ? `${queueSize} in queue` : '';
+  document.getElementById('summaryDuration').textContent = `${durationText} (ongoing)`;
+  document.getElementById('summaryRate').textContent = pagesPerMin > 0 ? `${pagesPerMin} pages/min` : '';
+  // Count external domains
+  const externalCount = hostArray.filter(h => h !== targetDomain && !h.endsWith(`.${targetDomain}`)).length;
+
+  document.getElementById('summaryHosts').textContent = hosts.size;
+  document.getElementById('summarySubdomains').textContent = `${subdomainCount} subdomains, ${externalCount} external`;
+
+  // Separate subdomains from external domains
+  const subdomains = [];
+  const externalDomains = [];
+  const sortedHosts = hostArray.sort();
+
+  sortedHosts.forEach(host => {
+    if (host === targetDomain || host.endsWith(`.${targetDomain}`)) {
+      subdomains.push(host);
+    } else {
+      externalDomains.push(host);
+    }
+  });
+
+  // Populate subdomain list
+  const subdomainList = document.getElementById('summarySubdomainList');
+  subdomainList.innerHTML = '';
+  if (subdomains.length > 0) {
+    subdomains.forEach(host => {
+      const tag = document.createElement('div');
+      tag.className = 'summary-domain-tag';
+      tag.textContent = host;
+      subdomainList.appendChild(tag);
+    });
+  } else {
+    subdomainList.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">None</span>';
+  }
+
+  // Populate external domain list
+  const externalList = document.getElementById('summaryExternalList');
+  externalList.innerHTML = '';
+  if (externalDomains.length > 0) {
+    externalDomains.forEach(host => {
+      const tag = document.createElement('div');
+      tag.className = 'summary-domain-tag';
+      tag.textContent = host;
+      externalList.appendChild(tag);
+    });
+  } else {
+    externalList.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">None</span>';
+  }
+
+  // Update title for interim findings
+  document.getElementById('summaryTitle').textContent = '📊 Current Findings';
+
+  // Show modal immediately
+  document.getElementById('summaryOverlay').classList.add('show');
 }
 
 async function generateDescription(method, path, host, responseStatus) {
