@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>👀 Peekaboo – API Discovery</title>
+<link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+<!-- Start Form Overlay -->
+<div class="start-overlay" id="startOverlay">
+  <div class="start-form-container">
+    <h2 style="display:flex;align-items:center;justify-content:center;gap:0.6rem;">
+      <svg style="height:1.5rem;width:auto;" version="1.1" viewBox="0 0 152.63 40.25" xmlns="http://www.w3.org/2000/svg">
+        <path d="m31.09 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 11.7c1.2315 0 2.23-0.9984 2.23-2.23s-0.9985-2.23-2.23-2.23c-1.2316 0-2.23 0.99844-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m16.66 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m2.23 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.99841-2.23-2.23-2.23c-1.2316 0-2.23 0.99844-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 26.06c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2315-0.9984-2.23-2.23-2.23s-2.23 0.9985-2.23 2.23c0 1.2316 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m2.23 18.94c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.99841-2.23-2.23-2.23-1.2316 0-2.23 0.9984-2.23 2.23 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 4.46c1.2315 0 2.23-0.9984 2.23-2.23 0-1.2316-0.9985-2.23-2.23-2.23-1.2316 0-2.23 0.99841-2.23 2.23 0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m16.66 4.46c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2316-0.9984-2.23-2.23-2.23s-2.23 0.99841-2.23 2.23c0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 4.46c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2316-0.9984-2.23-2.23-2.23s-2.23 0.99841-2.23 2.23c0 1.2316 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m2.23 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.99841-2.23-2.23-2.23c-1.2316 0-2.23 0.9984-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.9984-2.23 2.23 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m16.66 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.9984-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 33.02c1.2315 0 2.23-0.9984 2.23-2.23s-0.9985-2.23-2.23-2.23c-1.2316 0-2.23 0.9984-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m31.09 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.9984-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 18.94c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.23-2.23-2.23s-2.23 0.9984-2.23 2.23c0 1.2315 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 26.06c1.2315 0 2.23-0.9984 2.23-2.23 0-1.2315-0.9985-2.23-2.23-2.23-1.2316 0-2.23 0.9985-2.23 2.23 0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 18.94c1.2315 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9985-2.23-2.23-2.23-1.2316 0-2.23 0.9984-2.23 2.23 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m31.09 26.06c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2315-0.9984-2.23-2.23-2.23s-2.23 0.9985-2.23 2.23c0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 40.25c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.2301-2.23-2.2301s-2.23 0.9985-2.23 2.2301c0 1.2315 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m16.66 40.25c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.2301-2.23-2.2301s-2.23 0.9985-2.23 2.2301c0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 40.25c1.2315 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9985-2.2301-2.23-2.2301-1.2316 0-2.23 0.9985-2.23 2.2301 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m67.28 18.85-7.33-1.1c-3.31-0.53-4.41-2.34-4.41-4.63 0-3.27 2.21-5.52 7.41-5.52 5.52 0 7.99 2.69 8.38 6.66h3.53c-0.4-5.65-4.19-9.53-11.87-9.53s-11.16 3.75-11.16 8.47c0 4.41 2.34 6.93 7.46 7.68l6.93 1.06c3.71 0.62 5.34 2.16 5.34 5.25 0 3.4-1.85 5.47-7.9 5.47-6.8 0-9.13-3.31-9.22-7.86h-3.57c0 5.78 3.27 10.72 12.8 10.72 8.16 0 11.61-3.22 11.61-8.83 0-4.72-2.78-7.02-7.99-7.86z" fill="#fff"></path>
+        <path d="m89.69 5.52-11.12 29.35h3.66l2.85-7.45h10.48c1.65 0 2.99-1.33 3-2.98l3.97 10.44h3.71l-11.12-29.35h-5.43zm-3.49 18.89 6.18-16.24 6.17 16.24z" fill="#fff"></path>
+        <path d="m115.53 5.52h-3.66v29.35h19.02v-2.96h-15.36z" fill="#fff"></path>
+        <path d="m127.96 5.52v2.95h24.67v-2.95z" fill="#fff"></path>
+        <path d="m142.14 34.86v-22.78c0-2-1.62-3.61-3.61-3.61v26.39z" fill="#fff"></path>
+      </svg>
+      <span>Peekaboo</span>
+    </h2>
+    <p class="subtitle">Configure your scan parameters and start discovering APIs</p>
+    <form id="startForm" onsubmit="startScan(event)">
+      <div class="form-group">
+        <label>Domain Name <span style="color:var(--patch)">*</span></label>
+        <input type="text" id="domain" name="domain" placeholder="example.com" required>
+        <div class="hint">Enter the target domain without http:// or https://</div>
+      </div>
+
+      <div class="form-group">
+        <button type="button" class="toggle-advanced" onclick="toggleAdvanced()">
+          <span id="advancedIcon">▶</span> Advanced Settings
+          <span style="font-size:0.8rem;color:var(--text-muted);font-weight:400;">(Max Pages: 50, Max Depth: 3, Timeout: 30s)</span>
+        </button>
+        <div id="advancedSettings" style="display:none;margin-top:1rem;">
+          <div class="form-group-inline">
+            <div class="form-group">
+              <label>Max Pages</label>
+              <input type="number" id="maxPages" name="maxPages" value="50" min="1" max="500">
+              <div class="hint">Default: 50</div>
+            </div>
+
+            <div class="form-group">
+              <label>Max Depth</label>
+              <input type="number" id="maxDepth" name="maxDepth" value="3" min="1" max="10">
+              <div class="hint">Default: 3</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Timeout (ms)</label>
+            <input type="number" id="timeout" name="timeout" value="30000" min="5000" max="120000" step="1000">
+            <div class="hint">Page load timeout in milliseconds (default: 30000)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="includeSubdomains" name="includeSubdomains" checked>
+          <label for="includeSubdomains" style="margin:0">Follow Subdomain Links</label>
+        </div>
+        <div class="hint">Visit pages on subdomains (e.g., api.example.com, app.example.com)</div>
+      </div>
+
+      <div class="form-group">
+        <label>Scan-Time API Filter</label>
+        <div class="radio-group">
+          <div class="radio-option">
+            <input type="radio" id="filterAll" name="apiFilter" value="all" checked>
+            <label for="filterAll">Collect All APIs</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" id="filterSubdomain" name="apiFilter" value="subdomain">
+            <label for="filterSubdomain">Only Target Domain APIs</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" id="filterExternal" name="apiFilter" value="external">
+            <label for="filterExternal">Only External APIs</label>
+          </div>
+        </div>
+        <div class="hint">Which APIs to collect during scan (you can also filter in the table after scanning)</div>
+      </div>
+
+      <div class="form-group">
+        <label>⚡ Performance Settings</label>
+        <div class="form-group-inline">
+          <div class="form-group">
+            <label>Concurrent Pages</label>
+            <input type="number" id="concurrentPages" name="concurrentPages" value="5" min="1" max="20">
+            <div class="hint">Pages processed in parallel</div>
+          </div>
+          <div class="form-group">
+            <div class="checkbox-group" style="margin-top:1.5rem;">
+              <input type="checkbox" id="fastMode" name="fastMode">
+              <label for="fastMode" style="margin:0">Fast Mode</label>
+            </div>
+            <div class="hint">Skip screenshots & interactions</div>
+          </div>
+        </div>
+      </div>
+
+
+      <button type="submit" class="start-btn" id="startBtn">
+        🚀 Start Scan
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="app">
+  <!-- Top bar -->
+  <div class="top-bar">
+    <h1 style="display:flex;align-items:center;gap:0.75rem;">
+      <svg style="height:1.8rem;width:auto;" version="1.1" viewBox="0 0 152.63 40.25" xmlns="http://www.w3.org/2000/svg">
+        <path d="m31.09 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 11.7c1.2315 0 2.23-0.9984 2.23-2.23s-0.9985-2.23-2.23-2.23c-1.2316 0-2.23 0.99844-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m16.66 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m2.23 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.99841-2.23-2.23-2.23c-1.2316 0-2.23 0.99844-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 26.06c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2315-0.9984-2.23-2.23-2.23s-2.23 0.9985-2.23 2.23c0 1.2316 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m2.23 18.94c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.99841-2.23-2.23-2.23-1.2316 0-2.23 0.9984-2.23 2.23 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 4.46c1.2315 0 2.23-0.9984 2.23-2.23 0-1.2316-0.9985-2.23-2.23-2.23-1.2316 0-2.23 0.99841-2.23 2.23 0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m16.66 4.46c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2316-0.9984-2.23-2.23-2.23s-2.23 0.99841-2.23 2.23c0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 4.46c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2316-0.9984-2.23-2.23-2.23s-2.23 0.99841-2.23 2.23c0 1.2316 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m2.23 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.99841-2.23-2.23-2.23c-1.2316 0-2.23 0.9984-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.9984-2.23 2.23 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m16.66 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.9984-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 33.02c1.2315 0 2.23-0.9984 2.23-2.23s-0.9985-2.23-2.23-2.23c-1.2316 0-2.23 0.9984-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m31.09 33.02c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.9984-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 18.94c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.23-2.23-2.23s-2.23 0.9984-2.23 2.23c0 1.2315 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 26.06c1.2315 0 2.23-0.9984 2.23-2.23 0-1.2315-0.9985-2.23-2.23-2.23-1.2316 0-2.23 0.9985-2.23 2.23 0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 18.94c1.2315 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9985-2.23-2.23-2.23-1.2316 0-2.23 0.9984-2.23 2.23 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m31.09 26.06c1.2316 0 2.23-0.9984 2.23-2.23 0-1.2315-0.9984-2.23-2.23-2.23s-2.23 0.9985-2.23 2.23c0 1.2316 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m9.44 40.25c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.2301-2.23-2.2301s-2.23 0.9985-2.23 2.2301c0 1.2315 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m16.66 40.25c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.2301-2.23-2.2301s-2.23 0.9985-2.23 2.2301c0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m23.88 40.25c1.2315 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9985-2.2301-2.23-2.2301-1.2316 0-2.23 0.9985-2.23 2.2301 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
+        <path d="m67.28 18.85-7.33-1.1c-3.31-0.53-4.41-2.34-4.41-4.63 0-3.27 2.21-5.52 7.41-5.52 5.52 0 7.99 2.69 8.38 6.66h3.53c-0.4-5.65-4.19-9.53-11.87-9.53s-11.16 3.75-11.16 8.47c0 4.41 2.34 6.93 7.46 7.68l6.93 1.06c3.71 0.62 5.34 2.16 5.34 5.25 0 3.4-1.85 5.47-7.9 5.47-6.8 0-9.13-3.31-9.22-7.86h-3.57c0 5.78 3.27 10.72 12.8 10.72 8.16 0 11.61-3.22 11.61-8.83 0-4.72-2.78-7.02-7.99-7.86z" fill="#fff"></path>
+        <path d="m89.69 5.52-11.12 29.35h3.66l2.85-7.45h10.48c1.65 0 2.99-1.33 3-2.98l3.97 10.44h3.71l-11.12-29.35h-5.43zm-3.49 18.89 6.18-16.24 6.17 16.24z" fill="#fff"></path>
+        <path d="m115.53 5.52h-3.66v29.35h19.02v-2.96h-15.36z" fill="#fff"></path>
+        <path d="m127.96 5.52v2.95h24.67v-2.95z" fill="#fff"></path>
+        <path d="m142.14 34.86v-22.78c0-2-1.62-3.61-3.61-3.61v26.39z" fill="#fff"></path>
+      </svg>
+      <span>Peekaboo</span>
+      <span class="header-eyes">👁️ 👁️</span>
+      <span id="domainIndicator" class="domain-indicator hidden"></span>
+    </h1>
+    <div style="display:flex;align-items:center;gap:1rem;">
+      <div class="scan-controls">
+        <button class="control-btn hidden" id="pauseBtn" onclick="togglePause()">
+          ⏸ Pause Scan
+        </button>
+        <button class="control-btn hidden" id="findingsBtn" onclick="showCurrentFindings()">
+          📊 Current Findings
+        </button>
+        <button class="control-btn hidden" id="stopBtn" onclick="stopScan()">
+          ⏹ Terminate Scan
+        </button>
+        <button class="control-btn hidden" id="newScanBtn" onclick="newScan()">
+          🔄 New Scan
+        </button>
+      </div>
+      <div class="status-badge">
+        <span class="live-dot" id="liveDot"></span>
+        <span id="statusText">Ready</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Left panel -->
+  <div class="left-panel">
+    <div class="stats-grid">
+      <div class="stat-box"><div class="num" id="statEndpoints">0</div><div class="lbl">Endpoints</div></div>
+      <div class="stat-box"><div class="num" id="statPages">0</div><div class="lbl">Pages</div></div>
+      <div class="stat-box"><div class="num" id="statHosts">0</div><div class="lbl">Hosts</div></div>
+      <div class="stat-box"><div class="num" id="statQueue">0</div><div class="lbl">In Queue</div></div>
+    </div>
+
+    <div class="screenshot-section">
+      <div class="label">Live Preview</div>
+      <div class="screenshot-box" id="screenshotBox">
+        <div class="placeholder">
+          <div class="placeholder-logo">👀</div>
+          <div class="placeholder-subtitle">Peekaboo is watching...</div>
+        </div>
+      </div>
+      <div class="current-url" id="currentUrl">&nbsp;</div>
+    </div>
+
+    <div class="activity-header">Activity Log</div>
+    <div class="activity-log" id="activityLog"></div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="right-panel">
+    <div class="table-controls">
+      <input class="search-input" id="searchInput" placeholder="Filter endpoints..." oninput="currentPage = 1; applyFilters();">
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <div class="filter-section">
+          <span class="filter-label">Domain:</span>
+          <span class="filter-btn active" id="domainAll" onclick="setDomainFilter('all')">All</span>
+          <span class="filter-btn" id="domainSubdomain" onclick="setDomainFilter('subdomain')">Subdomain</span>
+          <span class="filter-btn" id="domainExternal" onclick="setDomainFilter('external')">External</span>
+        </div>
+        <div class="filter-divider"></div>
+        <div class="filter-section">
+          <span class="filter-label">Method:</span>
+          <div id="methodFilters" style="display:flex;gap:0.3rem;flex-wrap:wrap;"></div>
+        </div>
+        <div class="filter-divider"></div>
+        <div class="filter-section">
+          <span class="filter-label">API Type:</span>
+          <span class="filter-btn active" id="apiAll" onclick="setApiFilter('all')">All</span>
+          <span class="filter-btn" id="apiConfirmed" onclick="setApiFilter('confirmed')">API</span>
+          <span class="filter-btn" id="apiMaybe" onclick="setApiFilter('maybe')">Maybe</span>
+          <span class="filter-btn" id="apiNone" onclick="setApiFilter('none')">Not API</span>
+        </div>
+        <div class="filter-divider"></div>
+        <div class="filter-section">
+          <span class="filter-label">Status:</span>
+          <span class="filter-btn active" id="statusAll" onclick="setStatusFilter('all')">All</span>
+          <span class="filter-btn" id="status2xx" onclick="setStatusFilter('2xx')">2xx</span>
+          <span class="filter-btn" id="status3xx" onclick="setStatusFilter('3xx')">3xx</span>
+          <span class="filter-btn" id="status4xx" onclick="setStatusFilter('4xx')">4xx</span>
+          <span class="filter-btn" id="status5xx" onclick="setStatusFilter('5xx')">5xx</span>
+          <span class="filter-btn" id="statusNone" onclick="setStatusFilter('none')">No Status</span>
+        </div>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:75px" onclick="sortBy('method')">Method</th>
+            <th onclick="sortBy('path')">Path</th>
+            <th onclick="sortBy('host')">Host</th>
+            <th style="width:60px" onclick="sortBy('status')">Status</th>
+            <th onclick="sortBy('reason')">Detected Via</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="pagination" id="pagination">
+        <button class="page-btn" id="prevBtn" onclick="changePage(-1)">← Previous</button>
+        <div class="page-numbers" id="pageNumbers"></div>
+        <button class="page-btn" id="nextBtn" onclick="changePage(1)">Next →</button>
+      </div>
+      <div class="empty-state" id="emptyState">
+        <div class="icon">📡</div>
+        <div>Waiting for API endpoints to appear...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Drawer -->
+<div class="detail-drawer" id="detailDrawer">
+  <div class="drawer-header">
+    <h3>Endpoint Details</h3>
+    <button class="drawer-close" onclick="closeDrawer()">×</button>
+  </div>
+  <div class="drawer-content" id="drawerContent">
+    <!-- Content populated by JavaScript -->
+  </div>
+</div>
+
+<!-- About Button -->
+<button class="about-link" onclick="showAbout()">ℹ️ About</button>
+
+<!-- About Modal -->
+<div class="summary-overlay" id="aboutOverlay">
+  <div class="summary-modal about-modal">
+    <div class="summary-header">
+      <h2>👀 About Peekaboo</h2>
+      <button class="summary-close" onclick="closeAbout()">×</button>
+    </div>
+    <div class="about-content">
+      <div class="about-emoji">👁️ 👁️</div>
+      <h3>Visual API Discovery Scanner</h3>
+      <p><em>Revealing hidden APIs in plain sight</em></p>
+
+      <p><strong>Peekaboo</strong> is a real-time visual API discovery tool that crawls web applications and automatically identifies REST API endpoints by monitoring network traffic and analyzing application behavior.</p>
+
+      <p style="text-align: center; margin-top: 2rem; color: var(--muted); font-size: 0.85rem;">
+        🔐 A Salt Security Project
+      </p>
+    </div>
+    <div class="summary-actions" style="margin-top: 1.5rem;">
+      <button class="summary-btn summary-btn-primary" onclick="closeAbout()">Got it!</button>
+    </div>
+  </div>
+</div>
+
+<!-- Scan Summary Modal -->
+<div class="summary-overlay" id="summaryOverlay">
+  <div class="summary-modal">
+    <div class="summary-header">
+      <h2 id="summaryTitle">✅ Scan Complete</h2>
+      <button class="summary-close" onclick="closeSummary()">×</button>
+    </div>
+    <div class="summary-stats">
+      <div class="summary-stat">
+        <div class="summary-stat-label">Endpoints Found</div>
+        <div class="summary-stat-value" id="summaryEndpoints">0</div>
+        <div class="summary-stat-subtext" id="summaryApiCount">0 confirmed APIs</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-label">Pages Crawled</div>
+        <div class="summary-stat-value" id="summaryPages">0</div>
+        <div class="summary-stat-subtext" id="summarySkipped"></div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-label">Duration</div>
+        <div class="summary-stat-value" id="summaryDuration">0s</div>
+        <div class="summary-stat-subtext" id="summaryRate">0 pages/min</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-label">Hosts Discovered</div>
+        <div class="summary-stat-value" id="summaryHosts">0</div>
+        <div class="summary-stat-subtext" id="summarySubdomains">0 subdomains</div>
+      </div>
+    </div>
+    <div class="summary-domains" id="summaryDomainsSection">
+      <div class="summary-domains-title">🏠 Target & Subdomains</div>
+      <div class="summary-domain-list" id="summarySubdomainList">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+    <div class="summary-domains" id="summaryExternalSection" style="margin-top: 1rem;">
+      <div class="summary-domains-title">🌐 External Domains</div>
+      <div class="summary-domain-list" id="summaryExternalList">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+    <div class="summary-actions">
+      <button class="summary-btn summary-btn-secondary" onclick="closeSummary()">Close</button>
+      <button class="summary-btn summary-btn-primary" onclick="exportSummaryToHTML()" style="background: var(--green); color: var(--bg);">📄 Export HTML Report</button>
+      <button class="summary-btn summary-btn-primary" onclick="startNewScan()">New Scan</button>
+    </div>
+  </div>
+</div>
+
+</body>
+<script src="/static/js/app.js"></script>
+</html>

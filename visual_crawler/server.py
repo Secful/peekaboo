@@ -5,14 +5,18 @@ import json
 import os
 from typing import Optional
 
+# Standard library
+import os
+from pathlib import Path
+
 # Third-party
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Local imports
 from .crawler import APICrawler
-from .dashboard import DASHBOARD_HTML
 from .bedrock_analyzer import BedrockAPIAnalyzer
 
 
@@ -33,10 +37,17 @@ def create_app() -> FastAPI:
     app = FastAPI()
     clients: list[WebSocket] = []
 
+    # Get the path to the static directory
+    static_dir = Path(__file__).parent / "static"
+
+    # Mount static files
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
     @app.get("/", response_class=HTMLResponse)
     async def index():
         """Serve the dashboard HTML."""
-        return DASHBOARD_HTML
+        index_file = static_dir / "index.html"
+        return FileResponse(index_file)
 
     @app.get("/health")
     async def health_check():

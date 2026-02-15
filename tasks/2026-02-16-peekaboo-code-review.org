@@ -1,0 +1,211 @@
+#+STARTUP: overview
+#+TITLE: Peekaboo Visual API Crawler - Code Review
+#+STARTUP: showall
+
+This comprehensive code review identifies critical architectural issues,
+code duplication, and maintainability concerns across the Peekaboo project.
+The review focuses on the problematic dashboard architecture (3,547 lines of
+HTML in a Python variable), massive code duplication between main_flow.py
+and the visual_crawler package, and other code quality issues.
+
+- [ ] 1.0 [[file:main_flow.py][main_flow.py]] :: Legacy monolithic file duplicates entire codebase [5/0]
+  - [ ] 1.1 [CRITICAL - CODE DUPLICATION] This 1,422-line file duplicates
+    almost the entire visual_crawler package (APICrawler, DiscoveredEndpoint,
+    constants, server, dashboard HTML). This creates a maintenance nightmare
+    where bugs must be fixed in two places. Delete this file completely and
+    use the refactored visual_crawler package instead.
+  - [ ] 1.2 [DEPRECATION] If this file must be kept for backward
+    compatibility, add a deprecation warning at the top directing users to
+    use the new entry point, and import everything from visual_crawler
+    instead of duplicating code.
+  - [ ] 1.3 [DOCUMENTATION] The docstring claims this is for "backward
+    compatibility" but there's no migration guide. Add documentation
+    explaining the transition from main_flow.py to the new package structure.
+  - [ ] 1.4 [RISK] Having two implementations means they will drift apart
+    over time. The visual_crawler version has newer features (concurrent
+    crawling, www fallback, API confidence) that main_flow.py lacks,
+    confirming they're already diverging.
+  - [ ] 1.5 [ACTION REQUIRED] Make a decision: either delete main_flow.py
+    entirely OR convert it to a thin wrapper that imports from visual_crawler.
+    The current duplication is unacceptable for production code.
+
+- [ ] 2.0 [[file:visual_crawler/dashboard.py][visual_crawler/dashboard.py]] :: 3,547 lines of HTML/CSS/JS in Python string [6/0]
+  - [ ] 2.1 [CRITICAL - ARCHITECTURE] The entire dashboard UI (HTML, CSS,
+    JavaScript) is stored in a single Python string variable (DASHBOARD_HTML).
+    This makes the frontend completely unmaintainable - no syntax highlighting,
+    no linting, no proper IDE support, difficult to debug, and impossible to
+    test the frontend independently.
+  - [ ] 2.2 [SOLUTION] Extract the HTML into a separate file:
+    visual_crawler/static/dashboard.html. Use Jinja2 templates for dynamic
+    content if needed. Update server.py to serve the file with
+    FileResponse() or Jinja2Templates().
+  - [ ] 2.3 [BETTER SOLUTION] Split into proper frontend structure:
+    static/index.html, static/css/styles.css, static/js/app.js. This enables
+    proper frontend tooling, testing, and development workflow.
+  - [ ] 2.4 [MAINTENANCE BURDEN] Any change to the UI requires editing a
+    Python file and dealing with triple-quoted string escaping. CSS/JS syntax
+    errors aren't caught until runtime. String interpolation makes it fragile.
+  - [ ] 2.5 [PERFORMANCE] The 3,547-line HTML string is loaded into memory
+    on every import. While not a huge issue, serving static files is more
+    efficient and follows web framework best practices.
+  - [ ] 2.6 [TESTING] Cannot unit test the frontend code. Cannot use browser
+    dev tools effectively. Cannot use CSS/JS linters or formatters. This is
+    technical debt that will compound over time.
+
+- [ ] 3.0 [[file:visual_crawler/crawler.py][visual_crawler/crawler.py]] :: Core crawler with duplication and complexity issues [7/0]
+  - [ ] 3.1 [CODE DUPLICATION] Lines 227-265 contain www fallback logic that
+    duplicates URL construction, error handling, and status updates. Extract
+    into a separate method: async def _try_www_fallback(self, page, page_url,
+    nav_error) to reduce complexity and improve testability.
+  - [ ] 3.2 [MISSING ERROR TYPES] The www fallback checks for string
+    substrings like "ERR_CONNECTION_REFUSED" in error messages. This is
+    fragile. Playwright provides specific exception types - use those instead
+    (e.g., playwright.async_api.TimeoutError, Error).
+  - [ ] 3.3 [MAGIC NUMBERS] Many hardcoded values scattered throughout:
+    timeout values (2000ms, 600ms, 800ms), scroll limits (6000px, 400px),
+    element limits ([:3]), truncation sizes (100KB). Extract these to
+    constants.py with descriptive names explaining why these values were
+    chosen.
+  - [ ] 3.4 [PERFORMANCE] The concurrent crawling uses asyncio.gather()
+    (line 168) but there's no rate limiting or throttling. Crawling aggressive
+    sites could trigger DoS protection. Add configurable rate limiting with
+    asyncio.Semaphore.
+  - [ ] 3.5 [ERROR HANDLING] Line 263 has a bare except: pass that silently
+    swallows all exceptions in the www fallback. This could hide serious bugs.
+    At minimum, log the exception. Better yet, catch specific exceptions.
+  - [ ] 3.6 [CODE COMPLEXITY] The _crawl_page method (lines 179-282) is 103
+    lines long and handles navigation, screenshots, scrolling, interaction,
+    link extraction, and error handling. Split into smaller methods with
+    single responsibilities.
+  - [ ] 3.7 [MEMORY LEAK RISK] Screenshots are base64 encoded and sent via
+    WebSocket without size limits. A scan of 100 pages could accumulate
+    50-100MB of screenshot data in memory. Implement screenshot rotation or
+    size limits.
+
+- [ ] 4.0 [[file:visual_crawler/constants.py][visual_crawler/constants.py]] :: Configuration lacks validation [3/0]
+  - [ ] 4.1 [INCONSISTENCY] STATIC_EXTENSIONS includes ".json" which is often
+    used for API responses. This could cause false negatives where JSON APIs
+    are filtered out. Consider moving .json to a separate category or adding
+    content-type checks to override extension-based filtering.
+  - [ ] 4.2 [DOCUMENTATION] ID_PATTERNS regex has a comment about changing
+    token length from 20 to 40 chars "to avoid catching descriptive API path
+    names". This is a critical business logic decision that should be
+    documented with examples of what it fixes and what edge cases remain.
+  - [ ] 4.3 [COMPLETENESS] Missing patterns for other common ID formats:
+    Stripe IDs (str_xxx), AWS resource IDs (i-xxxxxxxxx), base64url-encoded
+    IDs. Consider making ID patterns configurable per-project since different
+    APIs use different ID schemes.
+
+- [ ] 5.0 [[file:visual_crawler/models.py][visual_crawler/models.py]] :: Data model has unused fields [2/0]
+  - [ ] 5.1 [UNUSED FIELDS] DiscoveredEndpoint has request_body,
+    response_body, request_headers, response_headers, and llm_description
+    fields that are never populated in crawler.py. Either implement the
+    body/header capture or remove these fields to avoid confusion about
+    what data is actually available.
+  - [ ] 5.2 [MISSING VALIDATION] No validation on field values. For example,
+    method could be any string, but should be limited to valid HTTP methods.
+    response_status could be any int, but should be 100-599. Add validation
+    using Pydantic instead of plain dataclass if validation is needed.
+
+- [ ] 6.0 [[file:visual_crawler/server.py][visual_crawler/server.py]] :: WebSocket handling lacks robustness [4/0]
+  - [ ] 6.1 [ERROR HANDLING] Lines 163-168 have nested try/except with a
+    bare except: pass. If sending an error message fails, the exception is
+    completely silenced. At minimum log the failure so developers can debug
+    client disconnection issues.
+  - [ ] 6.2 [RESOURCE LEAK] The clients list (line 34) grows indefinitely.
+    Dead clients are removed only when broadcast fails, but if a client
+    connects and never receives broadcasts, it stays in the list forever.
+    Add heartbeat/ping mechanism or timeout disconnection.
+  - [ ] 6.3 [SECURITY] Proxy credentials are read from environment variables
+    (lines 122-125) and printed to stdout (line 135). In production this
+    could leak credentials to logs. Use structured logging with credential
+    redaction instead of print().
+  - [ ] 6.4 [CONCURRENCY BUG] The clients list is modified during broadcast
+    iteration (lines 87-96). While the dead list mitigates race conditions,
+    this is still fragile. Use asyncio.Lock to protect the clients list or
+    use asyncio.Queue for client management.
+
+- [ ] 7.0 [[file:visual_crawler/bedrock_analyzer.py][visual_crawler/bedrock_analyzer.py]] :: AWS integration has hardcoded values [3/0]
+  - [ ] 7.1 [HARDCODED MODEL] The model ID is hardcoded in __init__ (line
+    81). When AWS releases newer Claude versions, code must be changed.
+    Make this configurable via environment variable with the current value
+    as default.
+  - [ ] 7.2 [ERROR HANDLING] Line 159 catches all exceptions and returns
+    a generic error dict. This makes debugging AWS IAM permission issues
+    extremely difficult. Catch specific boto3 exceptions (ClientError,
+    NoCredentialsError) and return appropriate error messages.
+  - [ ] 7.3 [SYNC IN ASYNC] This class has an async method
+    generate_api_description() but calls the synchronous boto3 client
+    (line 146). This blocks the event loop. Use aioboto3 for true async
+    AWS calls, or run the synchronous call in an executor with
+    asyncio.to_thread().
+
+- [ ] 8.0 [[file:main.py][main.py]] :: Entry point wrapper [1/0]
+  - [ ] 8.1 [DOCUMENTATION] This 11-line file claims to maintain "backward
+    compatibility with original main_flow.py usage" but the interface is
+    completely different (main_flow.py takes command-line arguments, this
+    imports cli.main which also takes arguments). Clarify what compatibility
+    is being maintained and add a docstring explaining the migration path.
+
+- [ ] 9.0 [[file:visual_crawler/cli.py][visual_crawler/cli.py]] :: CLI entry point [2/0]
+  - [ ] 9.1 [LIMITED OPTIONS] Only exposes --port flag. The crawler supports
+    many more options (max_pages, max_depth, timeout, concurrent_pages,
+    fast_mode, etc.) that can only be configured via the web UI. Add CLI
+    flags for power users who want to script scans without manual UI
+    interaction.
+  - [ ] 9.2 [AUTO-OPEN BROWSER] Line 27 automatically opens a browser with
+    webbrowser.open(). This is inconvenient in headless/server environments,
+    CI/CD pipelines, or when running multiple instances. Add a --no-browser
+    flag to disable this behavior.
+
+- [ ] 10.0 PROJECT STRUCTURE :: Organization and naming issues [4/0]
+  - [ ] 10.1 [INCONSISTENT NAMING] The project is called "Peekaboo" in the
+    README but the package is named "visual_crawler". Pick one name and use
+    it consistently. Suggestion: Rename visual_crawler to peekaboo to match
+    the branding.
+  - [ ] 10.2 [MISSING TESTS] No test directory found. A crawler that parses
+    HTML, classifies APIs, templatizes paths, and handles concurrent requests
+    absolutely needs unit tests. Add tests/ directory with pytest-based tests
+    for core logic.
+  - [ ] 10.3 [MISSING TYPE HINTS] While some functions have type hints
+    (models.py), many others don't (crawler.py helper functions). Add
+    complete type hints and run mypy in CI to catch type errors early.
+  - [ ] 10.4 [NO CONFIGURATION FILE] All configuration is either hardcoded
+    or passed as parameters. Add support for a config file (peekaboo.yaml
+    or .peekaboo.toml) so users can save scan configurations and reuse them
+    across multiple scans.
+
+- [ ] 11.0 SECURITY CONCERNS :: Potential security issues [5/0]
+  - [ ] 11.1 [SSRF RISK] The crawler accepts user-supplied domains without
+    validation. A malicious user could scan internal network resources
+    (localhost, 192.168.x.x, etc.). Add allowlist/blocklist for IP ranges
+    and reject obviously internal hosts.
+  - [ ] 11.2 [DOS RISK] No rate limiting on the number of concurrent scans.
+    A malicious user could start 100 scans simultaneously and exhaust server
+    resources. Add per-IP rate limiting or scan queue with maximum concurrent
+    scans.
+  - [ ] 11.3 [MEMORY EXHAUSTION] Large web applications could queue thousands
+    of URLs. The queue list (crawler.py line 175) grows unbounded. Add
+    maximum queue size limit to prevent memory exhaustion attacks.
+  - [ ] 11.4 [OPEN REDIRECT] The screenshot HTML includes user-supplied URLs
+    without escaping (dashboard HTML line references). While escHtml() is
+    used in some places, verify all user input is properly escaped to prevent
+    XSS in the dashboard.
+  - [ ] 11.5 [CREDENTIALS EXPOSURE] Proxy credentials in environment
+    variables could be logged or exposed in error messages. Use credential
+    management best practices (AWS Secrets Manager, HashiCorp Vault) for
+    production deployments.
+
+- [ ] 12.0 PERFORMANCE OPTIMIZATIONS :: Opportunities for improvement [3/0]
+  - [ ] 12.1 [DUPLICATE WORK] Every response is checked against
+    STATIC_EXTENSIONS with a linear search. With 30+ extensions and
+    potentially thousands of requests, this adds up. Convert to a set lookup
+    or use a trie for O(1) lookups.
+  - [ ] 12.2 [REGEX COMPILATION] API_PATH_PATTERNS are compiled at module
+    load (good!) but _classify() iterates through all patterns for every
+    request. Consider combining into a single regex with alternation for
+    faster matching, or short-circuit on first match.
+  - [ ] 12.3 [SCREENSHOT OPTIMIZATION] Screenshots are JPEG quality=60 but
+    still base64 encoded which inflates size by 33%. Consider using WebP
+    format for better compression or implement screenshot downsampling to
+    reduce resolution before encoding.

@@ -24,6 +24,90 @@ from .constants import (
 )
 
 
+def _templatize(path):
+    """Replace ID-like path segments with placeholders."""
+    parts = path.strip("/").split("/")
+    result = []
+    for part in parts:
+        replaced = False
+        for pattern, placeholder in ID_PATTERNS:
+            if pattern.fullmatch(part):
+                result.append(placeholder)
+                replaced = True
+                break
+        if not replaced:
+            result.append(part)
+    return "/" + "/".join(result) if result else "/"
+
+
+def _is_static(req_url):
+    """Check if a URL points to a static file."""
+    # Parse URL and get path without query parameters
+    parsed_path = urlparse(req_url).path.lower()
+    # Check if it ends with any static extension
+    return any(parsed_path.endswith(ext) for ext in STATIC_EXTENSIONS)
+
+
+async def _auto_scroll(page: Page):
+    """Automatically scroll the page to trigger lazy loading."""
+    try:
+        await page.evaluate("""async () => {
+            await new Promise(r => {
+                let t = 0; const s = 400;
+                const i = setInterval(() => {
+                    window.scrollBy(0, s); t += s;
+                    if (t >= document.body.scrollHeight || t > 6000) { clearInterval(i); r(); }
+                }, 150);
+            });
+        }""")
+        await page.wait_for_timeout(800)
+    except Exception:
+        pass
+
+
+async def _interact(page: Page):
+    """Click on interactive elements to trigger API calls."""
+    for sel in ["button:visible", "[role='tab']:visible"]:
+        try:
+            elements = await page.query_selector_all(sel)
+            for el in elements[:3]:
+                try:
+                    await el.click(timeout=2000)
+                    await page.wait_for_timeout(600)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+def _classify(req_url, method, resource_type, response) -> str:
+    """Classify whether a URL is an API endpoint."""
+    parsed = urlparse(req_url)
+    path = parsed.path
+
+    # Non-GET methods are always APIs
+    if method not in ("GET", "HEAD", "OPTIONS"):
+        return f"{method} request"
+
+    # Check Content-Type for JSON/XML responses (regardless of resource type)
+    resp_ct = response.headers.get("content-type", "").lower()
+    if any(ct in resp_ct for ct in API_CONTENT_TYPES):
+        if resource_type in ("xhr", "fetch"):
+            return "XHR/fetch JSON/XML response"
+        return "JSON/XML response"
+
+    # Check API path patterns
+    for pattern in API_PATH_PATTERNS:
+        if pattern.search(path):
+            return f"API path pattern"
+
+    # XHR/fetch without JSON is still likely an API
+    if resource_type in ("xhr", "fetch"):
+        return "XHR/fetch request"
+
+    return ""
+
+
 class APICrawler:
     """Crawler that discovers API endpoints by monitoring network traffic."""
 
@@ -31,6 +115,7 @@ class APICrawler:
                  timeout: int = 30000, include_subdomains: bool = True,
                  api_filter: str = "all", proxy_config: Optional[dict] = None,
                  concurrent_pages: int = 5, fast_mode: bool = False):
+        self.context = None
         self.domain = domain.lower().replace("https://", "").replace("http://", "").rstrip("/")
         self.max_pages = max_pages
         self.max_depth = max_depth
@@ -274,8 +359,8 @@ class APICrawler:
 
             # Skip auto-scroll and interactions in fast mode
             if not self.fast_mode:
-                await self._auto_scroll(page)
-                await self._interact(page)
+                await _auto_scroll(page)
+                await _interact(page)
 
             await self._extract_api_hints_from_source(page, page_url)
 
@@ -316,7 +401,7 @@ class APICrawler:
                 return
 
             # Filter out static files by extension (even if in /api/ paths)
-            if self._is_static(req_url):
+            if _is_static(req_url):
                 return
 
             # Check response content-type for images/media
@@ -324,7 +409,7 @@ class APICrawler:
             if any(ct in content_type for ct in ["image/", "font/", "video/", "audio/"]):
                 return
 
-            reason = self._classify(req_url, method, resource_type, response)
+            reason = _classify(req_url, method, resource_type, response)
             if not reason:
                 return
 
@@ -342,7 +427,7 @@ class APICrawler:
             elif self.api_filter == "external" and is_target_domain:
                 return  # Skip target domain APIs
 
-            template_path = self._templatize(parsed.path)
+            template_path = _templatize(parsed.path)
             sig = f"{method}|{host}|{template_path}"
             if sig in self.seen_signatures:
                 return
@@ -417,85 +502,6 @@ class APICrawler:
         except Exception:
             pass
 
-    def _classify(self, req_url, method, resource_type, response) -> str:
-        """Classify whether a URL is an API endpoint."""
-        parsed = urlparse(req_url)
-        path = parsed.path
-
-        # Non-GET methods are always APIs
-        if method not in ("GET", "HEAD", "OPTIONS"):
-            return f"{method} request"
-
-        # Check Content-Type for JSON/XML responses (regardless of resource type)
-        resp_ct = response.headers.get("content-type", "").lower()
-        if any(ct in resp_ct for ct in API_CONTENT_TYPES):
-            if resource_type in ("xhr", "fetch"):
-                return "XHR/fetch JSON/XML response"
-            return "JSON/XML response"
-
-        # Check API path patterns
-        for pattern in API_PATH_PATTERNS:
-            if pattern.search(path):
-                return f"API path pattern"
-
-        # XHR/fetch without JSON is still likely an API
-        if resource_type in ("xhr", "fetch"):
-            return "XHR/fetch request"
-
-        return ""
-
-    def _is_static(self, req_url):
-        """Check if a URL points to a static file."""
-        # Parse URL and get path without query parameters
-        parsed_path = urlparse(req_url).path.lower()
-        # Check if it ends with any static extension
-        return any(parsed_path.endswith(ext) for ext in STATIC_EXTENSIONS)
-
-    def _templatize(self, path):
-        """Replace ID-like path segments with placeholders."""
-        parts = path.strip("/").split("/")
-        result = []
-        for part in parts:
-            replaced = False
-            for pattern, placeholder in ID_PATTERNS:
-                if pattern.fullmatch(part):
-                    result.append(placeholder)
-                    replaced = True
-                    break
-            if not replaced:
-                result.append(part)
-        return "/" + "/".join(result) if result else "/"
-
-    async def _auto_scroll(self, page: Page):
-        """Automatically scroll the page to trigger lazy loading."""
-        try:
-            await page.evaluate("""async () => {
-                await new Promise(r => {
-                    let t = 0; const s = 400;
-                    const i = setInterval(() => {
-                        window.scrollBy(0, s); t += s;
-                        if (t >= document.body.scrollHeight || t > 6000) { clearInterval(i); r(); }
-                    }, 150);
-                });
-            }""")
-            await page.wait_for_timeout(800)
-        except Exception:
-            pass
-
-    async def _interact(self, page: Page):
-        """Click on interactive elements to trigger API calls."""
-        for sel in ["button:visible", "[role='tab']:visible"]:
-            try:
-                elements = await page.query_selector_all(sel)
-                for el in elements[:3]:
-                    try:
-                        await el.click(timeout=2000)
-                        await page.wait_for_timeout(600)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
     async def _extract_links(self, page: Page) -> list[str]:
         """Extract links from the page for further crawling."""
         links = set()
@@ -521,7 +527,7 @@ class APICrawler:
                     raw = f"https://{self.domain}{raw}"
 
                 # Skip static files (images, fonts, etc.)
-                if self._is_static(raw):
+                if _is_static(raw):
                     continue
 
                 parsed = urlparse(raw)
@@ -542,7 +548,7 @@ class APICrawler:
                 line_number = html[:match.start()].count('\n') + 1
                 char_position = match.start() - html[:match.start()].rfind('\n')
 
-                template_path = self._templatize(parsed.path)
+                template_path = _templatize(parsed.path)
                 sig = f"GET*|{host}|{template_path}"
                 if sig not in self.seen_signatures:
                     self.seen_signatures.add(sig)
