@@ -2253,48 +2253,72 @@ function exportSummaryToHTML() {
     .header {
       text-align: center;
       margin-bottom: 3rem;
-      padding-bottom: 2rem;
-      border-bottom: 2px solid #2a2f3f;
+      padding: 2.5rem 2rem;
+      background: linear-gradient(135deg, rgba(74, 29, 150, 0.15), rgba(0, 255, 136, 0.05));
+      border-radius: 12px;
+      border: 1px solid #2a2f3f;
     }
 
     .header .logo-container {
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 1.5rem;
+      margin-bottom: 2rem;
+      width: 100%;
     }
 
     .header .salt-logo {
-      height: 3rem;
+      height: 2.5rem;
       width: auto;
+      min-width: 12rem;
       color: #00ff88;
     }
 
-    .header h1 {
-      font-size: 2.5rem;
-      background: linear-gradient(135deg, #00ff88, #4a1d96);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    .header .report-title {
+      font-size: 2rem;
+      color: #ffffff;
       margin-bottom: 0.5rem;
-      font-weight: 800;
+      font-weight: 700;
+      letter-spacing: -0.02em;
     }
 
-    .header .subtitle {
-      font-size: 1rem;
+    .header .report-subtitle {
+      font-size: 0.95rem;
       color: #8b92a7;
-      margin-bottom: 1.5rem;
+      margin-bottom: 2rem;
+      font-weight: 500;
+    }
+
+    .header .target-info {
+      display: inline-block;
+      background: rgba(0, 255, 136, 0.1);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+      border-radius: 8px;
+      padding: 1rem 2rem;
+      margin: 1rem 0;
+    }
+
+    .header .target-label {
+      font-size: 0.75rem;
+      color: #8b92a7;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
     }
 
     .header .target {
       font-size: 1.5rem;
       color: #00ff88;
       font-weight: 600;
-      margin: 1rem 0;
+      font-family: 'JetBrains Mono', monospace;
     }
 
     .header .meta {
-      color: #8b92a7;
-      font-size: 0.95rem;
+      color: #6b7280;
+      font-size: 0.85rem;
+      margin-top: 1.5rem;
+      font-style: italic;
     }
 
     .section {
@@ -2851,9 +2875,15 @@ function exportSummaryToHTML() {
           <path d="m150.39 5.52h-13.58v2.9h4.99v23.57h3.57v-23.57h5.02z" fill="#fff"></path>
         </svg>
       </div>
-      <h1>👀 Peekaboo API Discovery Report</h1>
-      <div class="subtitle">Revealing Hidden APIs in Plain Sight</div>
-      <div class="target">${targetDomain}</div>
+
+      <div class="report-title">👀 Peekaboo API Discovery Report</div>
+      <div class="report-subtitle">Revealing Hidden APIs in Plain Sight</div>
+
+      <div class="target-info">
+        <div class="target-label">Target Domain</div>
+        <div class="target">${targetDomain}</div>
+      </div>
+
       <div class="meta">Generated on ${scanDate}</div>
     </div>
 
