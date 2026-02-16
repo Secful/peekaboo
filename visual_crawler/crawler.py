@@ -3,11 +3,16 @@
 # Standard library
 import asyncio
 import base64
+import logging
+import random
 import re
 from dataclasses import asdict
 from datetime import datetime
 from typing import Optional, Callable, Awaitable
 from urllib.parse import urlparse
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Third-party
 from playwright.async_api import async_playwright, Page, Response
@@ -16,12 +21,70 @@ from playwright.async_api import async_playwright, Page, Response
 from .models import DiscoveredEndpoint
 from .constants import (
     STATIC_EXTENSIONS,
+    API_SCRIPT_EXTENSIONS,
     API_PATH_PATTERNS,
     API_CONTENT_TYPES,
     DEFINITE_API_CONTENT_TYPES,
     MAYBE_API_CONTENT_TYPES,
     ID_PATTERNS,
+    USER_AGENTS,
+    VIEWPORTS,
+    CAPTCHA_INDICATORS,
+    CLOUDFLARE_INDICATORS,
+    ACCESS_DENIED_INDICATORS,
 )
+
+
+class ProxyPool:
+    """Manages a pool of BrightData proxies for rotation."""
+
+    def __init__(self, proxies: list[dict]) -> None:
+        """Initialize proxy pool.
+
+        Args:
+            proxies: List of proxy dicts with keys: server, username, password
+        """
+        self.proxies = proxies if proxies else []
+        self.current_idx = 0
+        self.failed_proxies: set[int] = set()
+        self.request_count = 0
+
+    def get_next_proxy(self) -> Optional[dict]:
+        """Get next proxy in rotation."""
+        if not self.proxies:
+            return None
+
+        if len(self.failed_proxies) >= len(self.proxies):
+            logger.warning("All proxies have failed")
+            return None
+
+        # Try to find a working proxy
+        attempts = 0
+        while attempts < len(self.proxies):
+            proxy = self.proxies[self.current_idx]
+            proxy_idx = self.current_idx
+            self.current_idx = (self.current_idx + 1) % len(self.proxies)
+            attempts += 1
+
+            if proxy_idx not in self.failed_proxies:
+                self.request_count += 1
+                return proxy
+
+        return None
+
+    def mark_failed(self, proxy: dict) -> None:
+        """Mark a proxy as failed."""
+        try:
+            idx = self.proxies.index(proxy)
+            self.failed_proxies.add(idx)
+            logger.warning(f"Marked proxy as failed: {proxy.get('server', 'unknown')}")
+        except ValueError:
+            pass
+
+    def reset_failures(self) -> None:
+        """Reset failed proxies (give them another chance)."""
+        self.failed_proxies.clear()
+        logger.info("Reset all proxy failures")
 
 
 def _templatize(path: str) -> str:
@@ -80,6 +143,112 @@ async def _interact(page: Page):
             pass
 
 
+async def _dismiss_floating_dialogs(page: Page):
+    """Attempt to dismiss any floating dialogs, modals, overlays, and popups."""
+    try:
+        # Generic dismiss button text patterns (case-insensitive, multiple languages)
+        dismiss_patterns = [
+            # English
+            "OK", "ok", "Close", "close", "Accept", "accept", "Agree", "agree",
+            "Continue", "continue", "Got it", "got it", "I understand", "Dismiss",
+            "dismiss", "Allow", "allow", "Yes", "yes", "Confirm", "confirm",
+            "No thanks", "no thanks", "Maybe later", "maybe later", "Not now", "not now",
+            # French
+            "Accepter", "accepter", "D'accord", "d'accord", "Fermer", "fermer",
+            "Continuer", "continuer", "Oui", "oui", "Compris", "compris",
+            # Spanish
+            "Aceptar", "aceptar", "Cerrar", "cerrar", "Continuar", "continuar",
+            "Entendido", "entendido", "Sí", "sí", "De acuerdo", "de acuerdo",
+            # German
+            "Akzeptieren", "akzeptieren", "Schließen", "schließen", "Weiter", "weiter",
+            "Verstanden", "verstanden", "Ja", "ja", "Einverstanden", "einverstanden",
+            # Italian
+            "Accetta", "accetta", "Chiudi", "chiudi", "Continua", "continua",
+            "Ho capito", "ho capito", "Sì", "sì", "D'accordo", "d'accordo",
+        ]
+
+        # Strategy 1: Try text-based button matching
+        for pattern in dismiss_patterns:
+            try:
+                selectors = [
+                    f"button:has-text('{pattern}')",
+                    f"a:has-text('{pattern}')",
+                    f"[role='button']:has-text('{pattern}')",
+                    f"div[onclick]:has-text('{pattern}')",
+                    f"span[onclick]:has-text('{pattern}')",
+                ]
+
+                for selector in selectors:
+                    try:
+                        element = page.locator(selector).first
+                        if await element.is_visible(timeout=300):
+                            await element.click(timeout=800)
+                            await page.wait_for_timeout(400)
+                            logger.debug(f"Dismissed dialog with text pattern: {pattern}")
+                            return
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+
+        # Strategy 2: Try common close button symbols and classes
+        close_selectors = [
+            # Close button symbols
+            "button:has-text('×')",
+            "button:has-text('✕')",
+            "a:has-text('×')",
+            "[aria-label*='close' i]",
+            "[aria-label*='dismiss' i]",
+            "[title*='close' i]",
+            # Common modal/dialog close buttons
+            ".modal button.close",
+            ".modal .close-button",
+            ".modal-close",
+            ".dialog-close",
+            ".popup-close",
+            ".overlay-close",
+            "[class*='close'][class*='button']",
+            "[class*='dismiss'][class*='button']",
+            # Cookie-specific
+            ".cookie-consent button",
+            ".cookie-banner button",
+            "[class*='cookie'] button[class*='accept']",
+            "#cookie-accept",
+            "#accept-cookies",
+            # Modal/dialog role-based
+            "[role='dialog'] button",
+            "[role='alertdialog'] button",
+            # Generic modal classes
+            ".modal-footer button",
+            ".dialog-footer button",
+            "[class*='modal'] button[class*='primary']",
+            "[class*='modal'] button[class*='accept']",
+        ]
+
+        for selector in close_selectors:
+            try:
+                element = page.locator(selector).first
+                if await element.is_visible(timeout=300):
+                    await element.click(timeout=800)
+                    await page.wait_for_timeout(400)
+                    logger.debug(f"Dismissed dialog using selector: {selector}")
+                    return
+            except Exception:
+                continue
+
+        # Strategy 3: Try pressing Escape key to close modals
+        try:
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(300)
+            logger.debug("Attempted to dismiss dialog with Escape key")
+        except Exception:
+            pass
+
+    except Exception:
+        # Silently fail - not all pages have dialogs
+        pass
+
+
 def _classify(req_url: str, method: str, resource_type: str, response: Response) -> str:
     """Classify whether a URL is an API endpoint."""
     parsed = urlparse(req_url)
@@ -95,6 +264,12 @@ def _classify(req_url: str, method: str, resource_type: str, response: Response)
         if resource_type in ("xhr", "fetch"):
             return "XHR/fetch JSON/XML response"
         return "JSON/XML response"
+
+    # Check for server-side script extensions (PHP, ASP, JSP, etc.)
+    path_lower = path.lower()
+    for ext in API_SCRIPT_EXTENSIONS:
+        if path_lower.endswith(ext):
+            return f"Server-side script ({ext})"
 
     # Check API path patterns
     for pattern in API_PATH_PATTERNS:
@@ -114,8 +289,16 @@ class APICrawler:
     def __init__(self, domain: str, max_pages: int = 50, max_depth: int = 3,
                  timeout: int = 30000, include_subdomains: bool = True,
                  api_filter: str = "all", proxy_config: Optional[dict] = None,
-                 concurrent_pages: int = 5, fast_mode: bool = False) -> None:
+                 concurrent_pages: int = 5, fast_mode: bool = False,
+                 scan_id: Optional[int] = None,
+                 stealth_mode: bool = True,
+                 min_delay: float = 2.0,
+                 max_delay: float = 5.0,
+                 proxy_pool: Optional[ProxyPool] = None,
+                 max_retries: int = 3,
+                 rotate_identity: bool = True) -> None:
         self.context = None
+        self.browser = None
         self.domain = domain.lower().replace("https://", "").replace("http://", "").rstrip("/")
         self.max_pages = max_pages
         self.max_depth = max_depth
@@ -125,6 +308,22 @@ class APICrawler:
         self.proxy_config = proxy_config
         self.concurrent_pages = concurrent_pages  # Number of pages to crawl in parallel
         self.fast_mode = fast_mode  # Skip screenshots and interactions for speed
+        self.scan_id = scan_id  # Identifier for this scan (for multi-scan environments)
+
+        # Stealth and anti-detection settings
+        self.stealth_mode = stealth_mode
+        self.min_delay = min_delay
+        self.max_delay = max_delay
+        self.proxy_pool = proxy_pool
+        self.max_retries = max_retries
+        self.rotate_identity = rotate_identity
+
+        # State tracking
+        self.pages_since_rotation = 0
+        self.proxy_rotation_threshold = 10  # Rotate proxy every N pages
+        self.blocking_detected_count = 0
+        self.current_user_agent: Optional[str] = None
+        self.current_viewport: Optional[dict] = None
 
         self.visited_pages: set[str] = set()
         self.endpoints: list[DiscoveredEndpoint] = []
@@ -147,13 +346,267 @@ class APICrawler:
         if self._on_event:
             await self._on_event({"type": event_type, **data})
 
+    def stop(self) -> None:
+        """Signal the crawler to stop after the current batch finishes."""
+        self.queue.clear()
+        self._stopped = True
+
+    def _get_random_user_agent(self) -> str:
+        """Get a random user agent for anti-detection."""
+        return random.choice(USER_AGENTS)
+
+    def _get_random_viewport(self) -> dict:
+        """Get a random viewport size for anti-detection."""
+        return random.choice(VIEWPORTS)
+
+    async def _detect_blocking(self, page: Page, response: Optional[Response]) -> dict:
+        """Detect if the crawler is being blocked.
+
+        Returns:
+            Dict with blocking indicators: {status_code, captcha, cloudflare, access_denied}
+        """
+        blocking_indicators = {
+            'status_code': response and response.status in [403, 429, 503],
+            'captcha': False,
+            'cloudflare': False,
+            'access_denied': False,
+        }
+
+        try:
+            content = await page.content()
+            content_lower = content.lower()
+
+            # Check for CAPTCHA
+            if any(term in content_lower for term in CAPTCHA_INDICATORS):
+                blocking_indicators['captcha'] = True
+
+            # Check for Cloudflare
+            if any(term in content_lower for term in CLOUDFLARE_INDICATORS):
+                blocking_indicators['cloudflare'] = True
+
+            # Check for access denied messages
+            if any(term in content_lower for term in ACCESS_DENIED_INDICATORS):
+                blocking_indicators['access_denied'] = True
+
+        except Exception as e:
+            logger.debug(f"Error detecting blocking: {e}")
+
+        return blocking_indicators
+
+    async def _handle_blocking(self, blocking_indicators: dict, page_url: str) -> None:
+        """Handle detected blocking."""
+        blocking_types = [k for k, v in blocking_indicators.items() if v]
+
+        if not blocking_types:
+            return
+
+        self.blocking_detected_count += 1
+        blocking_str = ', '.join(blocking_types)
+        logger.warning(f"Blocking detected on {page_url}: {blocking_str}")
+
+        await self._emit("status", {
+            "message": f"⚠️ Blocking detected: {blocking_str}"
+        })
+
+        if blocking_indicators['captcha']:
+            # CAPTCHA detected - significant delay
+            await self._emit("status", {
+                "message": "🤖 CAPTCHA detected - waiting 30s..."
+            })
+            await asyncio.sleep(30)
+
+        elif blocking_indicators['status_code']:
+            # Rate limit or forbidden - exponential backoff
+            backoff = min(10 * (2 ** (self.blocking_detected_count - 1)), 120)
+            await self._emit("status", {
+                "message": f"⏸️ Rate limited - backing off {backoff}s..."
+            })
+            await asyncio.sleep(backoff)
+
+        # Try rotating identity after blocking
+        if self.rotate_identity and self.blocking_detected_count >= 2:
+            await self._rotate_browser_identity()
+
+    def _get_context_options(self) -> dict:
+        """Get browser context options with current settings."""
+        # Use stored user agent and viewport if available, otherwise randomize
+        if self.stealth_mode and self.rotate_identity:
+            if not self.current_user_agent:
+                self.current_user_agent = self._get_random_user_agent()
+            if not self.current_viewport:
+                self.current_viewport = self._get_random_viewport()
+        else:
+            # Default fixed values
+            if not self.current_user_agent:
+                self.current_user_agent = USER_AGENTS[1]  # macOS Chrome
+            if not self.current_viewport:
+                self.current_viewport = VIEWPORTS[0]  # 1920x1080
+
+        context_options = {
+            "user_agent": self.current_user_agent,
+            "viewport": self.current_viewport,
+            "ignore_https_errors": True,
+            "extra_http_headers": {
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Cache-Control": "max-age=0",
+            },
+        }
+
+        # Add proxy if configured
+        if self.proxy_config:
+            context_options["proxy"] = self.proxy_config
+
+        return context_options
+
+    async def _rotate_browser_identity(self) -> None:
+        """Rotate browser identity (user agent, viewport, proxy)."""
+        if not self.browser:
+            return
+
+        try:
+            # Get new identity
+            self.current_user_agent = self._get_random_user_agent()
+            self.current_viewport = self._get_random_viewport()
+
+            # Try to get new proxy if pool is available
+            if self.proxy_pool:
+                new_proxy = self.proxy_pool.get_next_proxy()
+                if new_proxy:
+                    self.proxy_config = new_proxy
+                    logger.info(f"Rotated to proxy: {new_proxy.get('server', 'unknown')}")
+
+            # Close old context
+            if self.context:
+                await self.context.close()
+
+            # Create new context with new identity
+            context_options = self._get_context_options()
+            self.context = await self.browser.new_context(**context_options)
+
+            logger.info(f"Rotated identity: UA={self.current_user_agent[:50]}..., "
+                       f"Viewport={self.current_viewport['width']}x{self.current_viewport['height']}")
+
+            await self._emit("status", {
+                "message": "🔄 Rotated browser identity"
+            })
+
+            # Reset counters
+            self.pages_since_rotation = 0
+            self.blocking_detected_count = 0
+
+        except Exception as e:
+            logger.error(f"Failed to rotate identity: {e}")
+
+    async def _add_stealth_scripts(self, page: Page) -> None:
+        """Add enhanced stealth scripts to mask automation."""
+        if not self.stealth_mode:
+            return
+
+        await page.add_init_script("""
+            // Remove webdriver flag
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+
+            // Mock plugins and languages
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5].map(() => ({
+                    name: 'Chrome PDF Plugin',
+                    description: 'Portable Document Format',
+                    filename: 'internal-pdf-viewer'
+                }))
+            });
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+
+            // Mock chrome property
+            window.chrome = {
+                runtime: {},
+                loadTimes: function() {},
+                csi: function() {},
+                app: {}
+            };
+
+            // Mock permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({state: Notification.permission}) :
+                    originalQuery(parameters)
+            );
+
+            // Randomize canvas fingerprint
+            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function(type) {
+                const shift = Math.floor(Math.random() * 5) - 2;
+                const context = this.getContext('2d');
+                if (context) {
+                    const imageData = context.getImageData(0, 0, this.width, this.height);
+                    for (let i = 0; i < imageData.data.length; i += 4) {
+                        imageData.data[i] = Math.min(255, Math.max(0, imageData.data[i] + shift));
+                    }
+                    context.putImageData(imageData, 0, 0);
+                }
+                return originalToDataURL.apply(this, arguments);
+            };
+
+            // Mock WebGL vendor and renderer
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                // UNMASKED_VENDOR_WEBGL
+                if (parameter === 37445) {
+                    return 'Intel Inc.';
+                }
+                // UNMASKED_RENDERER_WEBGL
+                if (parameter === 37446) {
+                    return 'Intel Iris OpenGL Engine';
+                }
+                return getParameter.apply(this, arguments);
+            };
+
+            // Mock battery API to appear more realistic
+            if (navigator.getBattery) {
+                navigator.getBattery = () => Promise.resolve({
+                    charging: true,
+                    chargingTime: 0,
+                    dischargingTime: Infinity,
+                    level: 1.0,
+                    addEventListener: () => {},
+                    removeEventListener: () => {}
+                });
+            }
+
+            // Override toString to hide proxy behavior
+            HTMLIFrameElement.prototype.contentWindow;
+            const originalToString = Function.prototype.toString;
+            Function.prototype.toString = function() {
+                if (this === navigator.permissions.query) {
+                    return 'function query() { [native code] }';
+                }
+                return originalToString.apply(this, arguments);
+            };
+        """)
+
     async def crawl(self):
         """Start the crawling process."""
-        await self._emit("status", {"message": f"Starting scan of {self.domain}..."})
+        self._stopped = False
+
+        # Emit initial status
+        status_msg = f"Starting scan of {self.domain}..."
+        if self.stealth_mode:
+            status_msg += " (stealth mode enabled)"
+        if self.proxy_pool:
+            status_msg += f" with {len(self.proxy_pool.proxies)} proxies"
+        await self._emit("status", {"message": status_msg})
 
         async with async_playwright() as p:
             # Use new headless mode (harder to detect) with stealth args
-            browser = await p.chromium.launch(
+            self.browser = await p.chromium.launch(
                 headless=True,
                 args=[
                     '--disable-blink-features=AutomationControlled',
@@ -165,38 +618,25 @@ class APICrawler:
                 ]
             )
 
-            context_options = {
-                "user_agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-                "viewport": {"width": 1920, "height": 1080},
-                "ignore_https_errors": True,
-                "extra_http_headers": {
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Connection": "keep-alive",
-                    "Upgrade-Insecure-Requests": "1",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Sec-Fetch-User": "?1",
-                    "Cache-Control": "max-age=0",
-                },
-            }
+            # Get context options with randomization if stealth mode is enabled
+            context_options = self._get_context_options()
 
-            # Add proxy configuration if provided
+            # Log proxy usage
             if self.proxy_config:
-                try:
-                    context_options["proxy"] = self.proxy_config
-                    print(f"[DEBUG] Proxy configured: {self.proxy_config.get('server', 'unknown')}")
-                except Exception as e:
-                    print(f"[WARNING] Failed to configure proxy: {e}")
-                    await self._emit("status", {"message": f"Proxy configuration failed: {str(e)}"})
+                logger.warning(f"Playwright using proxy: {self.proxy_config.get('server', 'unknown')}")
+                await self._emit("status", {
+                    "message": f"🔒 Using proxy: {self.proxy_config.get('server', 'unknown')}"
+                })
 
-            self.context = await browser.new_context(**context_options)
+            self.context = await self.browser.new_context(**context_options)
+
+            # Log identity info
+            if self.stealth_mode:
+                logger.info(f"Browser identity: UA={self.current_user_agent[:50]}..., "
+                           f"Viewport={self.current_viewport['width']}x{self.current_viewport['height']}")
+                await self._emit("status", {
+                    "message": f"🎭 Identity: {self.current_viewport['width']}x{self.current_viewport['height']}"
+                })
 
             start_url = f"https://{self.domain}"
             self._start_url = start_url
@@ -204,7 +644,12 @@ class APICrawler:
 
             # Process pages with controlled concurrency
             # Always process full queue, but only discover new pages during first max_pages
-            while self.queue:
+            while self.queue and not self._stopped:
+                # Check if we need to rotate identity (based on pages crawled)
+                if (self.rotate_identity and self.proxy_pool and
+                    self.pages_since_rotation >= self.proxy_rotation_threshold):
+                    await self._rotate_browser_identity()
+
                 # Get batch of pages to crawl
                 batch = []
                 while self.queue and len(batch) < self.concurrent_pages:
@@ -212,15 +657,25 @@ class APICrawler:
                     if page_url not in self.visited_pages and depth <= self.max_depth:
                         batch.append((page_url, depth))
 
+                logger.debug(f"Queue size: {len(self.queue)}, Visited: {len(self.visited_pages)}, Batch: {len(batch)}")
+
                 if batch:
+                    # Add delay between batches if stealth mode is enabled
+                    if self.stealth_mode and len(self.visited_pages) > 0:
+                        delay = random.uniform(self.min_delay, self.max_delay)
+                        logger.debug(f"Stealth delay: {delay:.2f}s before next batch")
+                        await asyncio.sleep(delay)
+
                     # Crawl batch in parallel with per-page timeout (2x page timeout)
                     max_time_per_page = (self.timeout * 2) // 1000  # Convert ms to seconds, double it
-                    await asyncio.gather(
-                        *[asyncio.wait_for(self._crawl_page(url, depth), timeout=max_time_per_page) for url, depth in batch],
-                        return_exceptions=True
-                    )
+                    tasks = [asyncio.create_task(self._crawl_page_with_retry(url, depth)) for url, depth in batch]
+                    done, pending = await asyncio.wait(tasks, timeout=max_time_per_page)
+                    for task in pending:
+                        task.cancel()
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
 
-            await browser.close()
+            await self.browser.close()
 
         # Clear queue if stopped early
         remaining_in_queue = len(self.queue)
@@ -233,31 +688,36 @@ class APICrawler:
         })
         return self.endpoints
 
+    async def _crawl_page_with_retry(self, page_url: str, depth: int) -> None:
+        """Crawl a page with retry logic and exponential backoff."""
+        for attempt in range(self.max_retries):
+            try:
+                await self._crawl_page(page_url, depth)
+                return  # Success
+            except Exception as e:
+                if attempt < self.max_retries - 1:
+                    # Exponential backoff: 2^attempt seconds
+                    backoff = 2 ** attempt
+                    logger.warning(f"Retry {attempt + 1}/{self.max_retries} for {page_url} after {backoff}s: {e}")
+                    await self._emit("status", {
+                        "message": f"⚠️ Retry {attempt + 1}/{self.max_retries} for {page_url}"
+                    })
+                    await asyncio.sleep(backoff)
+
+                    # Try rotating proxy on failure if available
+                    if self.proxy_pool and attempt > 0:
+                        await self._rotate_browser_identity()
+                else:
+                    logger.error(f"Failed after {self.max_retries} attempts: {page_url} - {e}")
+                    await self._emit("crawl_error", {"url": page_url, "error": f"Failed after {self.max_retries} retries"})
+
     async def _crawl_page(self, page_url: str, depth: int):
         """Crawl a single page."""
         self.visited_pages.add(page_url)
         page = await self.context.new_page()
 
-        # Mask automation signals to avoid bot detection
-        await page.add_init_script("""
-            // Remove webdriver flag
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-
-            // Mock plugins and languages
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-
-            // Mock chrome property
-            window.chrome = {runtime: {}};
-
-            // Mock permissions
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({state: Notification.permission}) :
-                    originalQuery(parameters)
-            );
-        """)
+        # Add stealth scripts to mask automation
+        await self._add_stealth_scripts(page)
 
         await self._emit("crawl_start", {
             "url": page_url,
@@ -272,7 +732,7 @@ class APICrawler:
                 self._on_response(res, page_url)
             ))
 
-            print(f"[DEBUG] Navigating to: {page_url}")
+            logger.debug(f"Navigating to: {page_url}")
 
             # Try to navigate with timeout handling
             try:
@@ -282,7 +742,7 @@ class APICrawler:
                 error_type = type(nav_error).__name__
                 error_msg = str(nav_error)
 
-                print(f"[WARNING] Navigation failed for {page_url}: {error_type} - {error_msg}")
+                logger.warning(f"Navigation failed for {page_url}: {error_type} - {error_msg}")
 
                 # Check if this is a connection error or timeout on the start URL
                 # If so, try with www prefix
@@ -297,7 +757,7 @@ class APICrawler:
 
                     failure_reason = "Connection refused" if "ERR_CONNECTION_REFUSED" in error_msg else "Timeout/Connection failed"
                     await self._emit("status", {"message": f"⚠️ {failure_reason} for {self.domain}, trying {www_domain}..."})
-                    print(f"[INFO] Retrying with www prefix due to {failure_reason}: {www_url}")
+                    logger.info(f"Retrying with www prefix due to {failure_reason}: {www_url}")
 
                     try:
                         # Try with www prefix
@@ -312,12 +772,12 @@ class APICrawler:
                         self.visited_pages.add(www_url)
 
                         await self._emit("status", {"message": f"✅ Successfully connected to {www_domain}"})
-                        print(f"[SUCCESS] Connected to {www_url}, updating domain to {www_domain}")
+                        logger.info(f"Connected to {www_url}, updating domain to {www_domain}")
 
                         # Continue with normal page processing (don't return)
                     except Exception as www_error:
                         # www prefix also failed
-                        print(f"[ERROR] www prefix also failed: {www_error}")
+                        logger.error(f"www prefix also failed: {www_error}")
                         await self._emit("crawl_error", {"url": www_url, "error": f"Both {self.domain} and {www_domain} failed"})
                         await self._emit("status", {"message": f"❌ Could not connect to {self.domain} or {www_domain}"})
                         return
@@ -330,7 +790,7 @@ class APICrawler:
             # Check for HTTP error status codes
             if response and response.status >= 400:
                 error_msg = f"HTTP {response.status} error"
-                print(f"[ERROR] {error_msg} for {page_url}")
+                logger.error(f"{error_msg} for {page_url}")
                 await self._emit("crawl_error", {"url": page_url, "error": error_msg})
                 # Still try to extract any API hints from error page
                 if response.status == 403:
@@ -339,22 +799,35 @@ class APICrawler:
             # Wait for dynamic content (shorter in fast mode)
             wait_time = 500 if self.fast_mode else 2000
             await page.wait_for_timeout(wait_time)
-            print(f"[DEBUG] Page loaded: {page_url}")
+            logger.debug(f"Page loaded: {page_url}")
+
+            # Detect blocking (if stealth mode is enabled)
+            if self.stealth_mode:
+                blocking_indicators = await self._detect_blocking(page, response)
+                if any(blocking_indicators.values()):
+                    await self._handle_blocking(blocking_indicators, page_url)
+
+            # Increment pages since last rotation
+            self.pages_since_rotation += 1
+
+            # Try to dismiss any floating dialogs, modals, or popups
+            await _dismiss_floating_dialogs(page)
 
             # Take screenshot (skip in fast mode for speed)
             if not self.fast_mode:
                 try:
-                    print(f"[DEBUG] Taking screenshot of: {page_url}")
-                    screenshot_bytes = await page.screenshot(type="jpeg", quality=60, timeout=5000)
+                    logger.debug(f"Taking screenshot of: {page_url}")
+                    screenshot_bytes = await page.screenshot(type="jpeg", quality=60, timeout=15000)
                     screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
-                    print(f"[DEBUG] Screenshot captured, size: {len(screenshot_b64)} chars")
+                    logger.debug(f"Screenshot captured, size: {len(screenshot_b64)} chars")
                     await self._emit("screenshot", {
                         "url": page_url,
                         "image": screenshot_b64,
+                        "scan_id": self.scan_id,
                     })
-                    print(f"[DEBUG] Screenshot emitted for: {page_url}")
+                    logger.debug(f"Screenshot emitted for: {page_url}")
                 except Exception as screenshot_error:
-                    print(f"[ERROR] Screenshot failed: {screenshot_error}")
+                    logger.error(f"Screenshot failed: {screenshot_error}")
                     # Don't emit error for screenshot failures, just skip it
 
             # Skip auto-scroll and interactions in fast mode
@@ -368,25 +841,31 @@ class APICrawler:
             # After max_pages, continue processing queue but don't add more pages
             if depth < self.max_depth and len(self.visited_pages) <= self.max_pages:
                 links = await self._extract_links(page)
-                print(f"[DEBUG] Found {len(links)} links on {page_url}, depth={depth}, visited={len(self.visited_pages)}")
+                logger.debug(f"Found {len(links)} links on {page_url}, depth={depth}, visited={len(self.visited_pages)}")
                 await self._emit("status", {"message": f"Found {len(links)} links on page (depth {depth})"})
                 added = 0
                 for link in links:
                     if link not in self.visited_pages:
                         self.queue.append((link, depth + 1))
                         added += 1
-                print(f"[DEBUG] Added {added} new links to queue, queue size now: {len(self.queue)}")
+                logger.debug(f"Added {added} new links to queue, queue size now: {len(self.queue)}")
                 await self._emit("status", {"message": f"Added {added} links to queue (total: {len(self.queue)})"})
             else:
-                print(f"[DEBUG] Skipping link extraction: depth={depth}, max_depth={self.max_depth}, visited={len(self.visited_pages)}, max={self.max_pages}")
+                logger.debug(f"Skipping link extraction: depth={depth}, max_depth={self.max_depth}, visited={len(self.visited_pages)}, max={self.max_pages}")
 
             await self._emit("crawl_end", {"url": page_url})
 
+        except asyncio.CancelledError:
+            logger.debug(f"Page crawl cancelled (timeout) for {page_url}")
+            await self._emit("crawl_error", {"url": page_url, "error": "Page timeout exceeded"})
         except Exception as e:
-            print(f"[ERROR] Crawl error for {page_url}: {e}")
+            logger.error(f"Crawl error for {page_url}: {e}")
             await self._emit("crawl_error", {"url": page_url, "error": str(e)})
         finally:
-            await page.close()
+            try:
+                await page.close()
+            except Exception:
+                pass
 
     async def _on_response(self, response: Response, found_on_page: str):
         """Handle network response events."""
@@ -479,7 +958,7 @@ class APICrawler:
                     response_headers_dict = await response.all_headers()
 
                 except Exception as e:
-                    print(f"[WARNING] Failed to capture payloads: {e}")
+                    logger.warning(f"Failed to capture payloads: {e}")
 
             ep = DiscoveredEndpoint(
                 method=method, path=template_path, host=host, full_url=req_url,

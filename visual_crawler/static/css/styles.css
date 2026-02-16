@@ -1,4 +1,4 @@
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
   :root {
     /* Salt Security inspired color palette */
     --purple: #4a1d96; --purple-light: #6b2fc7; --purple-dark: #2d1159;
@@ -197,17 +197,83 @@
     background:var(--surface); border-right:1px solid var(--border);
     display:flex; flex-direction:column; overflow:hidden;
   }
-  .stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; padding:1rem; }
+  .stats-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0.5rem; padding:1rem; }
   .stat-box {
     background:var(--surface2); border:1px solid var(--border); border-radius:10px;
-    padding:0.75rem; text-align:center;
+    padding:0.6rem 0.5rem; text-align:center;
   }
   .stat-box .num {
-    font-size:1.5rem; font-weight:700;
+    font-size:1.4rem; font-weight:700;
     background:linear-gradient(135deg, var(--green), var(--purple-light));
     -webkit-background-clip:text; -webkit-text-fill-color:transparent;
   }
-  .stat-box .lbl { font-size:0.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
+  .stat-box .lbl { font-size:0.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
+
+  /* Timer styling */
+  .stat-box .num.timer {
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.1em;
+  }
+
+  /* Prominent API Counter */
+  .stat-box.prominent {
+    grid-column: 1 / -1; /* Span all 4 columns */
+    background: linear-gradient(135deg, rgba(74, 29, 150, 0.15), rgba(107, 47, 199, 0.1));
+    border: 2px solid var(--green);
+    padding: 1.25rem 1rem;
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.2), inset 0 1px 0 rgba(255,255,255,0.05);
+    animation: prominentPulse 3s ease-in-out infinite;
+  }
+  .api-counter-split {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .api-count-item {
+    text-align: center;
+  }
+  .api-count-item .num {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    text-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+    background: linear-gradient(135deg, var(--green), var(--purple-light));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .api-count-item .lbl {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--green);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .api-count-divider {
+    font-size: 2.5rem;
+    font-weight: 300;
+    color: var(--border);
+    opacity: 0.5;
+  }
+  .stat-box.prominent .friendly-msg {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 0.25rem;
+    font-weight: 400;
+    text-align: center;
+  }
+  @keyframes prominentPulse {
+    0%, 100% {
+      box-shadow: 0 0 20px rgba(0, 255, 136, 0.2), inset 0 1px 0 rgba(255,255,255,0.05);
+      border-color: var(--green);
+    }
+    50% {
+      box-shadow: 0 0 30px rgba(0, 255, 136, 0.4), inset 0 1px 0 rgba(255,255,255,0.08);
+      border-color: var(--green-dark);
+    }
+  }
 
   /* Activity log */
   .activity-header { padding:0.75rem 1rem; font-size:0.75rem; font-weight:600;
@@ -249,6 +315,11 @@
     margin-bottom: 1rem;
     animation: peekaboo 2s ease-in-out infinite;
     user-select: none;
+  }
+
+  @keyframes fadeIn {
+    0% { opacity: 0; transform: scale(0.9); }
+    100% { opacity: 1; transform: scale(1); }
   }
 
   @keyframes peekaboo {
@@ -382,6 +453,18 @@
   }
 
   .status-badge { display:flex; align-items:center; font-size:0.8rem; font-weight:600; }
+
+  .other-scans-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--bg);
+    background: var(--green);
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .other-scans-badge.hidden { display: none; }
 
   /* New endpoint flash */
   @keyframes flashIn {

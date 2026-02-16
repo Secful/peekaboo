@@ -1,9 +1,15 @@
 """FastAPI server for the Visual API Crawler."""
 
 # Standard library
+import asyncio
+import itertools
 import json
+import logging
 import os
 from typing import Optional
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Standard library
 import os
@@ -16,8 +22,27 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Local imports
-from .crawler import APICrawler
+from .crawler import APICrawler, ProxyPool
 from .bedrock_analyzer import BedrockAPIAnalyzer
+
+# Shared state for tracking active scans across WebSocket clients
+_scan_id_counter = itertools.count(1)
+_active_scans: dict[int, str] = {}          # scan_id → domain
+_connected_clients: dict[int, WebSocket] = {}  # scan_id → ws
+
+
+async def _broadcast_active_scans() -> None:
+    """Send the current active-scans list to every connected client."""
+    scans = [{"scan_id": sid, "domain": dom} for sid, dom in _active_scans.items()]
+    for sid, client_ws in list(_connected_clients.items()):
+        try:
+            await client_ws.send_json({
+                "type": "active_scans",
+                "scans": scans,
+                "your_scan_id": sid,
+            })
+        except Exception:
+            pass
 
 
 # Request model for API description generation
@@ -32,10 +57,109 @@ class GenerateDescriptionRequest(BaseModel):
     query_params: Optional[list[str]] = None
 
 
+def _load_proxy_config() -> Optional[dict]:
+    """Load proxy credentials from AWS Secrets Manager.
+
+    Returns Playwright-compatible proxy dict, or None if unavailable.
+    """
+    try:
+        import boto3
+        client = boto3.client('secretsmanager', region_name=os.getenv('AWS_DEFAULT_REGION', 'us-east-1'))
+        resp = client.get_secret_value(SecretId='peekaboo/proxy')
+        secret = json.loads(resp['SecretString'])
+        proxy_config = {
+            "server": f"http://{secret['host']}:{secret['port']}",
+            "username": secret['username'],
+            "password": secret['password'],
+        }
+        logger.info(f"Proxy loaded from Secrets Manager: {secret['host']}:{secret['port']}")
+        return proxy_config
+    except Exception as e:
+        logger.info(f"No proxy configured: {e}")
+        return None
+
+
+def _load_brightdata_proxy_pool() -> Optional[ProxyPool]:
+    """Load BrightData proxy pool from AWS Secrets Manager.
+
+    Expected secret format for proxy pool:
+    {
+        "host": "brd.superproxy.io",
+        "port": "22225",
+        "username": "brd-customer-{id}-zone-{zone}",
+        "password": "{password}",
+        "pool_size": 5  # Optional, number of proxy sessions to create
+    }
+
+    Or for multiple proxies:
+    {
+        "proxies": [
+            {"host": "...", "port": "...", "username": "...", "password": "..."},
+            {"host": "...", "port": "...", "username": "...", "password": "..."}
+        ]
+    }
+
+    Returns ProxyPool or None if unavailable.
+    """
+    try:
+        import boto3
+        client = boto3.client('secretsmanager', region_name=os.getenv('AWS_DEFAULT_REGION', 'us-east-1'))
+        resp = client.get_secret_value(SecretId='peekaboo/proxy')
+        secret = json.loads(resp['SecretString'])
+
+        proxies = []
+
+        # Check if it's a multi-proxy configuration
+        if 'proxies' in secret:
+            for proxy_config in secret['proxies']:
+                proxies.append({
+                    "server": f"http://{proxy_config['host']}:{proxy_config['port']}",
+                    "username": proxy_config['username'],
+                    "password": proxy_config['password'],
+                })
+        else:
+            # Single proxy with session pool
+            pool_size = secret.get('pool_size', 5)
+            base_username = secret['username']
+
+            # BrightData: Add session ID to username for sticky sessions
+            # Format: brd-customer-{id}-zone-{zone}-session-{random}
+            for i in range(pool_size):
+                # Generate unique session IDs
+                import random
+                session_id = random.randint(100000, 999999)
+                username_with_session = f"{base_username}-session-{session_id}"
+
+                proxies.append({
+                    "server": f"http://{secret['host']}:{secret['port']}",
+                    "username": username_with_session,
+                    "password": secret['password'],
+                })
+
+        if proxies:
+            logger.info(f"Loaded BrightData proxy pool with {len(proxies)} proxies")
+            return ProxyPool(proxies)
+        else:
+            return None
+
+    except Exception as e:
+        logger.info(f"No BrightData proxy pool configured: {e}")
+        return None
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI()
-    clients: list[WebSocket] = []
+
+    auth_user = os.getenv('BASIC_AUTH_USER')
+    auth_pass = os.getenv('BASIC_AUTH_PASS')
+    if auth_user and auth_pass:
+        from .auth import BasicAuthMiddleware
+        app.add_middleware(BasicAuthMiddleware, username=auth_user, password=auth_pass)
+
+    # Load proxy config from Secrets Manager (if available)
+    app.state.proxy_config = _load_proxy_config()
+    app.state.proxy_pool = _load_brightdata_proxy_pool()
 
     # Get the path to the static directory
     static_dir = Path(__file__).parent / "static"
@@ -83,7 +207,7 @@ def create_app() -> FastAPI:
             return JSONResponse(content=result)
 
         except Exception as e:
-            print(f"[ERROR] Failed to generate API description: {e}")
+            logger.error(f"Failed to generate API description: {e}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to generate description: {str(e)}"
@@ -91,94 +215,154 @@ def create_app() -> FastAPI:
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
-        """WebSocket endpoint for real-time crawler communication."""
-        await ws.accept()
-        clients.append(ws)
+        """WebSocket endpoint for real-time crawler communication.
 
-        async def broadcast(event: dict):
-            """Broadcast event to all connected clients."""
-            dead = []
-            for client in clients:
-                try:
-                    await client.send_json(event)
-                except Exception:
-                    dead.append(client)
-            for d in dead:
-                clients.remove(d)
+        The connection stays open after a scan completes so the client
+        continues to receive active-scan broadcasts from other users.
+        A new scan can be started on the same connection.
+        """
+        await ws.accept()
+        scan_id = next(_scan_id_counter)
+        _connected_clients[scan_id] = ws
+
+        # Let this client know about currently active scans
+        await _broadcast_active_scans()
+
+        async def send_event(event: dict):
+            """Send event only to this connection's client."""
+            try:
+                await ws.send_json(event)
+            except Exception:
+                pass
 
         try:
-            # Wait for scan parameters from client
-            params_msg = await ws.receive_text()
-            params = json.loads(params_msg)
+            # Loop: wait for scan params, run scan, wait again
+            while True:
+                try:
+                    params_msg = await ws.receive_text()
+                except RuntimeError:
+                    # WebSocket already disconnected
+                    break
+                params = json.loads(params_msg)
 
-            domain = params.get('domain', '').strip()
-            if not domain:
-                await ws.send_json({
-                    "type": "error",
-                    "message": "Domain is required"
-                })
-                return
-
-            max_pages = params.get('max_pages', 50)
-            max_depth = params.get('max_depth', 3)
-            timeout = params.get('timeout', 30000)
-            include_subdomains = params.get('include_subdomains', True)
-            api_filter = params.get('api_filter', 'all')
-            concurrent_pages = params.get('concurrent_pages', 5)
-            fast_mode = params.get('fast_mode', False)
-
-            # Configure proxy automatically from environment variables
-            proxy_config = None
-            try:
-                proxy_host = os.getenv('PROXY_HOST')
-                proxy_port = os.getenv('PROXY_PORT')
-                proxy_user = os.getenv('PROXY_USER')
-                proxy_pass = os.getenv('PROXY_PASS')
-
-                # Use proxy only if all required env vars are set
-                if proxy_host and proxy_port and proxy_user and proxy_pass:
-                    proxy_server = f"http://{proxy_host}:{proxy_port}"
-                    proxy_config = {
-                        "server": proxy_server,
-                        "username": proxy_user,
-                        "password": proxy_pass
-                    }
-                    print(f"[INFO] Using proxy: {proxy_host}:{proxy_port}")
+                domain = params.get('domain', '').strip()
+                if not domain:
                     await ws.send_json({
-                        "type": "status",
-                        "message": f"Using proxy: {proxy_host}:{proxy_port}"
+                        "type": "error",
+                        "message": "Domain is required"
                     })
-                else:
-                    print("[INFO] Proxy not configured (env vars not set)")
-            except Exception as e:
-                print(f"[WARNING] Error configuring proxy: {e}")
-                # Continue without proxy
+                    continue
 
-            crawler = APICrawler(
-                domain=domain,
-                max_pages=max_pages,
-                max_depth=max_depth,
-                timeout=timeout,
-                include_subdomains=include_subdomains,
-                api_filter=api_filter,
-                proxy_config=proxy_config,
-                concurrent_pages=concurrent_pages,
-                fast_mode=fast_mode,
-            )
-            crawler.on_event(broadcast)
-            await crawler.crawl()
+                max_pages = params.get('max_pages', 50)
+                max_depth = params.get('max_depth', 3)
+                timeout = params.get('timeout', 30000)
+                include_subdomains = params.get('include_subdomains', True)
+                api_filter = params.get('api_filter', 'all')
+                concurrent_pages = params.get('concurrent_pages', 5)
+                fast_mode = params.get('fast_mode', False)
+                use_proxy = params.get('use_proxy', True)
+
+                # Stealth mode parameters
+                stealth_mode = params.get('stealth_mode', True)
+                min_delay = params.get('min_delay', 2.0)
+                max_delay = params.get('max_delay', 5.0)
+                max_retries = params.get('max_retries', 3)
+                rotate_identity = params.get('rotate_identity', True)
+
+                # Determine proxy configuration
+                proxy_config = None
+                proxy_pool = None
+
+                if use_proxy:
+                    if app.state.proxy_pool:
+                        # Use proxy pool for rotation
+                        proxy_pool = app.state.proxy_pool
+                        # Get first proxy for initial connection
+                        proxy_config = proxy_pool.get_next_proxy()
+                        await ws.send_json({
+                            "type": "status",
+                            "message": f"Using proxy pool with {len(proxy_pool.proxies)} proxies"
+                        })
+                    elif app.state.proxy_config:
+                        # Use single proxy
+                        proxy_config = app.state.proxy_config
+                        await ws.send_json({
+                            "type": "status",
+                            "message": f"Using proxy: {proxy_config['server']}"
+                        })
+
+                # Register this scan as active and notify all clients
+                _active_scans[scan_id] = domain
+                await _broadcast_active_scans()
+
+                try:
+                    crawler = APICrawler(
+                        domain=domain,
+                        max_pages=max_pages,
+                        max_depth=max_depth,
+                        timeout=timeout,
+                        include_subdomains=include_subdomains,
+                        api_filter=api_filter,
+                        proxy_config=proxy_config,
+                        concurrent_pages=concurrent_pages,
+                        fast_mode=fast_mode,
+                        scan_id=scan_id,
+                        stealth_mode=stealth_mode,
+                        min_delay=min_delay,
+                        max_delay=max_delay,
+                        proxy_pool=proxy_pool,
+                        max_retries=max_retries,
+                        rotate_identity=rotate_identity,
+                    )
+                except Exception as e:
+                    await ws.send_json({
+                        "type": "error",
+                        "message": f"Failed to create crawler: {str(e)}"
+                    })
+                    continue
+                crawler.on_event(send_event)
+
+                async def _listen_for_stop():
+                    """Listen for client messages while crawl runs."""
+                    try:
+                        while True:
+                            msg = await ws.receive_text()
+                            data = json.loads(msg)
+                            if data.get('action') == 'stop':
+                                crawler.stop()
+                                return
+                    except WebSocketDisconnect:
+                        crawler.stop()
+                        raise
+
+                crawl_task = asyncio.create_task(crawler.crawl())
+                listen_task = asyncio.create_task(_listen_for_stop())
+                try:
+                    # Wait for crawl to finish; listener runs alongside
+                    await crawl_task
+                except Exception as e:
+                    try:
+                        await ws.send_json({
+                            "type": "error",
+                            "message": f"Error: {str(e)}"
+                        })
+                    except:
+                        pass
+                finally:
+                    listen_task.cancel()
+                    try:
+                        await listen_task
+                    except (asyncio.CancelledError, WebSocketDisconnect):
+                        pass
+                    # Scan finished — remove from active, but keep client connected
+                    _active_scans.pop(scan_id, None)
+                    await _broadcast_active_scans()
+
         except WebSocketDisconnect:
             pass
-        except Exception as e:
-            try:
-                await ws.send_json({
-                    "type": "error",
-                    "message": f"Error: {str(e)}"
-                })
-            except:
-                pass
         finally:
-            if ws in clients:
-                clients.remove(ws)
+            _active_scans.pop(scan_id, None)
+            _connected_clients.pop(scan_id, None)
+            await _broadcast_active_scans()
 
     return app

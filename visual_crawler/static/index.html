@@ -75,6 +75,14 @@
             <input type="number" id="timeout" name="timeout" value="30000" min="5000" max="120000" step="1000">
             <div class="hint">Page load timeout in milliseconds (default: 30000)</div>
           </div>
+
+          <div class="form-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="useProxy" name="useProxy" checked>
+              <label for="useProxy" style="margin:0">Use Proxy</label>
+            </div>
+            <div class="hint">Route browser traffic through the configured proxy server</div>
+          </div>
         </div>
       </div>
 
@@ -183,6 +191,7 @@
           🔄 New Scan
         </button>
       </div>
+      <span id="otherScans" class="other-scans-badge hidden"></span>
       <div class="status-badge">
         <span class="live-dot" id="liveDot"></span>
         <span id="statusText">Ready</span>
@@ -193,10 +202,24 @@
   <!-- Left panel -->
   <div class="left-panel">
     <div class="stats-grid">
-      <div class="stat-box"><div class="num" id="statEndpoints">0</div><div class="lbl">Endpoints</div></div>
+      <div class="stat-box prominent">
+        <div class="api-counter-split">
+          <div class="api-count-item">
+            <div class="num" id="statEndpointsTotal">0</div>
+            <div class="lbl">Total APIs</div>
+          </div>
+          <div class="api-count-divider">|</div>
+          <div class="api-count-item">
+            <div class="num" id="statEndpointsDomain">0</div>
+            <div class="lbl">Domain APIs</div>
+          </div>
+        </div>
+        <div class="friendly-msg" id="friendlyMsg">Nothing yet, starting scan...</div>
+      </div>
       <div class="stat-box"><div class="num" id="statPages">0</div><div class="lbl">Pages</div></div>
       <div class="stat-box"><div class="num" id="statHosts">0</div><div class="lbl">Hosts</div></div>
       <div class="stat-box"><div class="num" id="statQueue">0</div><div class="lbl">In Queue</div></div>
+      <div class="stat-box"><div class="num timer" id="statTimer">00:00</div><div class="lbl">Scan Time</div></div>
     </div>
 
     <div class="screenshot-section">
@@ -254,6 +277,7 @@
       <table>
         <thead>
           <tr>
+            <th style="width:50px">#</th>
             <th style="width:75px" onclick="sortBy('method')">Method</th>
             <th onclick="sortBy('path')">Path</th>
             <th onclick="sortBy('host')">Host</th>

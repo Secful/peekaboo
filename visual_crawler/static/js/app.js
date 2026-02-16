@@ -10,7 +10,9 @@ let currentPage = 1;
 const itemsPerPage = 50;
 let uiPaused = false; // Track if UI updates are paused
 let scanStartTime = null; // Track scan start time for duration calculation
+let timerInterval = null; // Timer interval for updating scan time display
 let capturedScreenshots = []; // Store up to 5 screenshots for report carousel
+let myScanId = null; // Assigned by server to identify this client's scan
 
 // Human-friendly HTTP status code explanations
 const statusExplanations = {
@@ -65,6 +67,92 @@ function getMethodExplanation(method) {
   return methodExplanations[method] || `${method} - HTTP method for interacting with this resource.`;
 }
 
+// Helper function to update scan timer display
+function updateTimer() {
+  if (!scanStartTime) {
+    document.getElementById('statTimer').textContent = '00:00';
+    return;
+  }
+
+  const elapsed = Math.floor((Date.now() - scanStartTime) / 1000); // seconds
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = elapsed % 60;
+
+  const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  document.getElementById('statTimer').textContent = formattedTime;
+}
+
+// Start the scan timer
+function startTimer() {
+  scanStartTime = Date.now();
+  updateTimer();
+  // Update every second
+  timerInterval = setInterval(updateTimer, 1000);
+}
+
+// Stop the scan timer
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+// Reset the scan timer
+function resetTimer() {
+  stopTimer();
+  scanStartTime = null;
+  document.getElementById('statTimer').textContent = '00:00';
+}
+
+// Helper function to check if an endpoint belongs to target domain or subdomain
+function isDomainEndpoint(endpoint) {
+  if (!endpoint || !endpoint.host || !targetDomain) return false;
+  const host = endpoint.host.toLowerCase();
+  const domain = targetDomain.toLowerCase();
+
+  // Check if it's exact match or a subdomain
+  return host === domain || host.endsWith('.' + domain);
+}
+
+// Helper function to update endpoint counter with friendly message
+function updateEndpointCounter() {
+  const totalCount = endpoints.length;
+  // Count confirmed APIs + GET* endpoints that belong to domain/subdomain
+  const domainCount = endpoints.filter(ep =>
+    isDomainEndpoint(ep) &&
+    (ep.api_confidence === 'API' || ep.method === 'GET*')
+  ).length;
+
+  const totalElement = document.getElementById('statEndpointsTotal');
+  const domainElement = document.getElementById('statEndpointsDomain');
+  const friendlyMsgElement = document.getElementById('friendlyMsg');
+
+  totalElement.textContent = totalCount;
+  domainElement.textContent = domainCount;
+
+  // Update friendly message based on domain count (the more important metric)
+  if (domainCount === 0) {
+    friendlyMsgElement.textContent = '🔍 Nothing so far... keep watching!';
+    friendlyMsgElement.style.display = 'block';
+  } else if (domainCount === 1) {
+    friendlyMsgElement.textContent = '🎉 First domain API found!';
+    friendlyMsgElement.style.display = 'block';
+  } else if (domainCount < 5) {
+    friendlyMsgElement.textContent = `🚀 ${domainCount} domain APIs discovered!`;
+    friendlyMsgElement.style.display = 'block';
+  } else if (domainCount < 20) {
+    friendlyMsgElement.textContent = `⚡ ${domainCount} domain endpoints and counting...`;
+    friendlyMsgElement.style.display = 'block';
+  } else if (domainCount < 50) {
+    friendlyMsgElement.textContent = `💪 ${domainCount} domain APIs - great progress!`;
+    friendlyMsgElement.style.display = 'block';
+  } else {
+    friendlyMsgElement.textContent = `🔥 Excellent! ${domainCount} domain endpoints found!`;
+    friendlyMsgElement.style.display = 'block';
+  }
+}
+
 function toggleAdvanced() {
   const settings = document.getElementById('advancedSettings');
   const icon = document.getElementById('advancedIcon');
@@ -78,7 +166,50 @@ function toggleAdvanced() {
   }
 }
 
-function startScan(event) {
+function ensureWebSocket() {
+  /**
+   * Ensure a WebSocket connection exists and is open.
+   * Returns a Promise that resolves when the connection is ready.
+   * Reuses the existing connection if still open.
+   */
+  return new Promise((resolve, reject) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      resolve();
+      return;
+    }
+
+    ws = new WebSocket(`ws://${location.host}/ws`);
+
+    ws.onopen = () => resolve();
+
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      handleEvent(msg);
+    };
+
+    ws.onclose = () => {
+      document.getElementById('liveDot').classList.add('done');
+      document.getElementById('statusText').textContent = 'Disconnected';
+      document.getElementById('pauseBtn').classList.add('hidden');
+      document.getElementById('findingsBtn').classList.add('hidden');
+      document.getElementById('stopBtn').classList.add('hidden');
+      document.getElementById('newScanBtn').classList.remove('hidden');
+      document.getElementById('domainIndicator').classList.add('hidden');
+      const badge = document.getElementById('otherScans');
+      if (badge) { badge.classList.add('hidden'); badge.textContent = ''; }
+      ws = null;
+      myScanId = null;
+    };
+
+    ws.onerror = (err) => {
+      console.error('WebSocket error:', err);
+      addLog('⚠️', 'Connection error', 'error');
+      reject(err);
+    };
+  });
+}
+
+async function startScan(event) {
   event.preventDefault();
 
   const domain = document.getElementById('domain').value.trim();
@@ -87,8 +218,8 @@ function startScan(event) {
     return;
   }
 
-  // Track scan start time
-  scanStartTime = Date.now();
+  // Start scan timer
+  startTimer();
 
   const apiFilter = document.querySelector('input[name="apiFilter"]:checked').value;
 
@@ -100,7 +231,8 @@ function startScan(event) {
     include_subdomains: document.getElementById('includeSubdomains').checked,
     api_filter: apiFilter,
     concurrent_pages: parseInt(document.getElementById('concurrentPages').value) || 5,
-    fast_mode: document.getElementById('fastMode').checked
+    fast_mode: document.getElementById('fastMode').checked,
+    use_proxy: document.getElementById('useProxy').checked
   };
 
   // Store target domain and settings for UI filtering
@@ -121,34 +253,14 @@ function startScan(event) {
   domainIndicator.textContent = `🎯 ${targetDomain}`;
   domainIndicator.classList.remove('hidden');
 
-  // Connect WebSocket and send params
-  ws = new WebSocket(`ws://${location.host}/ws`);
-
-  ws.onopen = () => {
+  try {
+    await ensureWebSocket();
     document.getElementById('statusText').textContent = 'Starting scan...';
-    addLog('🚀', `Connected. Starting scan of ${params.domain}...`, 'page');
+    addLog('🚀', `Starting scan of ${params.domain}...`, 'page');
     ws.send(JSON.stringify(params));
-  };
-
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    handleEvent(msg);
-  };
-
-  ws.onclose = () => {
-    document.getElementById('liveDot').classList.add('done');
-    document.getElementById('statusText').textContent = 'Disconnected';
-    document.getElementById('pauseBtn').classList.add('hidden');
-    document.getElementById('findingsBtn').classList.add('hidden');
-    document.getElementById('stopBtn').classList.add('hidden');
-    document.getElementById('newScanBtn').classList.remove('hidden');
-    document.getElementById('domainIndicator').classList.add('hidden');
-  };
-
-  ws.onerror = (err) => {
-    console.error('WebSocket error:', err);
-    addLog('⚠️', 'Connection error', 'error');
-  };
+  } catch (err) {
+    document.getElementById('statusText').textContent = 'Connection failed';
+  }
 }
 
 function togglePause() {
@@ -169,7 +281,7 @@ function togglePause() {
     statusText.textContent = 'Scanning...';
 
     // Refresh UI with all accumulated data
-    document.getElementById('statEndpoints').textContent = endpoints.length;
+    updateEndpointCounter();
     document.getElementById('statHosts').textContent = hosts.size;
 
     // Rebuild the table with all endpoints
@@ -184,10 +296,10 @@ function togglePause() {
 }
 
 function stopScan() {
-  if (ws) {
-    ws.close();
-    ws = null;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'stop' }));
   }
+  stopTimer();
   document.getElementById('liveDot').classList.add('done');
   document.getElementById('statusText').textContent = 'Stopped';
   document.getElementById('pauseBtn').classList.add('hidden');
@@ -207,7 +319,7 @@ function newScan() {
   targetDomain = '';
   currentPage = 1; // Reset pagination
   uiPaused = false; // Reset pause state
-  scanStartTime = null; // Reset scan timer
+  resetTimer(); // Reset scan timer
   capturedScreenshots = []; // Clear screenshots
 
   // Reset pause button
@@ -223,7 +335,7 @@ function newScan() {
   document.getElementById('tbody').innerHTML = '';
   document.getElementById('activityLog').innerHTML = '';
   document.getElementById('emptyState').style.display = 'block';
-  document.getElementById('statEndpoints').textContent = '0';
+  updateEndpointCounter();
   document.getElementById('statPages').textContent = '0';
   document.getElementById('statHosts').textContent = '0';
   document.getElementById('statQueue').textContent = '0';
@@ -269,13 +381,18 @@ function handleEvent(msg) {
       if (!uiPaused) {
         document.getElementById('statPages').textContent = msg.pages_visited;
         document.getElementById('statQueue').textContent = msg.pages_remaining;
-        document.getElementById('statEndpoints').textContent = msg.total_endpoints;
+        updateEndpointCounter();
         document.getElementById('currentUrl').textContent = msg.url;
         addLog('📄', `Crawling: ${shortenUrl(msg.url)}`, 'page');
       }
       break;
 
     case 'screenshot':
+      // Only process screenshots from OUR scan
+      if (msg.scan_id && msg.scan_id !== myScanId) {
+        break;  // Ignore screenshots from other scans
+      }
+
       // Store up to 5 screenshots for report carousel
       if (capturedScreenshots.length < 5) {
         capturedScreenshots.push({
@@ -294,7 +411,7 @@ function handleEvent(msg) {
       if (!uiPaused) {
         endpoints.push(msg);
         hosts.add(msg.host);
-        document.getElementById('statEndpoints').textContent = endpoints.length;
+        updateEndpointCounter();
         document.getElementById('statHosts').textContent = hosts.size;
         document.getElementById('emptyState').style.display = 'none';
         addEndpointRow(msg, true);
@@ -307,6 +424,14 @@ function handleEvent(msg) {
       }
       break;
 
+    case 'active_scans':
+      // Always update scan ID if provided (handles reconnections)
+      if (msg.your_scan_id) {
+        myScanId = msg.your_scan_id;
+      }
+      renderActiveScans(msg.scans);
+      break;
+
     case 'crawl_error':
       // Always show errors even when paused
       addLog('⚠️', `Error on ${shortenUrl(msg.url)}: ${msg.error}`, 'error');
@@ -316,6 +441,9 @@ function handleEvent(msg) {
       break;
 
     case 'done':
+      // Stop the timer
+      stopTimer();
+
       // Always handle completion even when paused
       document.getElementById('liveDot').classList.add('done');
       document.getElementById('statusText').textContent =
@@ -331,7 +459,7 @@ function handleEvent(msg) {
       // If UI was paused, refresh the display with all endpoints
       if (uiPaused) {
         uiPaused = false;
-        document.getElementById('statEndpoints').textContent = endpoints.length;
+        updateEndpointCounter();
         document.getElementById('statHosts').textContent = hosts.size;
         // Rebuild the table with all endpoints
         const tbody = document.getElementById('tbody');
@@ -347,6 +475,31 @@ function handleEvent(msg) {
         emptyState.innerHTML = '<div class="icon">🔍</div><div>No records found</div>';
         emptyState.style.display = 'block';
       }
+
+      // Show static "Mission Complete" message in Live Preview
+      const screenshotBox = document.getElementById('screenshotBox');
+      screenshotBox.innerHTML = `
+        <div class="placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem;">
+          <div style="font-size: 2rem; margin-bottom: 0.5rem;">✅</div>
+          <div style="font-size: 1rem; font-weight: 700; color: var(--green); margin-bottom: 1rem; letter-spacing: 0.05em;">
+            MISSION COMPLETE
+          </div>
+          <div style="text-align: left; color: var(--text); line-height: 1.6; font-size: 0.85rem;">
+            <div style="margin-bottom: 0.3rem;">
+              <span style="color: var(--green);">•</span>
+              <span style="font-weight: 600;"> ${msg.total_endpoints}</span> endpoint${msg.total_endpoints !== 1 ? 's' : ''} discovered
+            </div>
+            <div style="margin-bottom: 0.3rem;">
+              <span style="color: var(--green);">•</span>
+              <span style="font-weight: 600;"> ${msg.pages_visited}</span> page${msg.pages_visited !== 1 ? 's' : ''} crawled
+            </div>
+            <div>
+              <span style="color: var(--green);">•</span>
+              Ready for export
+            </div>
+          </div>
+        </div>
+      `;
 
       // Show scan summary modal
       showScanSummary(msg);
@@ -383,6 +536,7 @@ function addEndpointRow(ep, flash=false) {
   const statusTitle = ep.response_status ? escHtml(getStatusExplanation(ep.response_status)) : '';
 
   tr.innerHTML = `
+    <td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem;"></td>
     <td><span class="badge ${badgeClass}" style="cursor:help;" title="${methodTitle}">${ep.method}</span></td>
     <td class="path-cell" title="${escHtml(ep.path)}">${typeBadge}${escHtml(trimPath(ep.path))}</td>
     <td class="host-cell">${escHtml(ep.host)}</td>
@@ -395,6 +549,40 @@ function addEndpointRow(ep, flash=false) {
 
   // Apply filters to update visibility (view layer)
   applyFilters();
+}
+
+function renderActiveScans(scans) {
+  const badge = document.getElementById('otherScans');
+
+  // Null check: ensure badge element exists
+  if (!badge) {
+    console.warn('otherScans badge element not found');
+    return;
+  }
+
+  // Validate data: ensure scans is an array
+  if (!Array.isArray(scans)) {
+    console.warn('Invalid scans data received:', scans);
+    badge.classList.add('hidden');
+    return;
+  }
+
+  // Filter out current scan and validate scan objects
+  const others = scans.filter(s => s && s.scan_id && s.scan_id !== myScanId);
+
+  if (others.length === 0) {
+    badge.classList.add('hidden');
+    badge.textContent = '';
+    return;
+  }
+
+  // Build domain list with validation
+  const domains = others
+    .map(s => s.domain || 'unknown')
+    .join(', ');
+
+  badge.textContent = `${others.length} other scan${others.length > 1 ? 's' : ''} active: ${domains}`;
+  badge.classList.remove('hidden');
 }
 
 function addLog(icon, message, cls) {
@@ -551,7 +739,16 @@ function applyFilters() {
     const isMatching = matchingRows.includes(tr);
     const isInPage = isMatching && rowIndex >= startIdx && rowIndex < endIdx;
     tr.style.display = isInPage ? '' : 'none';
-    if (isMatching) rowIndex++;
+
+    // Update row number for visible rows
+    if (isMatching) {
+      const rowNumber = rowIndex + 1; // 1-based numbering
+      const rowNumberCell = tr.querySelector('.row-number');
+      if (rowNumberCell) {
+        rowNumberCell.textContent = rowNumber;
+      }
+      rowIndex++;
+    }
   });
 
   // Show/hide empty state
@@ -964,9 +1161,8 @@ function exportSummaryToHTML() {
     }
 
     .header .salt-logo {
-      height: 2.5rem;
+      height: 1.8rem;
       width: auto;
-      min-width: 12rem;
       color: #00ff88;
     }
 
@@ -1388,6 +1584,7 @@ function exportSummaryToHTML() {
     }
 
     .carousel-slide {
+      position: relative;
       min-width: 100%;
       height: 100%;
       display: flex;
@@ -1546,7 +1743,7 @@ function exportSummaryToHTML() {
   <div class="container">
     <div class="header">
       <div class="logo-container">
-        <svg class="salt-logo" version="1.1" viewBox="0 0 152.63 40.25" xmlns="http://www.w3.org/2000/svg">
+        <svg style="height:1.8rem;width:auto;" version="1.1" viewBox="0 0 152.63 40.25" xmlns="http://www.w3.org/2000/svg">
           <path d="m31.09 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
           <path d="m23.88 11.7c1.2315 0 2.23-0.9984 2.23-2.23s-0.9985-2.23-2.23-2.23c-1.2316 0-2.23 0.99844-2.23 2.23s0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
           <path d="m16.66 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
@@ -1590,9 +1787,11 @@ function exportSummaryToHTML() {
 
     ${capturedScreenshots.length > 0 ? `
     <div class="screenshot-section">
-      <div class="screenshot-header">
-        📸 Application Screenshots (${capturedScreenshots.length})
+      <div class="screenshot-header" style="cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center;" onclick="toggleScreenshots()">
+        <span>📸 Application Screenshots (${capturedScreenshots.length})</span>
+        <span id="screenshotToggleIcon" style="font-size:1.2rem;transition:transform 0.3s ease;">▼</span>
       </div>
+      <div id="screenshotCarouselContent">
       <div class="carousel-container">
         <div class="carousel-wrapper">
           <div class="carousel-slides" id="carouselSlides">
@@ -1622,6 +1821,7 @@ function exportSummaryToHTML() {
           <span id="currentSlide">1</span> of ${capturedScreenshots.length}
         </div>
       ` : ''}
+      </div>
     </div>
     ` : ''}
 
@@ -1672,8 +1872,15 @@ function exportSummaryToHTML() {
           <input type="text" class="search-box" id="externalSearch" placeholder="Search external domains..." onkeyup="filterDomains('external')">
         </div>
         <div class="domain-grid" id="externalGrid">
-          ${externals.map(domain => `<div class="domain-tag external" data-domain="${domain.toLowerCase()}">${domain}</div>`).join('')}
+          ${externals.map((domain, index) => `<div class="domain-tag external" data-domain="${domain.toLowerCase()}" style="${index >= 5 ? 'display:none;' : ''}">${domain}</div>`).join('')}
         </div>
+        ${externals.length > 5 ? `
+          <div style="text-align:center;margin-top:1rem;">
+            <button onclick="toggleExternalDomains()" id="showMoreExternalBtn" style="padding:0.5rem 1.5rem;background:rgba(139,146,167,0.1);border:1px solid rgba(139,146,167,0.3);border-radius:6px;color:#8b92a7;cursor:pointer;font-size:0.85rem;font-weight:500;">
+              Show ${externals.length - 5} more
+            </button>
+          </div>
+        ` : ''}
       ` : '<div class="empty-state">No external domains discovered</div>'}
     </div>
 
@@ -1983,6 +2190,45 @@ function exportSummaryToHTML() {
       // Update counter
       if (counter) {
         counter.textContent = currentSlideIndex + 1;
+      }
+    }
+
+    // Toggle screenshot carousel visibility
+    let screenshotsCollapsed = false;
+    function toggleScreenshots() {
+      const content = document.getElementById('screenshotCarouselContent');
+      const icon = document.getElementById('screenshotToggleIcon');
+
+      screenshotsCollapsed = !screenshotsCollapsed;
+
+      if (content) {
+        content.style.display = screenshotsCollapsed ? 'none' : 'block';
+      }
+
+      if (icon) {
+        icon.style.transform = screenshotsCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
+        icon.textContent = screenshotsCollapsed ? '▶' : '▼';
+      }
+    }
+
+    // Toggle external domains visibility
+    let externalDomainsExpanded = false;
+    function toggleExternalDomains() {
+      const grid = document.getElementById('externalGrid');
+      const btn = document.getElementById('showMoreExternalBtn');
+      const allTags = Array.from(grid.querySelectorAll('.domain-tag.external'));
+      const totalCount = allTags.length;
+
+      externalDomainsExpanded = !externalDomainsExpanded;
+
+      allTags.forEach((tag, index) => {
+        if (index >= 5) {
+          tag.style.display = externalDomainsExpanded ? 'inline-block' : 'none';
+        }
+      });
+
+      if (btn) {
+        btn.textContent = externalDomainsExpanded ? 'Show less' : \`Show \${totalCount - 5} more\`;
       }
     }
 

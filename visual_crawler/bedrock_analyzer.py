@@ -1,8 +1,12 @@
 """AWS Bedrock integration for LLM-powered API analysis."""
 
 import json
+import logging
 import boto3
 from typing import Optional
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
 def _build_prompt(
@@ -67,7 +71,7 @@ def _parse_llm_response(llm_text: str) -> dict:
         parsed = json.loads(json_str)
         return parsed
     except Exception as e:
-        print(f"[WARNING] Failed to parse LLM JSON response: {e}")
+        logger.warning(f"Failed to parse LLM JSON response: {e}")
         # Return raw text if parsing fails
         return {
             "description": llm_text[:500],  # First 500 chars
@@ -156,7 +160,7 @@ class BedrockAPIAnalyzer:
             return _parse_llm_response(content_text)
 
         except Exception as e:
-            print(f"[ERROR] Bedrock API call failed: {e}")
+            logger.error(f"Bedrock API call failed: {e}")
             return {
                 "error": str(e),
                 "description": "Failed to generate description"
