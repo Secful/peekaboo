@@ -19,6 +19,7 @@ from playwright.async_api import async_playwright, Page, Response
 
 # Local imports
 from .models import DiscoveredEndpoint
+from .sitemap_parser import fetch_sitemap_urls
 from .constants import (
     STATIC_EXTENSIONS,
     API_SCRIPT_EXTENSIONS,
@@ -38,19 +39,37 @@ from .constants import (
 class ProxyPool:
     """Manages a pool of BrightData proxies for rotation."""
 
-    def __init__(self, proxies: list[dict]) -> None:
+    def __init__(self, proxies: list[dict], enable_dynamic_sessions: bool = True) -> None:
         """Initialize proxy pool.
 
         Args:
             proxies: List of proxy dicts with keys: server, username, password
+            enable_dynamic_sessions: If True, generate new session IDs for each rotation (fresh IPs)
         """
         self.proxies = proxies if proxies else []
         self.current_idx = 0
         self.failed_proxies: set[int] = set()
         self.request_count = 0
+        self.enable_dynamic_sessions = enable_dynamic_sessions
+
+        # Store base usernames (without session IDs) for dynamic generation
+        self.base_usernames = []
+        if self.enable_dynamic_sessions and self.proxies:
+            for proxy in self.proxies:
+                username = proxy.get('username', '')
+                # Remove existing session ID if present
+                if '-session-' in username:
+                    base_username = username.rsplit('-session-', 1)[0]
+                else:
+                    base_username = username
+                self.base_usernames.append(base_username)
 
     def get_next_proxy(self) -> Optional[dict]:
-        """Get next proxy in rotation."""
+        """Get next proxy in rotation.
+
+        If dynamic_sessions is enabled, generates a NEW session ID for each call,
+        ensuring each rotation gets a fresh residential IP from BrightData.
+        """
         if not self.proxies:
             return None
 
@@ -68,6 +87,23 @@ class ProxyPool:
 
             if proxy_idx not in self.failed_proxies:
                 self.request_count += 1
+
+                # Generate new session ID for fresh IP (if enabled)
+                if self.enable_dynamic_sessions and self.base_usernames:
+                    import random
+                    new_session_id = random.randint(100000, 999999)
+                    base_username = self.base_usernames[proxy_idx]
+                    new_username = f"{base_username}-session-{new_session_id}"
+
+                    logger.info(f"🔄 Generated fresh residential IP session: {new_session_id}")
+
+                    # Return proxy with new session ID
+                    return {
+                        "server": proxy["server"],
+                        "username": new_username,
+                        "password": proxy["password"]
+                    }
+
                 return proxy
 
         return None
@@ -107,6 +143,8 @@ def _is_static(req_url: str) -> bool:
     """Check if a URL points to a static file."""
     # Parse URL and get path without query parameters
     parsed_path = urlparse(req_url).path.lower()
+    # Strip trailing slashes/backslashes before checking extension
+    parsed_path = parsed_path.rstrip('/\\')
     # Check if it ends with any static extension
     return any(parsed_path.endswith(ext) for ext in STATIC_EXTENSIONS)
 
@@ -296,7 +334,8 @@ class APICrawler:
                  max_delay: float = 5.0,
                  proxy_pool: Optional[ProxyPool] = None,
                  max_retries: int = 3,
-                 rotate_identity: bool = True) -> None:
+                 rotate_identity: bool = True,
+                 scraping_browser_url: Optional[str] = None) -> None:
         self.context = None
         self.browser = None
         self.domain = domain.lower().replace("https://", "").replace("http://", "").rstrip("/")
@@ -318,6 +357,10 @@ class APICrawler:
         self.max_retries = max_retries
         self.rotate_identity = rotate_identity
 
+        # BrightData Scraping Browser (remote browser)
+        self.scraping_browser_url = scraping_browser_url
+        self.using_remote_browser = False
+
         # State tracking
         self.pages_since_rotation = 0
         self.proxy_rotation_threshold = 10  # Rotate proxy every N pages
@@ -337,6 +380,9 @@ class APICrawler:
         # Callback to push events to the dashboard
         self._on_event = None
 
+        # Screenshot synchronization lock (prevent page close during screenshot)
+        self._screenshot_lock = asyncio.Lock()
+
     def on_event(self, callback: Callable[[dict], Awaitable[None]]) -> None:
         """Register a callback for crawler events."""
         self._on_event = callback
@@ -350,6 +396,30 @@ class APICrawler:
         """Signal the crawler to stop after the current batch finishes."""
         self.queue.clear()
         self._stopped = True
+
+    async def _sleep_with_heartbeat(self, duration: float) -> None:
+        """Sleep for a duration while sending periodic heartbeats to keep WebSocket alive.
+
+        Args:
+            duration: Total sleep duration in seconds
+        """
+        HEARTBEAT_INTERVAL = 30  # Send heartbeat every 30 seconds
+        elapsed = 0
+        last_heartbeat = 0
+
+        while elapsed < duration and not self._stopped:
+            sleep_chunk = min(1.0, duration - elapsed)  # Sleep in 1-second chunks
+            await asyncio.sleep(sleep_chunk)
+            elapsed += sleep_chunk
+
+            # Send heartbeat every 30 seconds
+            if elapsed - last_heartbeat >= HEARTBEAT_INTERVAL:
+                await self._emit("heartbeat", {
+                    "queue_size": len(self.queue),
+                    "pages_visited": len(self.visited_pages),
+                    "scan_id": self.scan_id,
+                })
+                last_heartbeat = elapsed
 
     def _get_random_user_agent(self) -> str:
         """Get a random user agent for anti-detection."""
@@ -409,11 +479,11 @@ class APICrawler:
         })
 
         if blocking_indicators['captcha']:
-            # CAPTCHA detected - significant delay
+            # CAPTCHA requires human interaction - skip this page immediately
             await self._emit("status", {
-                "message": "🤖 CAPTCHA detected - waiting 30s..."
+                "message": f"🤖 CAPTCHA detected on {page_url} - skipping page"
             })
-            await asyncio.sleep(30)
+            raise Exception(f"CAPTCHA detected - page requires human verification")
 
         elif blocking_indicators['status_code']:
             # Rate limit or forbidden - exponential backoff
@@ -421,7 +491,7 @@ class APICrawler:
             await self._emit("status", {
                 "message": f"⏸️ Rate limited - backing off {backoff}s..."
             })
-            await asyncio.sleep(backoff)
+            await self._sleep_with_heartbeat(backoff)
 
         # Try rotating identity after blocking
         if self.rotate_identity and self.blocking_detected_count >= 2:
@@ -460,8 +530,9 @@ class APICrawler:
             },
         }
 
-        # Add proxy if configured
-        if self.proxy_config:
+        # Add proxy if configured (only for local browser)
+        # Remote browser already includes IP management
+        if not self.using_remote_browser and self.proxy_config:
             context_options["proxy"] = self.proxy_config
 
         return context_options
@@ -508,6 +579,11 @@ class APICrawler:
     async def _add_stealth_scripts(self, page: Page) -> None:
         """Add enhanced stealth scripts to mask automation."""
         if not self.stealth_mode:
+            return
+
+        # BrightData Scraping Browser has built-in stealth, skip custom scripts
+        if self.using_remote_browser:
+            logger.debug("Remote browser: skipping custom stealth scripts")
             return
 
         await page.add_init_script("""
@@ -605,18 +681,48 @@ class APICrawler:
         await self._emit("status", {"message": status_msg})
 
         async with async_playwright() as p:
-            # Use new headless mode (harder to detect) with stealth args
-            self.browser = await p.chromium.launch(
-                headless=True,
-                args=[
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-dev-shm-usage',
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-web-security',
-                    '--disable-features=IsolateOrigins,site-per-process',
-                ]
-            )
+            # Check if BrightData Scraping Browser URL is configured
+            if self.scraping_browser_url:
+                # Try to connect to BrightData remote browser
+                try:
+                    logger.info("🌐 Connecting to BrightData Scraping Browser...")
+                    await self._emit("status", {"message": "🌐 Connecting to remote browser..."})
+                    self.browser = await p.chromium.connect_over_cdp(self.scraping_browser_url)
+                    self.using_remote_browser = True
+                    logger.info("✅ Connected to BrightData Scraping Browser")
+                    await self._emit("status", {"message": "✅ Connected to remote browser with anti-bot protection"})
+                except Exception as e:
+                    logger.error(f"❌ Failed to connect to remote browser: {e}")
+                    await self._emit("status", {"message": f"⚠️  Remote browser failed, using local browser"})
+                    logger.info("🔄 Falling back to local browser...")
+                    # Fallback to local browser
+                    self.browser = await p.chromium.launch(
+                        headless=True,
+                        args=[
+                            '--disable-blink-features=AutomationControlled',
+                            '--disable-dev-shm-usage',
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--disable-web-security',
+                            '--disable-features=IsolateOrigins,site-per-process',
+                        ]
+                    )
+                    self.using_remote_browser = False
+            else:
+                # Use local browser (backward compatibility)
+                logger.info("🖥️  Using local Playwright browser...")
+                self.browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-web-security',
+                        '--disable-features=IsolateOrigins,site-per-process',
+                    ]
+                )
+                self.using_remote_browser = False
 
             # Get context options with randomization if stealth mode is enabled
             context_options = self._get_context_options()
@@ -664,7 +770,8 @@ class APICrawler:
                     if self.stealth_mode and len(self.visited_pages) > 0:
                         delay = random.uniform(self.min_delay, self.max_delay)
                         logger.debug(f"Stealth delay: {delay:.2f}s before next batch")
-                        await asyncio.sleep(delay)
+                        # Sleep in chunks and send heartbeat to keep WebSocket alive
+                        await self._sleep_with_heartbeat(delay)
 
                     # Crawl batch in parallel with per-page timeout (2x page timeout)
                     max_time_per_page = (self.timeout * 2) // 1000  # Convert ms to seconds, double it
@@ -702,7 +809,7 @@ class APICrawler:
                     await self._emit("status", {
                         "message": f"⚠️ Retry {attempt + 1}/{self.max_retries} for {page_url}"
                     })
-                    await asyncio.sleep(backoff)
+                    await self._sleep_with_heartbeat(backoff)
 
                     # Try rotating proxy on failure if available
                     if self.proxy_pool and attempt > 0:
@@ -776,11 +883,19 @@ class APICrawler:
 
                         # Continue with normal page processing (don't return)
                     except Exception as www_error:
-                        # www prefix also failed
+                        # www prefix also failed - try sitemap fallback
                         logger.error(f"www prefix also failed: {www_error}")
                         await self._emit("crawl_error", {"url": www_url, "error": f"Both {self.domain} and {www_domain} failed"})
                         await self._emit("status", {"message": f"❌ Could not connect to {self.domain} or {www_domain}"})
-                        return
+
+                        # Try sitemap.xml as last resort
+                        sitemap_success = await self._try_sitemap_fallback(page)
+                        if not sitemap_success:
+                            # Sitemap also failed, give up
+                            return
+                        else:
+                            # Sitemap succeeded, return to skip this page but continue with queue
+                            return
                 else:
                     # Not the start URL or already tried www, just skip this page
                     await self._emit("crawl_error", {"url": page_url, "error": f"{error_type}: {error_msg}"})
@@ -805,6 +920,24 @@ class APICrawler:
             if self.stealth_mode:
                 blocking_indicators = await self._detect_blocking(page, response)
                 if any(blocking_indicators.values()):
+                    # If CAPTCHA detected on start URL, try sitemap fallback first
+                    if blocking_indicators['captcha'] and page_url == self._start_url:
+                        blocking_str = ', '.join([k for k, v in blocking_indicators.items() if v])
+                        logger.warning(f"Blocking detected on start URL {page_url}: {blocking_str}")
+                        await self._emit("status", {
+                            "message": f"⚠️ CAPTCHA detected on homepage - trying sitemap fallback"
+                        })
+
+                        # Try sitemap fallback
+                        sitemap_success = await self._try_sitemap_fallback(page)
+                        if sitemap_success:
+                            # Sitemap worked, return to continue with queue
+                            return
+                        else:
+                            # Sitemap failed too, raise exception
+                            raise Exception(f"CAPTCHA detected and sitemap fallback failed")
+
+                    # For other pages or non-CAPTCHA blocking, use normal handling
                     await self._handle_blocking(blocking_indicators, page_url)
 
             # Increment pages since last rotation
@@ -817,14 +950,16 @@ class APICrawler:
             if not self.fast_mode:
                 try:
                     logger.debug(f"Taking screenshot of: {page_url}")
-                    screenshot_bytes = await page.screenshot(type="jpeg", quality=60, timeout=15000)
-                    screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
-                    logger.debug(f"Screenshot captured, size: {len(screenshot_b64)} chars")
-                    await self._emit("screenshot", {
-                        "url": page_url,
-                        "image": screenshot_b64,
-                        "scan_id": self.scan_id,
-                    })
+                    # Use lock to prevent page close during screenshot capture
+                    async with self._screenshot_lock:
+                        screenshot_bytes = await page.screenshot(type="jpeg", quality=60, timeout=15000)
+                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+                        logger.debug(f"Screenshot captured, size: {len(screenshot_b64)} chars")
+                        await self._emit("screenshot", {
+                            "url": page_url,
+                            "image": screenshot_b64,
+                            "scan_id": self.scan_id,
+                        })
                     logger.debug(f"Screenshot emitted for: {page_url}")
                 except Exception as screenshot_error:
                     logger.error(f"Screenshot failed: {screenshot_error}")
@@ -863,7 +998,9 @@ class APICrawler:
             await self._emit("crawl_error", {"url": page_url, "error": str(e)})
         finally:
             try:
-                await page.close()
+                # Wait for any in-progress screenshot to complete before closing page
+                async with self._screenshot_lock:
+                    await page.close()
             except Exception:
                 pass
 
@@ -1051,4 +1188,50 @@ class APICrawler:
             host = host.lower()
             return host == self.domain or (self.include_subdomains and host.endswith(f".{self.domain}"))
         except Exception:
+            return False
+
+    async def _try_sitemap_fallback(self, page: Page) -> bool:
+        """Try to fetch and parse sitemap.xml as a fallback when homepage fails.
+
+        Returns:
+            True if sitemap was successfully parsed and URLs were added to queue
+        """
+        await self._emit("status", {
+            "message": f"📄 Trying sitemap fallback for {self.domain}"
+        })
+
+        # Use the sitemap parser module to fetch and parse sitemap
+        urls_found = await fetch_sitemap_urls(
+            domain=self.domain,
+            page=page,
+            include_subdomains=self.include_subdomains
+        )
+
+        if not urls_found:
+            # No sitemap URLs found
+            logger.info("Sitemap fallback failed: no sitemaps found or no valid URLs extracted")
+            await self._emit("status", {
+                "message": "⚠️ No sitemap found - scan will end"
+            })
+            return False
+
+        # Add URLs to queue (skip already visited ones)
+        added_count = 0
+        for url in urls_found:
+            if url not in self.visited_pages:
+                # Add to queue with depth 0 (treat as if discovered from homepage)
+                self.queue.append((url, 0))
+                added_count += 1
+
+        if added_count > 0:
+            logger.info(f"✅ Sitemap fallback successful: added {added_count} URLs from {len(urls_found)} total")
+            await self._emit("status", {
+                "message": f"✅ Found {added_count} URLs in sitemap - continuing scan"
+            })
+            return True
+        else:
+            logger.info("All sitemap URLs were already visited")
+            await self._emit("status", {
+                "message": "⚠️ All sitemap URLs already visited - scan will end"
+            })
             return False

@@ -72,9 +72,11 @@ def _load_proxy_config() -> Optional[dict]:
             "username": secret['username'],
             "password": secret['password'],
         }
+        print(f"✅ Single proxy loaded from Secrets Manager: {secret['host']}:{secret['port']}", flush=True)
         logger.info(f"Proxy loaded from Secrets Manager: {secret['host']}:{secret['port']}")
         return proxy_config
     except Exception as e:
+        print(f"⚠️ No single proxy configured: {e}", flush=True)
         logger.info(f"No proxy configured: {e}")
         return None
 
@@ -122,6 +124,13 @@ def _load_brightdata_proxy_pool() -> Optional[ProxyPool]:
             pool_size = secret.get('pool_size', 5)
             base_username = secret['username']
 
+            # Extract zone type from username for debugging
+            zone_info = "unknown"
+            if '-zone-' in base_username:
+                zone_part = base_username.split('-zone-')[1].split('-')[0]
+                zone_info = zone_part
+            print(f"🔍 Proxy zone: {zone_info}", flush=True)
+
             # BrightData: Add session ID to username for sticky sessions
             # Format: brd-customer-{id}-zone-{zone}-session-{random}
             for i in range(pool_size):
@@ -137,13 +146,59 @@ def _load_brightdata_proxy_pool() -> Optional[ProxyPool]:
                 })
 
         if proxies:
+            print(f"✅ Loaded BrightData proxy pool with {len(proxies)} proxies", flush=True)
             logger.info(f"Loaded BrightData proxy pool with {len(proxies)} proxies")
             return ProxyPool(proxies)
         else:
+            print("⚠️ No proxies found in configuration", flush=True)
             return None
 
     except Exception as e:
+        print(f"⚠️ No BrightData proxy pool configured: {e}", flush=True)
         logger.info(f"No BrightData proxy pool configured: {e}")
+        return None
+
+
+def _load_scraping_browser_url() -> Optional[str]:
+    """Construct BrightData Scraping Browser URL from existing proxy credentials.
+
+    Checks the peekaboo/proxy secret for enable_scraping_browser flag.
+    If enabled, extracts customer ID and password to construct WebSocket URL.
+
+    Returns:
+        WebSocket URL for Chrome DevTools Protocol connection, or None if disabled
+    """
+    try:
+        import boto3
+        client = boto3.client('secretsmanager', region_name=os.getenv('AWS_DEFAULT_REGION', 'us-east-1'))
+        resp = client.get_secret_value(SecretId='peekaboo/proxy')
+        secret = json.loads(resp['SecretString'])
+
+        # Check if Scraping Browser is enabled
+        if not secret.get('enable_scraping_browser', False):
+            logger.info("Scraping Browser not enabled in secret config")
+            return None
+
+        # Extract customer ID from username
+        # Format: brd-customer-{id}-zone-{zone}
+        username = secret['username']
+        if 'brd-customer-' not in username:
+            logger.warning("Invalid BrightData username format")
+            return None
+
+        customer_id = username.split('brd-customer-')[1].split('-zone-')[0]
+        password = secret['password']
+        zone = secret.get('scraping_browser_zone', 'scraping_browser1')
+
+        # Construct WebSocket URL for Chrome DevTools Protocol
+        url = f"wss://brd-customer-{customer_id}-zone-{zone}:{password}@brd.superproxy.io:9222"
+
+        print(f"🌐 BrightData Scraping Browser enabled (zone: {zone})", flush=True)
+        logger.info(f"BrightData Scraping Browser enabled with zone: {zone}")
+        return url
+
+    except Exception as e:
+        logger.warning(f"Could not load scraping browser config: {e}")
         return None
 
 
@@ -160,6 +215,7 @@ def create_app() -> FastAPI:
     # Load proxy config from Secrets Manager (if available)
     app.state.proxy_config = _load_proxy_config()
     app.state.proxy_pool = _load_brightdata_proxy_pool()
+    app.state.scraping_browser_url = _load_scraping_browser_url()
 
     # Get the path to the static directory
     static_dir = Path(__file__).parent / "static"
@@ -177,6 +233,16 @@ def create_app() -> FastAPI:
     async def health_check():
         """Health check endpoint."""
         return {"status": "healthy"}
+
+    @app.get("/api/version")
+    async def get_version():
+        """Get version and deployment information."""
+        from .version import __version__
+        return {
+            "version": __version__,
+            "deploy_time": os.getenv("DEPLOY_TIME", "Unknown"),
+            "deploy_date": os.getenv("DEPLOY_DATE", "Unknown")
+        }
 
     @app.post("/api/generate-description")
     async def generate_description(request: GenerateDescriptionRequest):
@@ -313,6 +379,7 @@ def create_app() -> FastAPI:
                         proxy_pool=proxy_pool,
                         max_retries=max_retries,
                         rotate_identity=rotate_identity,
+                        scraping_browser_url=app.state.scraping_browser_url,
                     )
                 except Exception as e:
                     await ws.send_json({
