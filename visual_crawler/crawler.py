@@ -20,6 +20,7 @@ from playwright.async_api import async_playwright, Page, Response
 # Local imports
 from .models import DiscoveredEndpoint
 from .sitemap_parser import fetch_sitemap_urls
+from .technology_detector import analyze_technologies
 from .constants import (
     STATIC_EXTENSIONS,
     API_SCRIPT_EXTENSIONS,
@@ -788,10 +789,16 @@ class APICrawler:
         remaining_in_queue = len(self.queue)
         self.queue.clear()
 
+        # Analyze technologies detected during scan
+        logger.info("Analyzing detected technologies...")
+        endpoint_dicts = [asdict(ep) for ep in self.endpoints]
+        tech_analysis = analyze_technologies(endpoint_dicts, self.domain)
+
         await self._emit("done", {
             "total_endpoints": len(self.endpoints),
             "pages_visited": len(self.visited_pages),
             "pages_skipped": remaining_in_queue,
+            "technologies": tech_analysis,
         })
         return self.endpoints
 

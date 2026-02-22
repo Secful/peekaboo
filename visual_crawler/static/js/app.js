@@ -13,6 +13,7 @@ let scanStartTime = null; // Track scan start time for duration calculation
 let timerInterval = null; // Timer interval for updating scan time display
 let capturedScreenshots = []; // Store up to 5 screenshots for report carousel
 let myScanId = null; // Assigned by server to identify this client's scan
+let detectedTechnologies = null; // Technologies detected from endpoints (file extensions & headers)
 
 // Human-friendly HTTP status code explanations
 const statusExplanations = {
@@ -197,6 +198,16 @@ function ensureWebSocket() {
       document.getElementById('domainIndicator').classList.add('hidden');
       const badge = document.getElementById('otherScans');
       if (badge) { badge.classList.add('hidden'); badge.textContent = ''; }
+
+      // Check for incomplete scan and warn user
+      const queueSize = parseInt(document.getElementById('statQueue').textContent) || 0;
+      if (queueSize > 0) {
+        addLog('⚠️', `Scan incomplete - ${queueSize} URLs remaining in queue`, 'warning');
+      }
+
+      // Clear stale queue stats
+      document.getElementById('statQueue').textContent = '0';
+
       ws = null;
       myScanId = null;
     };
@@ -387,6 +398,15 @@ function handleEvent(msg) {
       }
       break;
 
+    case 'heartbeat':
+      // Update stats from heartbeat to keep WebSocket alive and show progress
+      if (msg.scan_id && msg.scan_id === myScanId) {
+        document.getElementById('statPages').textContent = msg.pages_visited || 0;
+        document.getElementById('statQueue').textContent = msg.queue_size || 0;
+        // Don't log heartbeats - they're just keepalive signals
+      }
+      break;
+
     case 'screenshot':
       // Only process screenshots from OUR scan
       if (msg.scan_id && msg.scan_id !== myScanId) {
@@ -443,6 +463,12 @@ function handleEvent(msg) {
     case 'done':
       // Stop the timer
       stopTimer();
+
+      // Store detected technologies
+      if (msg.technologies) {
+        detectedTechnologies = msg.technologies;
+        console.log('Technologies detected:', detectedTechnologies);
+      }
 
       // Always handle completion even when paused
       document.getElementById('liveDot').classList.add('done');
@@ -1884,6 +1910,133 @@ function exportSummaryToHTML() {
       ` : '<div class="empty-state">No external domains discovered</div>'}
     </div>
 
+    ${detectedTechnologies ? `
+    <div class="section">
+      <div class="section-title">🔧 Detected Technologies</div>
+
+      ${(() => {
+        const tech = detectedTechnologies;
+        const hasServerTech = Object.keys(tech.server_technologies || {}).length > 0;
+        const hasWebServers = Object.keys(tech.web_servers || {}).length > 0;
+        const hasCdns = Object.keys(tech.cdns || {}).length > 0;
+        const hasFrameworks = Object.keys(tech.frameworks || {}).length > 0;
+        const hasOther = Object.keys(tech.other_technologies || {}).length > 0;
+
+        if (!hasServerTech && !hasWebServers && !hasCdns && !hasFrameworks && !hasOther) {
+          return '<div class="empty-state">No technologies detected</div>';
+        }
+
+        let html = '';
+
+        // Server-Side Technologies
+        if (hasServerTech) {
+          html += `
+          <div style="margin-bottom:2rem;">
+            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+              <span>💻</span> Server-Side Languages
+            </h3>
+            <div class="stats-grid">
+              ${Object.entries(tech.server_technologies).map(([name, data]) => `
+                <div class="stat-card">
+                  <div class="stat-label">${name}</div>
+                  <div class="stat-value">${data.count}</div>
+                  ${data.versions && data.versions.length > 0 ?
+                    `<div class="stat-subtext">v${data.versions.join(', v')}</div>` :
+                    '<div class="stat-subtext">Version unknown</div>'
+                  }
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+        }
+
+        // Web Servers
+        if (hasWebServers) {
+          html += `
+          <div style="margin-bottom:2rem;">
+            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+              <span>🌐</span> Web Servers
+            </h3>
+            <div class="stats-grid">
+              ${Object.entries(tech.web_servers).map(([name, data]) => `
+                <div class="stat-card">
+                  <div class="stat-label">${name}</div>
+                  <div class="stat-value">${data.count}</div>
+                  ${data.versions && data.versions.length > 0 ?
+                    `<div class="stat-subtext">v${data.versions.join(', v')}</div>` :
+                    '<div class="stat-subtext">Version unknown</div>'
+                  }
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+        }
+
+        // CDNs
+        if (hasCdns) {
+          html += `
+          <div style="margin-bottom:2rem;">
+            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+              <span>⚡</span> Content Delivery Networks
+            </h3>
+            <div class="stats-grid">
+              ${Object.entries(tech.cdns).map(([name, data]) => `
+                <div class="stat-card">
+                  <div class="stat-label">${name}</div>
+                  <div class="stat-value">${data.count}</div>
+                  <div class="stat-subtext">${data.count === 1 ? 'endpoint' : 'endpoints'}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+        }
+
+        // Frameworks
+        if (hasFrameworks) {
+          html += `
+          <div style="margin-bottom:2rem;">
+            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+              <span>🏗️</span> Frameworks & Libraries
+            </h3>
+            <div class="stats-grid">
+              ${Object.entries(tech.frameworks).map(([name, data]) => `
+                <div class="stat-card">
+                  <div class="stat-label">${name}</div>
+                  <div class="stat-value">${data.count}</div>
+                  <div class="stat-subtext">${data.count === 1 ? 'endpoint' : 'endpoints'}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+        }
+
+        // Other Technologies
+        if (hasOther) {
+          html += `
+          <div style="margin-bottom:1rem;">
+            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+              <span>⚙️</span> Other Technologies
+            </h3>
+            <div class="stats-grid">
+              ${Object.entries(tech.other_technologies).map(([name, data]) => `
+                <div class="stat-card">
+                  <div class="stat-label">${name}</div>
+                  <div class="stat-value">${data.count}</div>
+                  ${data.versions && data.versions.length > 0 ?
+                    `<div class="stat-subtext">v${data.versions.join(', v')}</div>` :
+                    '<div class="stat-subtext">' + (data.count === 1 ? 'endpoint' : 'endpoints') + '</div>'
+                  }
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+        }
+
+        return html;
+      })()}
+    </div>
+    ` : ''}
+
     ${(() => {
       // Filter to only show domain/subdomain endpoints
       const domainEndpoints = apiEndpoints.filter(ep => {
@@ -2258,8 +2411,20 @@ function startNewScan() {
   newScan();
 }
 
-function showAbout() {
+async function showAbout() {
   document.getElementById('aboutOverlay').classList.add('show');
+
+  // Fetch version info
+  try {
+    const response = await fetch('/api/version');
+    const data = await response.json();
+    document.getElementById('appVersion').textContent = `v${data.version}`;
+    document.getElementById('deployTime').textContent = data.deploy_time;
+  } catch (err) {
+    console.error('Failed to fetch version info:', err);
+    document.getElementById('appVersion').textContent = 'Unknown';
+    document.getElementById('deployTime').textContent = 'Unknown';
+  }
 }
 
 function closeAbout() {
