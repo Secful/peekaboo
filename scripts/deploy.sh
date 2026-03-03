@@ -69,7 +69,14 @@ aws ecr get-login-password --region "${REGION}" | docker login --username AWS --
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 
-docker build --platform linux/amd64 -t "${ECR_REPO}:${IMAGE_TAG}" "${PROJECT_DIR}"
+# Capture deploy timestamp
+DEPLOY_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+DEPLOY_DATE=$(date -u +"%Y-%m-%d")
+
+docker build --platform linux/amd64 \
+  --build-arg DEPLOY_TIME="${DEPLOY_TIME}" \
+  --build-arg DEPLOY_DATE="${DEPLOY_DATE}" \
+  -t "${ECR_REPO}:${IMAGE_TAG}" "${PROJECT_DIR}"
 docker tag "${ECR_REPO}:${IMAGE_TAG}" "${ECR_URI}:${IMAGE_TAG}"
 docker push "${ECR_URI}:${IMAGE_TAG}"
 echo "  ✔ Image pushed to ${ECR_URI}:${IMAGE_TAG}"

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>👀 Peekaboo – API Discovery</title>
-<link rel="stylesheet" href="/static/css/styles.css">
+<link rel="stylesheet" href="/static/css/styles.css?v=2">
 </head>
 <body>
 <!-- Start Form Overlay -->
@@ -224,10 +224,23 @@
 
     <div class="screenshot-section">
       <div class="label">Live Preview</div>
-      <div class="screenshot-box" id="screenshotBox">
-        <div class="placeholder">
-          <div class="placeholder-logo">👀</div>
-          <div class="placeholder-subtitle">Peekaboo is watching...</div>
+      <!-- During scan: full-width screenshot -->
+      <div id="previewLive" class="preview-live">
+        <div class="preview-live-box" id="previewThumb">
+          <div class="idle-icon">👀</div>
+        </div>
+      </div>
+      <!-- After scan: summary table + create report -->
+      <div id="previewSummary" class="preview-layout hidden">
+        <div class="preview-info">
+          <table class="preview-info-table" id="previewTable">
+            <tr><td class="pi-label">Status</td><td class="pi-value" id="piStatus">Complete</td></tr>
+            <tr><td class="pi-label">Target</td><td class="pi-value" id="piTarget">—</td></tr>
+            <tr><td class="pi-label">Pages</td><td class="pi-value" id="piPages">0</td></tr>
+            <tr><td class="pi-label">APIs</td><td class="pi-value highlight" id="piApis">0</td></tr>
+            <tr><td class="pi-label">Duration</td><td class="pi-value" id="piDuration">—</td></tr>
+          </table>
+          <button class="create-report-btn" onclick="exportSummaryToHTML()">📄 Create Report</button>
         </div>
       </div>
       <div class="current-url" id="currentUrl">&nbsp;</div>
@@ -239,6 +252,14 @@
 
   <!-- Right panel -->
   <div class="right-panel">
+    <!-- View toggle tabs -->
+    <div class="view-tabs">
+      <button class="view-tab active" id="tabEndpoints" onclick="switchView('endpoints')">Endpoints</button>
+      <button class="view-tab" id="tabSubdomains" onclick="switchView('subdomains')">Subdomains</button>
+    </div>
+
+    <!-- Endpoints view (default) -->
+    <div id="endpointsView">
     <div class="table-controls">
       <input class="search-input" id="searchInput" placeholder="Filter endpoints..." oninput="currentPage = 1; applyFilters();">
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
@@ -297,6 +318,17 @@
         <div>Waiting for API endpoints to appear...</div>
       </div>
     </div>
+    </div><!-- /endpointsView -->
+
+    <!-- Subdomains view -->
+    <div id="subdomainsView" class="hidden">
+      <div class="subdomain-content" id="subdomainContent">
+        <div class="subdomain-placeholder">
+          <div class="icon">🌐</div>
+          <div>Start a scan to discover subdomains</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -327,6 +359,17 @@
       <p><em>Revealing hidden APIs in plain sight</em></p>
 
       <p><strong>Peekaboo</strong> is a real-time visual API discovery tool that crawls web applications and automatically identifies REST API endpoints by monitoring network traffic and analyzing application behavior.</p>
+
+      <div style="margin-top: 1.5rem; padding: 1rem; background: var(--bg-secondary); border-radius: 8px; font-size: 0.9rem;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+          <span style="color: var(--muted);">Version:</span>
+          <span id="appVersion" style="font-family: monospace;">Loading...</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--muted);">Deployed:</span>
+          <span id="deployTime" style="font-family: monospace;">Loading...</span>
+        </div>
+      </div>
 
       <p style="text-align: center; margin-top: 2rem; color: var(--muted); font-size: 0.85rem;">
         🔐 A Salt Security Project
@@ -388,5 +431,5 @@
 </div>
 
 </body>
-<script src="/static/js/app.js"></script>
+<script src="/static/js/app.js?v=2"></script>
 </html>

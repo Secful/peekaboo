@@ -9,6 +9,7 @@ STATIC_EXTENSIONS = {
     ".br", ".gz", ".webmanifest", ".xml", ".txt", ".pdf", ".json",
     ".webm", ".avi", ".mov", ".mp3", ".wav", ".ogg", ".flac",
     ".bmp", ".tiff", ".tif", ".avif", ".apng",
+    ".pbf",  # Protocol Buffer Format (map tiles, fonts)
 }
 
 # Server-side script extensions that should be considered as API endpoints

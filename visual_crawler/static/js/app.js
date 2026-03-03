@@ -14,6 +14,8 @@ let timerInterval = null; // Timer interval for updating scan time display
 let capturedScreenshots = []; // Store up to 5 screenshots for report carousel
 let myScanId = null; // Assigned by server to identify this client's scan
 let detectedTechnologies = null; // Technologies detected from endpoints (file extensions & headers)
+let subdomainResults = null; // Subdomain discovery results from Lambda
+let lastScreenshotBase64 = null; // Last screenshot for summary view
 
 // Human-friendly HTTP status code explanations
 const statusExplanations = {
@@ -104,6 +106,22 @@ function resetTimer() {
   stopTimer();
   scanStartTime = null;
   document.getElementById('statTimer').textContent = '00:00';
+}
+
+// Update the live preview info table
+function updatePreviewInfo() {
+  const apiCount = endpoints.filter(ep =>
+    ep.api_confidence === 'API' || ep.method === 'GET*'
+  ).length;
+  const pages = document.getElementById('statPages').textContent;
+  document.getElementById('piPages').textContent = pages;
+  document.getElementById('piApis').textContent = apiCount;
+  if (scanStartTime) {
+    const elapsed = Math.floor((Date.now() - scanStartTime) / 1000);
+    const m = Math.floor(elapsed / 60);
+    const s = elapsed % 60;
+    document.getElementById('piDuration').textContent = m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
 }
 
 // Helper function to check if an endpoint belongs to target domain or subdomain
@@ -332,6 +350,7 @@ function newScan() {
   uiPaused = false; // Reset pause state
   resetTimer(); // Reset scan timer
   capturedScreenshots = []; // Clear screenshots
+  subdomainResults = null; // Clear subdomain results
 
   // Reset pause button
   const pauseBtn = document.getElementById('pauseBtn');
@@ -350,12 +369,10 @@ function newScan() {
   document.getElementById('statPages').textContent = '0';
   document.getElementById('statHosts').textContent = '0';
   document.getElementById('statQueue').textContent = '0';
-  document.getElementById('screenshotBox').innerHTML = `
-    <div class="placeholder">
-      <div class="placeholder-logo">👀</div>
-      <div class="placeholder-subtitle">Peekaboo is watching...</div>
-    </div>
-  `;
+  document.getElementById('previewThumb').innerHTML = '<div class="idle-icon">👀</div>';
+  document.getElementById('previewLive').classList.remove('hidden');
+  document.getElementById('previewSummary').classList.add('hidden');
+  lastScreenshotBase64 = null;
   document.getElementById('currentUrl').textContent = '\u00A0';
   document.getElementById('methodFilters').innerHTML = '';
   document.getElementById('liveDot').classList.remove('done');
@@ -370,8 +387,283 @@ function newScan() {
     }
   });
 
+  // Reset subdomain view
+  document.getElementById('subdomainContent').innerHTML = `
+    <div class="subdomain-placeholder">
+      <div class="icon">🌐</div>
+      <div>Start a scan to discover subdomains</div>
+    </div>`;
+  switchView('endpoints');
+
   // Show the start form
   document.getElementById('startOverlay').classList.remove('hidden');
+}
+
+function switchView(view) {
+  const endpointsView = document.getElementById('endpointsView');
+  const subdomainsView = document.getElementById('subdomainsView');
+  const tabEndpoints = document.getElementById('tabEndpoints');
+  const tabSubdomains = document.getElementById('tabSubdomains');
+
+  if (view === 'subdomains') {
+    endpointsView.style.display = 'none';
+    subdomainsView.classList.remove('hidden');
+    tabEndpoints.classList.remove('active');
+    tabSubdomains.classList.add('active');
+  } else {
+    endpointsView.style.display = '';
+    subdomainsView.classList.add('hidden');
+    tabEndpoints.classList.add('active');
+    tabSubdomains.classList.remove('active');
+  }
+}
+
+function renderSubdomainTable(data) {
+  const container = document.getElementById('subdomainContent');
+
+  // data is the Lambda response — expect an array of subdomain objects
+  const subdomains = Array.isArray(data) ? data : (data.subdomains || data.results || []);
+
+  if (subdomains.length === 0) {
+    container.innerHTML = `
+      <div class="subdomain-placeholder">
+        <div class="icon">🔍</div>
+        <div>No subdomains discovered</div>
+      </div>`;
+    return;
+  }
+
+  // Count stats
+  const liveCount = subdomains.filter(s => s.status_code && s.status_code >= 200 && s.status_code < 400).length;
+  const crawlableCount = subdomains.filter(s => s.can_crawl).length;
+
+  let html = `
+    <div class="subdomain-summary">
+      <div class="subdomain-summary-stat"><strong>${subdomains.length}</strong> subdomains found</div>
+      <div class="subdomain-summary-stat"><strong>${liveCount}</strong> live (2xx/3xx)</div>
+      <div class="subdomain-summary-stat"><strong>${crawlableCount}</strong> crawlable</div>
+    </div>
+    <table class="subdomain-table">
+      <thead>
+        <tr>
+          <th style="width:50px">#</th>
+          <th>Subdomain</th>
+          <th style="width:60px">Status</th>
+          <th>Title</th>
+          <th>Technologies</th>
+          <th style="width:90px">Screenshot</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  for (let idx = 0; idx < subdomains.length; idx++) {
+    const sub = subdomains[idx];
+    const name = sub.subdomain || sub.domain || sub.host || '—';
+    const status = sub.status_code || sub.status || 0;
+    const title = sub.title || '—';
+    const server = sub.web_server || sub.server || '—';
+    const screenshot = sub.screenshot || sub.screenshot_url || '';
+    const techs = sub.technologies || [];
+    const crawlable = !!sub.can_crawl;
+
+    // Status badge class
+    let statusCls = 'subdomain-status-0';
+    if (status >= 200 && status < 300) statusCls = 'subdomain-status-2xx';
+    else if (status >= 300 && status < 400) statusCls = 'subdomain-status-3xx';
+    else if (status >= 400 && status < 500) statusCls = 'subdomain-status-4xx';
+    else if (status >= 500) statusCls = 'subdomain-status-5xx';
+
+    // Technology tags
+    const techHtml = techs.length > 0
+      ? `<div class="subdomain-techs-wrap">${techs.map(t => `<span class="subdomain-tech-tag">${escHtml(t)}</span>`).join('')}</div>`
+      : '<span style="color:var(--muted);font-size:0.75rem;">—</span>';
+
+    // Screenshot is raw base64 JPEG from Lambda — add data URI prefix
+    let thumbHtml = '<span style="color:var(--muted);font-size:0.75rem;">—</span>';
+    if (screenshot && screenshot.length > 100) {
+      const thumbSrc = screenshot.startsWith('data:') ? screenshot : `data:image/jpeg;base64,${screenshot}`;
+      thumbHtml = `<img class="subdomain-thumb" src="${thumbSrc}" alt="${escHtml(name)}">`;
+    }
+
+    // Crawl button inline with subdomain name
+    const crawlBtnHtml = crawlable
+      ? ` <button class="crawl-btn" id="crawl-btn-${idx}" onclick="crawlSubdomain(event, ${idx}, '${escHtml(name)}')">🔍 Look deeper</button>`
+      : '';
+
+    html += `
+      <tr id="sub-row-${idx}">
+        <td style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${idx + 1}</td>
+        <td class="subdomain-name"><span id="crawl-td-${idx}">${escHtml(name)}${crawlBtnHtml}</span></td>
+        <td><span class="subdomain-status ${statusCls}">${status || '—'}</span></td>
+        <td class="subdomain-title" title="${escHtml(title)}">${escHtml(title)}</td>
+        <td class="subdomain-techs">${techHtml}</td>
+        <td>${thumbHtml}</td>
+      </tr>`;
+
+    // Expandable row for crawled URLs (initially empty, populated after crawl)
+    if (crawlable) {
+      html += `
+      <tr id="crawled-row-${idx}" class="crawled-urls-row hidden">
+        <td colspan="6" class="crawled-urls-cell">
+          <div class="crawled-urls-list" id="crawled-list-${idx}"></div>
+        </td>
+      </tr>`;
+    }
+  }
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function isApiOrJsUrl(url) {
+  const lower = url.toLowerCase();
+  // JS files only
+  return /\.js(\?|$)/.test(lower);
+}
+
+async function crawlSubdomain(event, idx, subdomain) {
+  event.stopPropagation();
+  const wrapper = document.getElementById(`crawl-td-${idx}`);
+  const expandRow = document.getElementById(`crawled-row-${idx}`);
+  const listDiv = document.getElementById(`crawled-list-${idx}`);
+
+  // Replace crawl button with spinner, keep subdomain name
+  wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Looking deeper...</span>`;
+
+  try {
+    const resp = await fetch(`/api/crawl-subdomain?crawl=${encodeURIComponent(subdomain)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    const rawUrls = data.crawled_urls || data.urls || (Array.isArray(data) ? data : []);
+    const urls = rawUrls.filter(isApiOrJsUrl);
+    // Find JS files in both filtered and raw lists
+    const jsUrls = rawUrls.filter(u => /\.js(\?|#|$)/i.test(u));
+    if (urls.length > 0) {
+      // Show pill with count next to name, plus "Even Deeper" if JS files exist
+      const evenDeeperBtn = jsUrls.length > 0
+        ? ` <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Even Deeper (${jsUrls.length} JS)</button>`
+        : '';
+      wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawled-urls-pill active" onclick="toggleUrlList(event, 'url-list-${idx}')">${urls.length} URLs</span>${evenDeeperBtn}`;
+      // Store JS URLs as data attribute for the analyzer
+      const expandRow2 = document.getElementById(`crawled-row-${idx}`);
+      if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsUrls);
+      // Populate expandable row with collapsible URL list + separate API results area
+      const urlItems = urls.map(u => {
+        let display = u;
+        try {
+          const parsed = new URL(u);
+          display = parsed.pathname + parsed.search;
+          if (display.length > 90) display = display.slice(0, 80) + '…';
+        } catch {}
+        return `<div class="crawled-url-item"><a href="${escHtml(u)}" target="_blank" rel="noopener" title="${escHtml(u)}">${escHtml(display)}</a></div>`;
+      }).join('');
+      listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`
+        + `<div id="url-list-${idx}" class="url-list-collapsible">${urlItems}</div>`;
+      expandRow.classList.remove('hidden');
+    } else {
+      // No API URLs but still might have JS files in raw list
+      const jsOnly = rawUrls.filter(u => /\.js(\?|#|$)/i.test(u));
+      if (jsOnly.length > 0) {
+        const expandRow2 = document.getElementById(`crawled-row-${idx}`);
+        if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsOnly);
+        wrapper.innerHTML = `${escHtml(subdomain)} <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Even Deeper (${jsOnly.length} JS)</button>`;
+        listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`;
+        expandRow.classList.remove('hidden');
+      } else {
+        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-done-empty">Nothing interesting here</span>`;
+      }
+    }
+  } catch (err) {
+    wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-error" title="${escHtml(err.message)}">Failed</span>`;
+  }
+}
+
+async function analyzeJsDeeper(event, idx, subdomain) {
+  event.stopPropagation();
+  const btn = document.getElementById(`even-deeper-btn-${idx}`);
+  const resultsDiv = document.getElementById(`even-deeper-results-${idx}`);
+  const listDiv = document.getElementById(`crawled-list-${idx}`);
+
+  // Collect JS URLs from stored data attribute
+  const expandRow = document.getElementById(`crawled-row-${idx}`);
+  let jsUrls = [];
+  try { jsUrls = JSON.parse(expandRow.dataset.jsUrls || '[]'); } catch {};
+
+  if (jsUrls.length === 0) return;
+
+  // Replace button with spinner
+  btn.outerHTML = `<span class="crawl-spinner" id="even-deeper-spinner-${idx}"><span class="crawl-spin-icon"></span> Hunting for APIs...</span>`;
+
+  // Show results container with loading state
+  resultsDiv.innerHTML = `<div class="even-deeper-loading">Hunting for APIs in ${jsUrls.length} JS files...</div>`;
+
+  try {
+    const resp = await fetch('/api/analyze-js', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({urls: jsUrls})
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const apis = data.apis || [];
+
+    // Remove spinner, add API count label
+    const spinner = document.getElementById(`even-deeper-spinner-${idx}`);
+    const apiLabel = apis.length > 0
+      ? `<span class="api-count-pill has-apis">${apis.length} APIs</span>`
+      : `<span class="api-count-pill no-apis">No APIs here..</span>`;
+    if (spinner) spinner.outerHTML = apiLabel;
+
+    if (apis.length > 0) {
+      let html = `<div class="even-deeper-header">Found ${apis.length} API calls in JS source</div>`;
+      html += `<table class="even-deeper-table">
+        <thead><tr><th>Method</th><th>Endpoint</th><th>Context</th><th>Source File</th></tr></thead><tbody>`;
+      for (const api of apis) {
+        const mCls = 'method-' + (api.method || 'GET').toUpperCase();
+        html += `<tr>
+          <td><span class="even-deeper-method ${mCls}">${escHtml(api.method || 'GET')}</span></td>
+          <td class="even-deeper-url">${escHtml(api.url || '')}</td>
+          <td class="even-deeper-ctx">${escHtml(api.context || '')}</td>
+          <td class="even-deeper-src">${escHtml(api.source_file || '')}</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      resultsDiv.innerHTML = html;
+    } else {
+      resultsDiv.innerHTML = `<div class="even-deeper-empty">No API calls found in JS source</div>`;
+    }
+  } catch (err) {
+    const spinner = document.getElementById(`even-deeper-spinner-${idx}`);
+    if (spinner) spinner.outerHTML = `<span class="crawl-error" title="${escHtml(err.message)}">Analysis failed</span>`;
+    resultsDiv.innerHTML = `<div class="even-deeper-error">Analysis failed: ${escHtml(err.message)}</div>`;
+  }
+}
+
+function toggleCrawledUrls(event, rowId) {
+  event.stopPropagation();
+  const row = document.getElementById(rowId);
+  const pill = event.currentTarget;
+  if (row.classList.contains('hidden')) {
+    row.classList.remove('hidden');
+    pill.classList.add('active');
+  } else {
+    row.classList.add('hidden');
+    pill.classList.remove('active');
+  }
+}
+
+function toggleUrlList(event, listId) {
+  event.stopPropagation();
+  const list = document.getElementById(listId);
+  const pill = event.currentTarget;
+  if (list.classList.contains('collapsed')) {
+    list.classList.remove('collapsed');
+    pill.classList.add('active');
+  } else {
+    list.classList.add('collapsed');
+    pill.classList.remove('active');
+  }
 }
 
 function handleEvent(msg) {
@@ -403,7 +695,6 @@ function handleEvent(msg) {
       if (msg.scan_id && msg.scan_id === myScanId) {
         document.getElementById('statPages').textContent = msg.pages_visited || 0;
         document.getElementById('statQueue').textContent = msg.queue_size || 0;
-        // Don't log heartbeats - they're just keepalive signals
       }
       break;
 
@@ -421,9 +712,9 @@ function handleEvent(msg) {
         });
       }
       if (!uiPaused) {
-        const box = document.getElementById('screenshotBox');
-        box.innerHTML = `<img src="data:image/jpeg;base64,${msg.image}" alt="screenshot">`;
+        document.getElementById('previewThumb').innerHTML = `<img src="data:image/jpeg;base64,${msg.image}" alt="screenshot">`;
         document.getElementById('currentUrl').textContent = msg.url;
+        lastScreenshotBase64 = msg.image;
       }
       break;
 
@@ -450,6 +741,33 @@ function handleEvent(msg) {
         myScanId = msg.your_scan_id;
       }
       renderActiveScans(msg.scans);
+      break;
+
+    case 'subdomains_loading':
+      subdomainResults = null;
+      document.getElementById('subdomainContent').innerHTML = `
+        <div class="subdomain-loading">
+          <div class="spinner"></div>
+          <div class="loading-text">Discovering subdomains...</div>
+          <div class="loading-subtext">This may take up to 2 minutes</div>
+        </div>`;
+      addLog('🌐', 'Subdomain discovery started...', '');
+      break;
+
+    case 'subdomains':
+      subdomainResults = msg.data;
+      renderSubdomainTable(msg.data);
+      {
+        const subs = Array.isArray(msg.data) ? msg.data : (msg.data.subdomains || msg.data.results || []);
+        addLog('🌐', `Subdomain discovery complete: ${subs.length} found`, 'endpoint');
+      }
+      break;
+
+    case 'subdomains_error':
+      subdomainResults = null;
+      document.getElementById('subdomainContent').innerHTML = `
+        <div class="subdomain-error">${escHtml(msg.message)}</div>`;
+      addLog('⚠️', msg.message, 'error');
       break;
 
     case 'crawl_error':
@@ -502,30 +820,25 @@ function handleEvent(msg) {
         emptyState.style.display = 'block';
       }
 
-      // Show static "Mission Complete" message in Live Preview
-      const screenshotBox = document.getElementById('screenshotBox');
-      screenshotBox.innerHTML = `
-        <div class="placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem;">
-          <div style="font-size: 2rem; margin-bottom: 0.5rem;">✅</div>
-          <div style="font-size: 1rem; font-weight: 700; color: var(--green); margin-bottom: 1rem; letter-spacing: 0.05em;">
-            MISSION COMPLETE
-          </div>
-          <div style="text-align: left; color: var(--text); line-height: 1.6; font-size: 0.85rem;">
-            <div style="margin-bottom: 0.3rem;">
-              <span style="color: var(--green);">•</span>
-              <span style="font-weight: 600;"> ${msg.total_endpoints}</span> endpoint${msg.total_endpoints !== 1 ? 's' : ''} discovered
-            </div>
-            <div style="margin-bottom: 0.3rem;">
-              <span style="color: var(--green);">•</span>
-              <span style="font-weight: 600;"> ${msg.pages_visited}</span> page${msg.pages_visited !== 1 ? 's' : ''} crawled
-            </div>
-            <div>
-              <span style="color: var(--green);">•</span>
-              Ready for export
-            </div>
-          </div>
-        </div>
-      `;
+      // Switch Live Preview from screenshot to summary table
+      const duration = scanStartTime ? Math.round((Date.now() - scanStartTime) / 1000) : 0;
+      const mins = Math.floor(duration / 60);
+      const secs = duration % 60;
+      const durText = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      const apiFound = endpoints.filter(ep => ep.api_confidence === 'API' || ep.method === 'GET*').length;
+
+      // Populate summary table
+      document.getElementById('piStatus').textContent = 'Complete';
+      document.getElementById('piStatus').style.color = 'var(--green)';
+      document.getElementById('piTarget').textContent = targetDomain;
+      document.getElementById('piPages').textContent = msg.pages_visited;
+      document.getElementById('piApis').textContent = apiFound;
+      document.getElementById('piApis').className = apiFound > 0 ? 'pi-value highlight' : 'pi-value';
+      document.getElementById('piDuration').textContent = durText;
+
+      // Toggle views: hide live, show summary
+      document.getElementById('previewLive').classList.add('hidden');
+      document.getElementById('previewSummary').classList.remove('hidden');
 
       // Show scan summary modal
       showScanSummary(msg);
@@ -1135,10 +1448,10 @@ function exportSummaryToHTML() {
   const externalTags = Array.from(externalList.querySelectorAll('.summary-domain-tag'));
   const externals = externalTags.map(tag => tag.textContent);
 
-  // Group endpoints by API confidence
-  const apiEndpoints = endpoints.filter(ep => ep.api_confidence === 'API');
-  const maybeApiEndpoints = endpoints.filter(ep => ep.api_confidence === 'Maybe API');
-  const otherEndpoints = endpoints.filter(ep => !ep.api_confidence || ep.api_confidence === 'Not API');
+  // Group endpoints by API confidence (GET* = hardcoded in source, treat as confirmed)
+  const apiEndpoints = endpoints.filter(ep => ep.api_confidence === 'API' || ep.method === 'GET*');
+  const maybeApiEndpoints = endpoints.filter(ep => ep.api_confidence === 'Maybe API' && ep.method !== 'GET*');
+  const otherEndpoints = endpoints.filter(ep => (!ep.api_confidence || ep.api_confidence === 'Not API') && ep.method !== 'GET*');
 
   // Generate HTML
   const html = `<!DOCTYPE html>
@@ -2067,7 +2380,7 @@ function exportSummaryToHTML() {
             ${previewEndpoints.map(ep => {
               const statusClass = ep.response_status ?
                 'status-' + Math.floor(ep.response_status / 100) + 'xx' : '';
-              const methodClass = 'method-' + (ep.method || 'default');
+              const methodClass = 'method-' + (ep.method || 'default').replace('*', '');
               return `
                 <tr>
                   <td><span class="method-badge ${methodClass}">${ep.method}</span></td>
@@ -2142,7 +2455,7 @@ function exportSummaryToHTML() {
             ${maybeApiEndpoints.map(ep => {
               const statusClass = ep.response_status ?
                 'status-' + Math.floor(ep.response_status / 100) + 'xx' : '';
-              const methodClass = 'method-' + (ep.method || 'default');
+              const methodClass = 'method-' + (ep.method || 'default').replace('*', '');
               const statusPrefix = ep.response_status ? Math.floor(ep.response_status / 100).toString() : '';
               return `
                 <tr class="endpoint-row"
@@ -2165,6 +2478,66 @@ function exportSummaryToHTML() {
       </div>
     </div>
     ` : ''}
+
+    ${(() => {
+      if (!subdomainResults) return '';
+      const subs = Array.isArray(subdomainResults) ? subdomainResults : (subdomainResults.subdomains || subdomainResults.results || []);
+      if (subs.length === 0) return '';
+      const liveCount = subs.filter(s => s.status_code && s.status_code >= 200 && s.status_code < 400).length;
+      return `
+    <div class="section">
+      <div class="section-title">🌐 Subdomain Discovery (${subs.length} found, ${liveCount} live)</div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Subdomain</th>
+              <th>Status</th>
+              <th>Title</th>
+              <th>Technologies</th>
+              <th>Screenshot</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${subs.map((sub, i) => {
+              const name = sub.subdomain || sub.domain || sub.host || '—';
+              const status = sub.status_code || sub.status || 0;
+              const title = sub.title || '—';
+              const server = sub.web_server || sub.server || '—';
+              const screenshot = sub.screenshot || '';
+              const techs = sub.technologies || [];
+              const statusClass = status >= 200 && status < 300 ? 'status-2xx' :
+                status >= 300 && status < 400 ? 'status-3xx' :
+                status >= 400 && status < 500 ? 'status-4xx' :
+                status >= 500 ? 'status-5xx' : '';
+              const thumbHtml = screenshot && screenshot.length > 100
+                ? '<img src="data:image/jpeg;base64,' + screenshot + '" style="width:120px;height:68px;object-fit:cover;border-radius:4px;border:1px solid #2a2f3f;">'
+                : '<span style="color:#8b92a7;">—</span>';
+              const techHtml = techs.length > 0
+                ? '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;">' + techs.map(t => '<span style="display:inline-block;padding:0.15rem 0.5rem;background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.3);border-radius:4px;font-size:0.7rem;color:#5eead4;white-space:nowrap;line-height:1.4;">' + t + '</span>').join('') + '</div>'
+                : '<span style="color:#8b92a7;">—</span>';
+              // Read crawled URLs from the DOM if they were fetched
+              const listEl = document.getElementById('crawled-list-' + i);
+              const domUrls = listEl ? Array.from(listEl.querySelectorAll('.crawled-url-item a')).map(a => a.href) : [];
+              const urlsSuffix = domUrls.length > 0
+                ? ' <span style="color:#a78bfa;font-size:0.75rem;font-weight:600;">(' + domUrls.length + ' URLs)</span>'
+                : '';
+              return '<tr>' +
+                '<td>' + (i + 1) + '</td>' +
+                '<td style="color:#00ff88;font-family:JetBrains Mono,monospace;font-size:0.85rem;">' + name + urlsSuffix + '</td>' +
+                '<td>' + (status ? '<span class="status-badge ' + statusClass + '">' + status + '</span>' : '—') + '</td>' +
+                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + title + '</td>' +
+                '<td>' + techHtml + '</td>' +
+                '<td>' + thumbHtml + '</td>' +
+                '</tr>' +
+                (domUrls.length > 0 ? '<tr><td colspan="6" style="padding:0;"><details style="cursor:pointer;padding:0.3rem 1rem 0.3rem 3rem;background:rgba(0,0,0,0.15);"><summary style="color:#a78bfa;font-size:0.75rem;font-weight:600;">' + domUrls.length + ' crawled URLs</summary><div style="max-height:150px;overflow-y:auto;margin-top:0.3rem;padding:0.3rem;background:rgba(0,0,0,0.2);border-radius:4px;">' + domUrls.map(u => { let d = u; try { const p = new URL(u); d = p.pathname + p.search; if (d.length > 90) d = d.slice(0,80) + '…'; } catch {} return '<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;padding:0.15rem 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="' + u + '" target="_blank" style="color:#8b92a7;text-decoration:none;">' + d + '</a></div>'; }).join('') + '</div></details></td></tr>' : '');
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+    })()}
 
     <div class="footer">
       <p>Generated by <strong>Peekaboo</strong> - Visual API Discovery Scanner</p>

@@ -21,9 +21,18 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+# Third-party (HTTP client)
+import httpx
+
 # Local imports
 from .crawler import APICrawler, ProxyPool
 from .bedrock_analyzer import BedrockAPIAnalyzer
+
+# Subdomain discovery Lambda URL (configurable via env var)
+SUBDOMAIN_LAMBDA_URL = os.getenv(
+    'SUBDOMAIN_LAMBDA_URL',
+    'https://24g3gth3qwhguxrhkuomm3l67i0gdhyy.lambda-url.us-east-1.on.aws/'
+)
 
 # Shared state for tracking active scans across WebSocket clients
 _scan_id_counter = itertools.count(1)
@@ -55,6 +64,11 @@ class GenerateDescriptionRequest(BaseModel):
     response_body: Optional[str] = None
     response_status: Optional[int] = None
     query_params: Optional[list[str]] = None
+
+
+class AnalyzeJsRequest(BaseModel):
+    """Request body for JS source analysis."""
+    urls: list[str]
 
 
 def _load_proxy_config() -> Optional[dict]:
@@ -202,6 +216,22 @@ def _load_scraping_browser_url() -> Optional[str]:
         return None
 
 
+async def _fetch_subdomains(domain: str, send_event) -> None:
+    """Call the subdomain-discovery Lambda and push results via WebSocket."""
+    await send_event({"type": "subdomains_loading"})
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.get(SUBDOMAIN_LAMBDA_URL, params={"domain": domain})
+            resp.raise_for_status()
+            await send_event({"type": "subdomains", "data": resp.json()})
+    except Exception as exc:
+        logger.warning(f"Subdomain discovery failed for {domain}: {exc}")
+        await send_event({
+            "type": "subdomains_error",
+            "message": f"Subdomain discovery failed: {exc}",
+        })
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI()
@@ -278,6 +308,104 @@ def create_app() -> FastAPI:
                 status_code=500,
                 detail=f"Failed to generate description: {str(e)}"
             )
+
+    @app.get("/api/crawl-subdomain")
+    async def crawl_subdomain(crawl: str):
+        """Call the subdomain Lambda with ?crawl=<subdomain> to get crawled URLs."""
+        try:
+            async with httpx.AsyncClient(timeout=300) as client:
+                resp = await client.get(
+                    SUBDOMAIN_LAMBDA_URL, params={"crawl": crawl}
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as e:
+            logger.error(f"Subdomain crawl failed for {crawl}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Subdomain crawl failed: {str(e)}",
+            )
+
+    @app.post("/api/analyze-js")
+    async def analyze_js(request: AnalyzeJsRequest):
+        """Fetch JS files and use Bedrock/Claude to extract REST API calls."""
+        js_urls = request.urls[:10]  # Limit to 10 JS files
+        if not js_urls:
+            raise HTTPException(status_code=400, detail="No URLs provided")
+
+        # Fetch JS source code
+        js_sources: list[dict] = []
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            for url in js_urls:
+                try:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    text = resp.text[:50_000]  # Cap each file at 50KB
+                    js_sources.append({"url": url, "source": text})
+                except Exception as e:
+                    logger.warning(f"Failed to fetch JS {url}: {e}")
+
+        if not js_sources:
+            return JSONResponse(content={"apis": [], "error": "Could not fetch any JS files"})
+
+        # Build prompt for Claude
+        prompt = (
+            "You are an expert at reading JavaScript source code and extracting REST API calls.\n\n"
+            "Analyze the following JavaScript files and extract ALL REST API endpoints you can find. "
+            "Look for: fetch() calls, XMLHttpRequest, axios, $.ajax, $.get, $.post, superagent, "
+            "ky, got, request(), http.get/post, and any URL strings that look like API endpoints.\n\n"
+            "IMPORTANT - Only extract actual API calls that send/receive data. Do NOT include:\n"
+            "- Paths to static assets (JS, CSS, images, fonts, HTML files)\n"
+            "- CDN URLs or asset bundle paths (e.g. /trunk16/static/component.js)\n"
+            "- Webpack/module loader references or dynamic imports\n"
+            "- URL strings that are just file paths, not API endpoints\n"
+            "- Analytics/tracking pixel URLs\n"
+            "A real API call typically hits a path like /api/*, /v1/*, /graphql, /auth/*, "
+            "/users/*, etc. and returns JSON/XML data, not static files.\n\n"
+            "For each endpoint found, extract:\n"
+            "- method: The HTTP method (GET, POST, PUT, DELETE, PATCH) or UNKNOWN if unclear\n"
+            "- url: The full or partial URL/path\n"
+            "- context: A very brief description (under 10 words) of what the call does\n"
+            "- source_file: The filename (not full URL) of the JS file where this was found\n\n"
+        )
+
+        for src in js_sources:
+            prompt += f"--- FILE: {src['url']} ---\n{src['source']}\n\n"
+
+        prompt += (
+            "\nReturn ONLY a JSON array. No explanation. Example:\n"
+            '[{"method":"GET","url":"/api/users","context":"Fetch user list","source_file":"app.js"},'
+            '{"method":"POST","url":"/api/auth/login","context":"User authentication","source_file":"auth.bundle.js"}]\n'
+            "\nIf no API calls found, return an empty array: []"
+        )
+
+        try:
+            analyzer = BedrockAPIAnalyzer()
+            body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 4000,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.2,
+            }
+            response = analyzer.bedrock_runtime.invoke_model(
+                modelId=analyzer.model_id,
+                body=json.dumps(body),
+            )
+            resp_json = json.loads(response["body"].read())
+            llm_text = resp_json["content"][0]["text"]
+
+            # Parse JSON from response
+            if "```json" in llm_text:
+                llm_text = llm_text.split("```json")[1].split("```")[0]
+            elif "```" in llm_text:
+                llm_text = llm_text.split("```")[1].split("```")[0]
+            apis = json.loads(llm_text.strip())
+            if not isinstance(apis, list):
+                apis = []
+            return JSONResponse(content={"apis": apis})
+        except Exception as e:
+            logger.error(f"JS analysis via Bedrock failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
@@ -404,6 +532,9 @@ def create_app() -> FastAPI:
 
                 crawl_task = asyncio.create_task(crawler.crawl())
                 listen_task = asyncio.create_task(_listen_for_stop())
+                subdomain_task = asyncio.create_task(
+                    _fetch_subdomains(domain, send_event)
+                )
                 try:
                     # Wait for crawl to finish; listener runs alongside
                     await crawl_task
@@ -421,6 +552,12 @@ def create_app() -> FastAPI:
                         await listen_task
                     except (asyncio.CancelledError, WebSocketDisconnect):
                         pass
+                    # Let subdomain discovery finish even after crawl ends
+                    if not subdomain_task.done():
+                        try:
+                            await subdomain_task
+                        except Exception:
+                            pass
                     # Scan finished — remove from active, but keep client connected
                     _active_scans.pop(scan_id, None)
                     await _broadcast_active_scans()
