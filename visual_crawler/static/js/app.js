@@ -16,6 +16,7 @@ let myScanId = null; // Assigned by server to identify this client's scan
 let detectedTechnologies = null; // Technologies detected from endpoints (file extensions & headers)
 let subdomainResults = null; // Subdomain discovery results from Lambda
 let lastScreenshotBase64 = null; // Last screenshot for summary view
+const subdomainApis = {}; // Per-subdomain API results from "Even Deeper" analysis
 
 // Human-friendly HTTP status code explanations
 const statusExplanations = {
@@ -517,8 +518,29 @@ function renderSubdomainTable(data) {
 
 function isApiOrJsUrl(url) {
   const lower = url.toLowerCase();
-  // JS files only
-  return /\.js(\?|$)/.test(lower);
+  if (!/\.js(\?|$)/.test(lower)) return false;
+  // Drop common JS libraries / frameworks
+  const skip = [
+    'jquery', 'bootstrap', 'popper', 'angular', 'react', 'react-dom',
+    'vue', 'lodash', 'underscore', 'moment', 'axios', 'backbone',
+    'ember', 'handlebars', 'mustache', 'knockout', 'd3', 'chart',
+    'highcharts', 'three', 'gsap', 'tween', 'anime', 'velocity',
+    'modernizr', 'polyfill', 'babel', 'core-js', 'regenerator',
+    'runtime', 'webpack', 'chunk', 'vendor', 'commons',
+    'fontawesome', 'fa-', 'ionicons', 'material-icons',
+    'recaptcha', 'gtag', 'gtm', 'analytics', 'hotjar', 'sentry',
+    'datadog', 'newrelic', 'segment', 'pixel', 'fbevents',
+    'cloudflare', 'cdn-cgi', 'cookie', 'consent', 'onetrust',
+    'swiper', 'slick', 'owl', 'lightbox', 'fancybox', 'magnific',
+    'select2', 'chosen', 'flatpickr', 'datepicker', 'tinymce',
+    'ckeditor', 'quill', 'codemirror', 'ace-editor',
+    'socket.io', 'sockjs', 'stomp', 'signalr',
+    'lazysizes', 'lazyload', 'intersection-observer',
+    'crypto-js', 'jsencrypt', 'forge',
+    'zone.js', 'rxjs', 'tslib',
+  ];
+  const fname = lower.split('/').pop().split('?')[0];
+  return !skip.some(lib => fname.includes(lib));
 }
 
 async function crawlSubdomain(event, idx, subdomain) {
@@ -530,52 +552,62 @@ async function crawlSubdomain(event, idx, subdomain) {
   // Replace crawl button with spinner, keep subdomain name
   wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Looking deeper...</span>`;
 
-  try {
-    const resp = await fetch(`/api/crawl-subdomain?crawl=${encodeURIComponent(subdomain)}`);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Retry ${attempt}/${maxRetries}...</span>`;
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+      }
 
-    const rawUrls = data.crawled_urls || data.urls || (Array.isArray(data) ? data : []);
-    const urls = rawUrls.filter(isApiOrJsUrl);
-    // Find JS files in both filtered and raw lists
-    const jsUrls = rawUrls.filter(u => /\.js(\?|#|$)/i.test(u));
-    if (urls.length > 0) {
-      // Show pill with count next to name, plus "Even Deeper" if JS files exist
-      const evenDeeperBtn = jsUrls.length > 0
-        ? ` <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Even Deeper (${jsUrls.length} JS)</button>`
-        : '';
-      wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawled-urls-pill active" onclick="toggleUrlList(event, 'url-list-${idx}')">${urls.length} URLs</span>${evenDeeperBtn}`;
-      // Store JS URLs as data attribute for the analyzer
-      const expandRow2 = document.getElementById(`crawled-row-${idx}`);
-      if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsUrls);
-      // Populate expandable row with collapsible URL list + separate API results area
-      const urlItems = urls.map(u => {
-        let display = u;
-        try {
-          const parsed = new URL(u);
-          display = parsed.pathname + parsed.search;
-          if (display.length > 90) display = display.slice(0, 80) + '…';
-        } catch {}
-        return `<div class="crawled-url-item"><a href="${escHtml(u)}" target="_blank" rel="noopener" title="${escHtml(u)}">${escHtml(display)}</a></div>`;
-      }).join('');
-      listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`
-        + `<div id="url-list-${idx}" class="url-list-collapsible">${urlItems}</div>`;
-      expandRow.classList.remove('hidden');
-    } else {
-      // No API URLs but still might have JS files in raw list
-      const jsOnly = rawUrls.filter(u => /\.js(\?|#|$)/i.test(u));
-      if (jsOnly.length > 0) {
+      const resp = await fetch(`/api/crawl-subdomain?crawl=${encodeURIComponent(subdomain)}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+
+      const rawUrls = data.crawled_urls || data.urls || (Array.isArray(data) ? data : []);
+      const urls = rawUrls.filter(isApiOrJsUrl);
+      // Find JS files in both filtered and raw lists
+      const jsUrls = rawUrls.filter(u => /\.js(\?|#|$)/i.test(u));
+      if (urls.length > 0) {
+        // Show pill with count next to name, plus "Even Deeper" if JS files exist
+        const evenDeeperBtn = jsUrls.length > 0
+          ? ` <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`
+          : '';
+        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawled-urls-pill" onclick="toggleUrlList(event, 'url-list-${idx}')">${urls.length} resources</span>${evenDeeperBtn}`;
+        // Store JS URLs as data attribute for the analyzer
         const expandRow2 = document.getElementById(`crawled-row-${idx}`);
-        if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsOnly);
-        wrapper.innerHTML = `${escHtml(subdomain)} <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Even Deeper (${jsOnly.length} JS)</button>`;
-        listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`;
-        expandRow.classList.remove('hidden');
+        if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsUrls);
+        // Populate expandable row with collapsible URL list + separate API results area
+        const urlItems = urls.map(u => {
+          let display = u;
+          try {
+            const parsed = new URL(u);
+            display = parsed.pathname + parsed.search;
+            if (display.length > 90) display = display.slice(0, 80) + '…';
+          } catch {}
+          return `<div class="crawled-url-item"><a href="${escHtml(u)}" target="_blank" rel="noopener" title="${escHtml(u)}">${escHtml(display)}</a></div>`;
+        }).join('');
+        listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`
+          + `<div id="url-list-${idx}" class="url-list-collapsible collapsed">${urlItems}</div>`;
+        // Keep row hidden — it will show when user expands URL list or APIs are found
       } else {
-        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-done-empty">Nothing interesting here</span>`;
+        // No API URLs but still might have JS files in raw list
+        const jsOnly = rawUrls.filter(u => /\.js(\?|#|$)/i.test(u));
+        if (jsOnly.length > 0) {
+          const expandRow2 = document.getElementById(`crawled-row-${idx}`);
+          if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsOnly);
+          wrapper.innerHTML = `${escHtml(subdomain)} <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`;
+          listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`;
+        } else {
+          wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-done-empty">Nothing interesting here</span>`;
+        }
+      }
+      return; // Success — exit the retry loop
+    } catch (err) {
+      if (attempt === maxRetries) {
+        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-error" title="${escHtml(err.message)}">Failed</span>`;
       }
     }
-  } catch (err) {
-    wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-error" title="${escHtml(err.message)}">Failed</span>`;
   }
 }
 
@@ -583,7 +615,6 @@ async function analyzeJsDeeper(event, idx, subdomain) {
   event.stopPropagation();
   const btn = document.getElementById(`even-deeper-btn-${idx}`);
   const resultsDiv = document.getElementById(`even-deeper-results-${idx}`);
-  const listDiv = document.getElementById(`crawled-list-${idx}`);
 
   // Collect JS URLs from stored data attribute
   const expandRow = document.getElementById(`crawled-row-${idx}`);
@@ -595,49 +626,167 @@ async function analyzeJsDeeper(event, idx, subdomain) {
   // Replace button with spinner
   btn.outerHTML = `<span class="crawl-spinner" id="even-deeper-spinner-${idx}"><span class="crawl-spin-icon"></span> Hunting for APIs...</span>`;
 
-  // Show results container with loading state
-  resultsDiv.innerHTML = `<div class="even-deeper-loading">Hunting for APIs in ${jsUrls.length} JS files...</div>`;
+  // Show inline loading state
+  if (resultsDiv) resultsDiv.innerHTML = '';
 
-  try {
-    const resp = await fetch('/api/analyze-js', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({urls: jsUrls})
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    const apis = data.apis || [];
+  const maxRetries = 2;
+  let lastErr = null;
 
-    // Remove spinner, add API count label
-    const spinner = document.getElementById(`even-deeper-spinner-${idx}`);
-    const apiLabel = apis.length > 0
-      ? `<span class="api-count-pill has-apis">${apis.length} APIs</span>`
-      : `<span class="api-count-pill no-apis">No APIs here..</span>`;
-    if (spinner) spinner.outerHTML = apiLabel;
-
-    if (apis.length > 0) {
-      let html = `<div class="even-deeper-header">Found ${apis.length} API calls in JS source</div>`;
-      html += `<table class="even-deeper-table">
-        <thead><tr><th>Method</th><th>Endpoint</th><th>Context</th><th>Source File</th></tr></thead><tbody>`;
-      for (const api of apis) {
-        const mCls = 'method-' + (api.method || 'GET').toUpperCase();
-        html += `<tr>
-          <td><span class="even-deeper-method ${mCls}">${escHtml(api.method || 'GET')}</span></td>
-          <td class="even-deeper-url">${escHtml(api.url || '')}</td>
-          <td class="even-deeper-ctx">${escHtml(api.context || '')}</td>
-          <td class="even-deeper-src">${escHtml(api.source_file || '')}</td>
-        </tr>`;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        const spinnerEl = document.getElementById(`even-deeper-spinner-${idx}`);
+        if (spinnerEl) spinnerEl.innerHTML = `<span class="crawl-spin-icon"></span> Retry ${attempt}/${maxRetries}...`;
+        if (resultsDiv) resultsDiv.innerHTML = '';
+        await new Promise(r => setTimeout(r, 1500 * attempt));
       }
-      html += '</tbody></table>';
-      resultsDiv.innerHTML = html;
-    } else {
-      resultsDiv.innerHTML = `<div class="even-deeper-empty">No API calls found in JS source</div>`;
+
+      const resp = await fetch('/api/analyze-js', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({urls: jsUrls})
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const apis = data.apis || [];
+
+      // Remove spinner, add API count pill
+      const spinner = document.getElementById(`even-deeper-spinner-${idx}`);
+
+      // Filter out variable names (url must contain at least one '/') and deduplicate
+      const staticExts = /\.(js|css|html|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map|xml|json)(\?|#|$)/i;
+      const dedupSeen = new Set();
+      const dedupApis = apis.filter(a => {
+        const url = a.url || '';
+        if (!url.includes('/')) return false;
+        if (staticExts.test(url.split('/').pop())) return false;
+        const k = `${(a.method || 'GET').toUpperCase()}|${url}|${a.source_file || ''}`;
+        if (dedupSeen.has(k)) return false;
+        dedupSeen.add(k);
+        return true;
+      });
+
+      if (dedupApis.length > 0) {
+        // Store deduplicated results for the drawer
+        subdomainApis[idx] = { subdomain, apis: dedupApis, jsUrls };
+
+        const apiLabel = `<span class="api-count-pill has-apis" onclick="openApiDrawer(${idx})">${dedupApis.length} APIs</span>`;
+        if (spinner) spinner.outerHTML = apiLabel;
+
+        // Clear inline results area — APIs now live in the drawer
+        if (resultsDiv) resultsDiv.innerHTML = '';
+
+        // Collapse the JS file list
+        const urlListFound = document.getElementById(`url-list-${idx}`);
+        if (urlListFound) urlListFound.classList.add('collapsed');
+        const wrapperFound = document.getElementById(`crawl-td-${idx}`);
+        if (wrapperFound) {
+          const pillEl = wrapperFound.querySelector('.crawled-urls-pill');
+          if (pillEl) pillEl.classList.remove('active');
+        }
+
+        // Auto-open the drawer
+        openApiDrawer(idx);
+      } else {
+        const apiLabel = `<span class="api-count-pill no-apis">No APIs here..</span>`;
+        if (spinner) spinner.outerHTML = apiLabel;
+        // Hide the expandable row entirely
+        const expandRowEl = document.getElementById(`crawled-row-${idx}`);
+        if (expandRowEl) expandRowEl.classList.add('hidden');
+      }
+      return; // Success — exit the retry loop
+    } catch (err) {
+      lastErr = err;
+      if (attempt === maxRetries) {
+        const spinner = document.getElementById(`even-deeper-spinner-${idx}`);
+        if (spinner) spinner.outerHTML = `<span class="crawl-error" title="${escHtml(err.message)}">Analysis failed</span>`;
+        if (resultsDiv) resultsDiv.innerHTML = `<div class="even-deeper-error">Analysis failed: ${escHtml(err.message)}</div>`;
+      }
     }
-  } catch (err) {
-    const spinner = document.getElementById(`even-deeper-spinner-${idx}`);
-    if (spinner) spinner.outerHTML = `<span class="crawl-error" title="${escHtml(err.message)}">Analysis failed</span>`;
-    resultsDiv.innerHTML = `<div class="even-deeper-error">Analysis failed: ${escHtml(err.message)}</div>`;
   }
+}
+
+function apiHostBelongsToDomain(apiUrl) {
+  if (!targetDomain) return false;
+  const trimmed = apiUrl.trim();
+  // Relative paths (/api/users, /submit, etc.) belong to the subdomain itself
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return true;
+  try {
+    const host = new URL(trimmed).hostname.toLowerCase();
+    return isSubdomainEndpoint(host);
+  } catch {
+    // Not a full URL and not a /-path — treat as domain (e.g. "api/users")
+    return true;
+  }
+}
+
+function openApiDrawer(idx) {
+  const data = subdomainApis[idx];
+  if (!data) return;
+
+  const drawer = document.getElementById('apiDrawer');
+  const title = document.getElementById('apiDrawerTitle');
+  const subtitle = document.getElementById('apiDrawerSubtitle');
+  const content = document.getElementById('apiDrawerContent');
+
+  title.textContent = data.subdomain;
+
+  // Classify APIs as domain or external
+  const classified = data.apis.map(api => {
+    const url = api.url || '';
+    const isDomain = apiHostBelongsToDomain(url);
+    return { api, isDomain };
+  });
+
+  // Sort: domain APIs first
+  classified.sort((a, b) => (b.isDomain ? 1 : 0) - (a.isDomain ? 1 : 0));
+
+  const domainCount = classified.filter(c => c.isDomain).length;
+  const externalCount = classified.length - domainCount;
+  subtitle.textContent = `${classified.length} API${classified.length !== 1 ? 's' : ''} found — ${domainCount} domain, ${externalCount} external`;
+
+  let html = '';
+  for (const { api, isDomain } of classified) {
+    const method = (api.method || 'GET').toUpperCase();
+    const mCls = 'method-' + method;
+    const srcName = api.source_file || '';
+    const srcBaseName = srcName.split('/').pop().split('?')[0].toLowerCase();
+    const srcUrl = srcName ? (
+      data.jsUrls.find(u => u.endsWith(srcName) || u.includes('/' + srcName)) ||
+      data.jsUrls.find(u => { const uBase = u.split('/').pop().split('?')[0].toLowerCase(); return uBase === srcBaseName; }) ||
+      data.jsUrls.find(u => srcBaseName && u.toLowerCase().includes(srcBaseName)) ||
+      '') : '';
+    const srcHtml = srcUrl
+      ? `<a href="${escHtml(srcUrl)}" target="_blank" rel="noopener">${escHtml(srcName)}</a>`
+      : escHtml(srcName);
+    const originCls = isDomain ? 'api-card-domain' : 'api-card-external';
+    const originTag = isDomain
+      ? '<span class="api-origin-tag domain">Domain</span>'
+      : '<span class="api-origin-tag external">External</span>';
+    const evidence = api.evidence || '';
+    const evidenceHtml = evidence
+      ? `<div class="api-card-evidence-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.querySelector('span').textContent=this.nextElementSibling.classList.contains('collapsed')?'▶':'▼'"><span>▶</span> Evidence</div><pre class="api-card-evidence collapsed">${escHtml(evidence)}</pre>`
+      : '';
+    html += `<div class="api-card ${originCls}">
+      <div class="api-card-top">
+        <span class="api-card-method ${mCls}">${escHtml(method)}</span>
+        <span class="api-card-endpoint">${escHtml(api.url || '')}</span>
+        ${originTag}
+      </div>
+      <div class="api-card-bottom">
+        <span class="api-card-ctx">${escHtml(api.context || '')}</span>
+        <span class="api-card-src">${srcHtml}</span>
+      </div>
+      ${evidenceHtml}
+    </div>`;
+  }
+
+  content.innerHTML = html;
+  drawer.classList.add('open');
+}
+
+function closeApiDrawer() {
+  document.getElementById('apiDrawer').classList.remove('open');
 }
 
 function toggleCrawledUrls(event, rowId) {
@@ -657,12 +806,20 @@ function toggleUrlList(event, listId) {
   event.stopPropagation();
   const list = document.getElementById(listId);
   const pill = event.currentTarget;
+  // Find the parent expandable row
+  const expandRow = list ? list.closest('.crawled-urls-row') : null;
   if (list.classList.contains('collapsed')) {
     list.classList.remove('collapsed');
     pill.classList.add('active');
+    if (expandRow) expandRow.classList.remove('hidden');
   } else {
     list.classList.add('collapsed');
     pill.classList.remove('active');
+    // Hide the row if no other visible content (e.g. no API results showing)
+    if (expandRow) {
+      const results = expandRow.querySelector('.even-deeper-results');
+      if (!results || !results.innerHTML.trim()) expandRow.classList.add('hidden');
+    }
   }
 }
 

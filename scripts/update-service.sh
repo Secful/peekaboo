@@ -23,7 +23,10 @@ echo "▸ Building and pushing Docker image..."
 aws ecr get-login-password --region "${REGION}" | \
   docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
-docker build --platform linux/amd64 -t "${ECR_REPO}:${IMAGE_TAG}" "${PROJECT_DIR}"
+docker build --platform linux/amd64 \
+  --build-arg DEPLOY_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')" \
+  --build-arg DEPLOY_DATE="$(date -u '+%Y-%m-%d')" \
+  -t "${ECR_REPO}:${IMAGE_TAG}" "${PROJECT_DIR}"
 docker tag "${ECR_REPO}:${IMAGE_TAG}" "${ECR_URI}:${IMAGE_TAG}"
 docker push "${ECR_URI}:${IMAGE_TAG}"
 echo "  ✔ Image pushed to ${ECR_URI}:${IMAGE_TAG}"

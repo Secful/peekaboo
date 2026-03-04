@@ -354,19 +354,28 @@ def create_app() -> FastAPI:
             "Analyze the following JavaScript files and extract ALL REST API endpoints you can find. "
             "Look for: fetch() calls, XMLHttpRequest, axios, $.ajax, $.get, $.post, superagent, "
             "ky, got, request(), http.get/post, and any URL strings that look like API endpoints.\n\n"
-            "IMPORTANT - Only extract actual API calls that send/receive data. Do NOT include:\n"
-            "- Paths to static assets (JS, CSS, images, fonts, HTML files)\n"
-            "- CDN URLs or asset bundle paths (e.g. /trunk16/static/component.js)\n"
-            "- Webpack/module loader references or dynamic imports\n"
-            "- URL strings that are just file paths, not API endpoints\n"
+            "IMPORTANT - Only extract actual API calls that send/receive data. STRICTLY EXCLUDE:\n"
+            "- Any URL ending in a file extension such as .js, .css, .html, .png, .jpg, .svg, "
+            ".gif, .ico, .woff, .woff2, .ttf, .eot, .map, .json (static file), .xml (static file)\n"
+            "- CDN URLs, asset bundle paths, or package paths (e.g. /rum/@adobe/helix-rum-enhancer@^2/src/index.js)\n"
+            "- Webpack/module loader references, dynamic imports, or script src URLs\n"
+            "- URL strings that are just file paths or resource paths, not API endpoints\n"
             "- Analytics/tracking pixel URLs\n"
+            "- JavaScript variable names or object properties that HOLD a URL but are NOT the URL itself "
+            "(e.g. 'ajaxurl', 'ajax_posts.ajax_url', 'MSP_SP_AJAX_ADMIN_URL', 'swp.ajaxurl', 'url'). "
+            "The 'url' field MUST be a literal URL/path string containing at least one '/' character, "
+            "like '/api/users' or 'https://example.com/data'. If you can only see a variable name "
+            "and cannot resolve the actual URL path, skip that entry entirely.\n"
             "A real API call typically hits a path like /api/*, /v1/*, /graphql, /auth/*, "
-            "/users/*, etc. and returns JSON/XML data, not static files.\n\n"
+            "/users/*, etc. and returns JSON/XML data. If a URL points to a static resource "
+            "or file (especially .js files), it is NOT an API call — skip it.\n\n"
             "For each endpoint found, extract:\n"
             "- method: The HTTP method (GET, POST, PUT, DELETE, PATCH) or UNKNOWN if unclear\n"
             "- url: The full or partial URL/path\n"
             "- context: A very brief description (under 10 words) of what the call does\n"
-            "- source_file: The filename (not full URL) of the JS file where this was found\n\n"
+            "- source_file: The filename (not full URL) of the JS file where this was found\n"
+            "- evidence: The exact code snippet (1-3 lines) from the source that proves this API call exists. "
+            "Copy the relevant lines verbatim from the source code.\n\n"
         )
 
         for src in js_sources:
@@ -374,8 +383,10 @@ def create_app() -> FastAPI:
 
         prompt += (
             "\nReturn ONLY a JSON array. No explanation. Example:\n"
-            '[{"method":"GET","url":"/api/users","context":"Fetch user list","source_file":"app.js"},'
-            '{"method":"POST","url":"/api/auth/login","context":"User authentication","source_file":"auth.bundle.js"}]\n'
+            '[{"method":"GET","url":"/api/users","context":"Fetch user list","source_file":"app.js",'
+            '"evidence":"fetch(\'/api/users\', {method: \'GET\'})"},'
+            '{"method":"POST","url":"/api/auth/login","context":"User authentication","source_file":"auth.bundle.js",'
+            '"evidence":"axios.post(\'/api/auth/login\', credentials)"}]\n'
             "\nIf no API calls found, return an empty array: []"
         )
 

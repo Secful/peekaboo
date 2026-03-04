@@ -1037,6 +1037,8 @@
   }
   .even-deeper-ctx { color: var(--text-muted); font-style: italic; }
   .even-deeper-src { color: var(--text-muted); font-family: 'JetBrains Mono', monospace; font-size: 0.85em; white-space: nowrap; }
+  .even-deeper-src a { color: var(--text-muted); text-decoration: none; transition: color 0.15s; }
+  .even-deeper-src a:hover { color: var(--green); text-decoration: underline; }
   .api-count-pill {
     display: inline-block; padding: 2px 10px; border-radius: 12px;
     font-size: 0.82em; font-weight: 600; margin-left: 8px; vertical-align: middle;
@@ -1054,4 +1056,120 @@
   }
   .url-list-collapsible.collapsed {
     max-height: 0; overflow: hidden; opacity: 0; margin: 0; padding: 0;
+  }
+
+  /* API Drawer */
+  .api-drawer {
+    position: fixed; top: 0; right: -520px; bottom: 0; width: 520px;
+    background: var(--surface); border-left: 1px solid var(--border);
+    box-shadow: -5px 0 20px rgba(0,0,0,0.3); z-index: 2000;
+    transition: right 0.3s ease; overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+  .api-drawer.open { right: 0; }
+  .api-drawer-header {
+    padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: flex-start;
+    background: var(--surface2); flex-shrink: 0;
+  }
+  .api-drawer-header h3 {
+    font-size: 1rem; margin: 0; font-weight: 700; letter-spacing: -0.02em;
+    color: var(--green);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .api-drawer-subtitle {
+    font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;
+    font-weight: 500;
+  }
+  .api-drawer-content {
+    padding: 1rem 1.5rem; flex: 1; overflow-y: auto;
+  }
+
+  /* API card rows inside drawer */
+  .api-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;
+    transition: border-color 0.2s;
+  }
+  .api-card:hover { border-color: var(--purple); }
+  .api-card-top {
+    display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;
+  }
+  .api-card-method {
+    display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+    font-size: 0.72rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    flex-shrink: 0;
+  }
+  .api-card-method.method-GET { background: rgba(0,255,136,0.12); color: var(--green); }
+  .api-card-method.method-POST { background: rgba(59,130,246,0.12); color: var(--post); }
+  .api-card-method.method-PUT { background: rgba(245,158,11,0.12); color: var(--put); }
+  .api-card-method.method-DELETE { background: rgba(239,68,68,0.12); color: var(--delete); }
+  .api-card-method.method-PATCH { background: rgba(139,92,246,0.12); color: var(--patch); }
+  .api-card-method.method-UNKNOWN { background: rgba(139,146,167,0.12); color: var(--text-muted); }
+  .api-card-endpoint {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+    color: var(--green); word-break: break-all;
+  }
+  .api-card-bottom {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.75rem; color: var(--text-muted); gap: 0.5rem;
+  }
+  .api-card-ctx {
+    font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0;
+  }
+  .api-card-src {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .api-card-src a {
+    color: var(--text-muted); text-decoration: none; transition: color 0.15s;
+  }
+  .api-card-src a:hover { color: var(--green); text-decoration: underline; }
+
+  /* Domain vs External card styling */
+  .api-card.api-card-domain {
+    border-left: 3px solid var(--green);
+  }
+  .api-card.api-card-external {
+    opacity: 0.6;
+  }
+  .api-card.api-card-external:hover { opacity: 0.85; }
+  .api-origin-tag {
+    display: inline-block; padding: 0.1rem 0.45rem; border-radius: 4px;
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.03em; flex-shrink: 0; margin-left: auto;
+  }
+  .api-origin-tag.domain {
+    background: rgba(0, 255, 136, 0.12); color: var(--green);
+    border: 1px solid rgba(0, 255, 136, 0.3);
+  }
+  .api-origin-tag.external {
+    background: rgba(139, 146, 167, 0.1); color: var(--text-muted);
+    border: 1px solid rgba(139, 146, 167, 0.25);
+  }
+
+  /* Evidence toggle & code block */
+  .api-card-evidence-toggle {
+    margin-top: 0.4rem; padding: 0.25rem 0; font-size: 0.7rem;
+    color: var(--put); cursor: pointer; user-select: none;
+    font-weight: 600; transition: color 0.15s;
+  }
+  .api-card-evidence-toggle:hover { color: var(--green); }
+  .api-card-evidence-toggle span {
+    display: inline-block; font-size: 0.6rem; margin-right: 0.25rem;
+    transition: transform 0.2s;
+  }
+  .api-card-evidence {
+    margin: 0.3rem 0 0; padding: 0.5rem 0.75rem;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+    color: var(--green); line-height: 1.5;
+    white-space: pre-wrap; word-break: break-all;
+    overflow: hidden; max-height: 200px; opacity: 1;
+    transition: max-height 0.3s ease, opacity 0.2s ease, margin 0.3s ease, padding 0.3s ease;
+  }
+  .api-card-evidence.collapsed {
+    max-height: 0; opacity: 0; margin: 0; padding: 0 0.75rem;
+    border-color: transparent;
   }
