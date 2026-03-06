@@ -20,7 +20,54 @@ const subdomainApis = {}; // Per-subdomain API results from "Even Deeper" analys
 const geoCache = {}; // IP -> {lat, lon, city, country, isp, org}
 let subdomainMapInstance = null;
 let subdomainMapMarkers = [];
+let subdomainMapBounds = null; // saved bounds for "fit all" reset
 let subdomainViewMode = 'table'; // 'table' or 'map'
+
+// PII-related keyword detection (for paths, params, request/response bodies)
+const PII_KEYWORDS = [
+  'email','password','passwd','pwd','ssn','social_security','credit_card',
+  'card_number','cvv','cvc','expir','phone','mobile','address','zipcode',
+  'zip_code','postal','date_of_birth','dob','birth_date','first_name',
+  'last_name','full_name','username','login','credential','secret',
+  'token','api_key','apikey','auth_token','access_token','refresh_token',
+  'session','cookie','passport','driver_license','national_id','tax_id',
+  'bank_account','routing_number','iban','swift','salary','income',
+  'medical','health','diagnosis','patient','insurance','beneficiary',
+  'biometric','fingerprint','face_id','geolocation',
+];
+function getPiiMatches(text) {
+  if (!text) return [];
+  const lower = text.toLowerCase();
+  return PII_KEYWORDS.filter(kw => lower.includes(kw));
+}
+function isPiiRelated(text) {
+  return getPiiMatches(text).length > 0;
+}
+
+// AI-related keyword detection
+const AI_KEYWORDS = [
+  'llm','gpt','openai','claude','anthropic','gemini','bedrock','sagemaker',
+  'genai','gen-ai','copilot','langchain','langgraph','langsmith',
+  'huggingface','ollama','mistral','cohere','replicate','deepseek','groq',
+  'vertex','agentic','mcp','model-context','embedding','vector','rag',
+  'prompt','inference','transformer','neural','chatbot','chat-completion',
+  'completion','fine-tune','finetune','diffusion','stable-diffusion',
+  'midjourney','dall-e','whisper','tokenize','mlflow','predict',
+  'tensorflow','pytorch','keras',
+];
+const AI_BOUNDED = ['ai','ml','nlp','agent'];
+function getAiMatches(text) {
+  if (!text) return [];
+  const lower = text.toLowerCase();
+  const matches = AI_KEYWORDS.filter(kw => lower.includes(kw));
+  for (const kw of AI_BOUNDED) {
+    if (new RegExp(`(?:^|[^a-z])${kw}(?:$|[^a-z])`).test(lower)) matches.push(kw);
+  }
+  return matches;
+}
+function isAiRelated(text) {
+  return getAiMatches(text).length > 0;
+}
 
 // Human-friendly HTTP status code explanations
 const statusExplanations = {
@@ -496,11 +543,12 @@ function renderSubdomainTable(data) {
     const crawlBtnHtml = crawlable
       ? ` <button class="crawl-btn" id="crawl-btn-${idx}" onclick="crawlSubdomain(event, ${idx}, '${escHtml(name)}')">🔍 Look deeper</button>`
       : '';
+    const aiBadgeHtml = isAiRelated(name) ? ' <span class="ai-badge">AI</span>' : '';
 
     html += `
       <tr id="sub-row-${idx}">
         <td style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${idx + 1}</td>
-        <td class="subdomain-name"><span id="crawl-td-${idx}">${escHtml(name)}${crawlBtnHtml}</span></td>
+        <td class="subdomain-name"><span id="crawl-td-${idx}">${escHtml(name)}${aiBadgeHtml}${crawlBtnHtml}</span></td>
         <td><span class="subdomain-status ${statusCls}">${status || '—'}</span></td>
         <td class="subdomain-title" title="${escHtml(title)}">${escHtml(title)}</td>
         <td class="subdomain-techs">${techHtml}</td>
@@ -554,6 +602,7 @@ async function showSubdomainMap() {
   if (!subdomainResults) return;
   const subdomains = Array.isArray(subdomainResults) ? subdomainResults : (subdomainResults.subdomains || subdomainResults.results || []);
   const noData = document.getElementById('mapNoData');
+  const mapLoading = document.getElementById('mapLoading');
   noData.classList.add('hidden');
 
   // Collect unique IPs that need geolocation
@@ -567,6 +616,7 @@ async function showSubdomainMap() {
 
   // Fetch geolocation for uncached IPs
   if (ipsToFetch.length > 0) {
+    mapLoading.classList.remove('hidden');
     try {
       const resp = await fetch('/api/geolocate-ips', {
         method: 'POST',
@@ -584,6 +634,7 @@ async function showSubdomainMap() {
     } catch (e) {
       console.warn('Geolocation fetch failed:', e);
     }
+    mapLoading.classList.add('hidden');
   }
 
   // Initialize map once
@@ -594,6 +645,22 @@ async function showSubdomainMap() {
       subdomains: 'abcd',
       maxZoom: 19,
     }).addTo(subdomainMapInstance);
+
+    // "Fit All" zoom-out control
+    const FitAllControl = L.Control.extend({
+      options: { position: 'topleft' },
+      onAdd: function() {
+        const btn = L.DomUtil.create('div', 'leaflet-bar map-fit-all-btn');
+        btn.innerHTML = '⊡';
+        btn.title = 'Show all subdomains';
+        btn.onclick = function(e) {
+          e.stopPropagation();
+          if (subdomainMapBounds) subdomainMapInstance.fitBounds(subdomainMapBounds);
+        };
+        return btn;
+      }
+    });
+    subdomainMapInstance.addControl(new FitAllControl());
   }
 
   // Clear old markers
@@ -648,8 +715,9 @@ async function showSubdomainMap() {
       else if (status >= 300 && status < 400) statusCls = 'subdomain-status-3xx';
       else if (status >= 400 && status < 500) statusCls = 'subdomain-status-4xx';
       else if (status >= 500) statusCls = 'subdomain-status-5xx';
+      const mapAiBadge = isAiRelated(name) ? ' <span class="ai-badge">AI</span>' : '';
       popupHtml += `<div class="map-popup-sub-row">
-        <span class="map-popup-sub-name">${escHtml(name)}</span>
+        <span class="map-popup-sub-name">${escHtml(name)}${mapAiBadge}</span>
         <span class="map-popup-sub-ip">${escHtml(ip)}</span>
         <span class="subdomain-status ${statusCls}" style="font-size:0.65rem;">${status || '—'}</span>
       </div>`;
@@ -661,12 +729,17 @@ async function showSubdomainMap() {
     bounds.push([geo.lat, geo.lon]);
   }
 
+  // Save bounds for "fit all" button and apply
+  if (bounds.length > 1) {
+    subdomainMapBounds = L.latLngBounds(bounds).pad(0.1);
+  } else if (bounds.length === 1) {
+    subdomainMapBounds = L.latLngBounds(bounds).pad(0.1);
+  }
+
   setTimeout(() => {
     subdomainMapInstance.invalidateSize();
-    if (bounds.length > 1) {
-      subdomainMapInstance.fitBounds(bounds, {padding: [30, 30]});
-    } else if (bounds.length === 1) {
-      subdomainMapInstance.setView(bounds[0], 6);
+    if (subdomainMapBounds) {
+      subdomainMapInstance.fitBounds(subdomainMapBounds);
     }
   }, 100);
 }
@@ -946,6 +1019,7 @@ function openApiDrawer(idx) {
       ? `<span class="api-pii-badge" title="PII: ${escHtml(piiFields)}">⚠ PII</span>`
       : '';
     const piiCls = hasPii ? ' api-card-pii' : '';
+    const apiAiHtml = isAiRelated(api.url) ? '<span class="ai-badge">AI</span>' : '';
     const evidence = api.evidence || '';
     const evidenceHtml = evidence
       ? `<div class="api-card-evidence-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.querySelector('span').textContent=this.nextElementSibling.classList.contains('collapsed')?'▶':'▼'"><span>▶</span> Evidence</div><pre class="api-card-evidence collapsed">${escHtml(evidence)}</pre>`
@@ -954,7 +1028,7 @@ function openApiDrawer(idx) {
       <div class="api-card-top">
         <span class="api-card-method ${mCls}">${escHtml(method)}</span>
         <span class="api-card-endpoint">${escHtml(api.url || '')}</span>
-        <span class="api-card-tags">${categoryHtml}${piiHtml}${originTag}</span>
+        <span class="api-card-tags">${apiAiHtml}${categoryHtml}${piiHtml}${originTag}</span>
       </div>
       <div class="api-card-bottom">
         <span class="api-card-ctx">${escHtml(api.context || '')}</span>
@@ -1197,6 +1271,32 @@ function addEndpointRow(ep, flash=false) {
     typeBadge = '<span style="display:inline-block;padding:0.15rem 0.4rem;background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.3);border-radius:3px;font-size:0.7rem;font-weight:600;margin-right:0.5rem;">Maybe</span>';
   }
 
+  // PII / AI badges — only for confirmed APIs on domain/subdomains
+  let pathSuffixBadges = '';
+  if (ep.api_confidence === 'API' && isDomainEndpoint(ep)) {
+    const textToScan = [ep.path, ...(ep.query_params || []), ep.request_body || '', ep.response_body || ''].join(' ');
+    // PII: collect matches per source
+    const piiSources = [
+      { label: 'path', text: ep.path },
+      { label: 'query', text: (ep.query_params || []).join(' ') },
+      { label: 'request', text: ep.request_body || '' },
+      { label: 'response', text: ep.response_body || '' },
+    ];
+    const piiDetails = [];
+    for (const src of piiSources) {
+      const matches = getPiiMatches(src.text);
+      if (matches.length) piiDetails.push(`${src.label}: ${matches.join(', ')}`);
+    }
+    if (piiDetails.length) pathSuffixBadges += ` <span class="api-pii-badge" title="PII — ${escHtml(piiDetails.join(' | '))}" style="font-size:0.6rem;vertical-align:middle;">PII</span>`;
+    // AI: collect matches per source
+    const aiDetails = [];
+    for (const src of piiSources) {
+      const matches = getAiMatches(src.text);
+      if (matches.length) aiDetails.push(`${src.label}: ${matches.join(', ')}`);
+    }
+    if (aiDetails.length) pathSuffixBadges += ` <span class="ai-badge" title="AI — ${escHtml(aiDetails.join(' | '))}" style="font-size:0.6rem;vertical-align:middle;">AI</span>`;
+  }
+
   // Method with tooltip
   const methodTitle = escHtml(getMethodExplanation(ep.method));
 
@@ -1207,7 +1307,7 @@ function addEndpointRow(ep, flash=false) {
   tr.innerHTML = `
     <td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem;"></td>
     <td><span class="badge ${badgeClass}" style="cursor:help;" title="${methodTitle}">${ep.method}</span></td>
-    <td class="path-cell" title="${escHtml(ep.path)}">${typeBadge}${escHtml(trimPath(ep.path))}</td>
+    <td class="path-cell" title="${escHtml(ep.path)}">${typeBadge}${escHtml(trimPath(ep.path))}${pathSuffixBadges}</td>
     <td class="host-cell">${escHtml(ep.host)}</td>
     <td class="${statusClass}" style="font-weight:600;font-size:0.8rem;cursor:help;" title="${statusTitle}">${statusDisplay}</td>
     <td class="reason-cell">${escHtml(ep.detection_reason)}</td>
@@ -1532,6 +1632,10 @@ function sortBy(col) {
 function shortenUrl(u) {
   try { return new URL(u).pathname; } catch { return u; }
 }
+function tryPrettyJson(text) {
+  try { return JSON.stringify(JSON.parse(text), null, 2); }
+  catch { return text; }
+}
 function escHtml(s) {
   const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
 }
@@ -1652,6 +1756,22 @@ function openDrawer(ep) {
       <div class="detail-label">Discovered At</div>
       <div class="detail-value">${timestamp}</div>
     </div>
+
+    ${ep.request_body ? `
+    <div class="detail-section">
+      <div class="detail-label drawer-collapsible-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.querySelector('.chevron').textContent=this.nextElementSibling.classList.contains('collapsed')?'▶':'▼'">
+        Request Body <span class="chevron">▼</span>
+      </div>
+      <pre class="detail-value drawer-body-pre">${escHtml(tryPrettyJson(ep.request_body))}</pre>
+    </div>` : ''}
+
+    ${ep.response_body ? `
+    <div class="detail-section">
+      <div class="detail-label drawer-collapsible-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.querySelector('.chevron').textContent=this.nextElementSibling.classList.contains('collapsed')?'▶':'▼'">
+        Response Body <span class="chevron">▼</span>
+      </div>
+      <pre class="detail-value drawer-body-pre">${escHtml(tryPrettyJson(ep.response_body))}</pre>
+    </div>` : ''}
   `;
 
   drawer.classList.add('open');
