@@ -17,6 +17,10 @@ let detectedTechnologies = null; // Technologies detected from endpoints (file e
 let subdomainResults = null; // Subdomain discovery results from Lambda
 let lastScreenshotBase64 = null; // Last screenshot for summary view
 const subdomainApis = {}; // Per-subdomain API results from "Even Deeper" analysis
+const geoCache = {}; // IP -> {lat, lon, city, country, isp, org}
+let subdomainMapInstance = null;
+let subdomainMapMarkers = [];
+let subdomainViewMode = 'table'; // 'table' or 'map'
 
 // Human-friendly HTTP status code explanations
 const statusExplanations = {
@@ -107,22 +111,6 @@ function resetTimer() {
   stopTimer();
   scanStartTime = null;
   document.getElementById('statTimer').textContent = '00:00';
-}
-
-// Update the live preview info table
-function updatePreviewInfo() {
-  const apiCount = endpoints.filter(ep =>
-    ep.api_confidence === 'API' || ep.method === 'GET*'
-  ).length;
-  const pages = document.getElementById('statPages').textContent;
-  document.getElementById('piPages').textContent = pages;
-  document.getElementById('piApis').textContent = apiCount;
-  if (scanStartTime) {
-    const elapsed = Math.floor((Date.now() - scanStartTime) / 1000);
-    const m = Math.floor(elapsed / 60);
-    const s = elapsed % 60;
-    document.getElementById('piDuration').textContent = m > 0 ? `${m}m ${s}s` : `${s}s`;
-  }
 }
 
 // Helper function to check if an endpoint belongs to target domain or subdomain
@@ -353,6 +341,15 @@ function newScan() {
   capturedScreenshots = []; // Clear screenshots
   subdomainResults = null; // Clear subdomain results
 
+  // Reset map state
+  Object.keys(geoCache).forEach(k => delete geoCache[k]);
+  subdomainViewMode = 'table';
+  if (subdomainMapInstance) {
+    subdomainMapMarkers.forEach(m => subdomainMapInstance.removeLayer(m));
+    subdomainMapMarkers = [];
+  }
+  document.getElementById('subdomainMapContainer').classList.add('hidden');
+
   // Reset pause button
   const pauseBtn = document.getElementById('pauseBtn');
   pauseBtn.innerHTML = '⏸ Pause Scan';
@@ -371,6 +368,7 @@ function newScan() {
   document.getElementById('statHosts').textContent = '0';
   document.getElementById('statQueue').textContent = '0';
   document.getElementById('previewThumb').innerHTML = '<div class="idle-icon">👀</div>';
+  document.getElementById('previewLabel').textContent = 'Live Preview';
   document.getElementById('previewLive').classList.remove('hidden');
   document.getElementById('previewSummary').classList.add('hidden');
   lastScreenshotBase64 = null;
@@ -411,6 +409,9 @@ function switchView(view) {
     subdomainsView.classList.remove('hidden');
     tabEndpoints.classList.remove('active');
     tabSubdomains.classList.add('active');
+    if (subdomainViewMode === 'map' && subdomainMapInstance) {
+      setTimeout(() => subdomainMapInstance.invalidateSize(), 100);
+    }
   } else {
     endpointsView.style.display = '';
     subdomainsView.classList.add('hidden');
@@ -424,6 +425,7 @@ function renderSubdomainTable(data) {
 
   // data is the Lambda response — expect an array of subdomain objects
   const subdomains = Array.isArray(data) ? data : (data.subdomains || data.results || []);
+  subdomains.sort((a, b) => (b.can_crawl ? 1 : 0) - (a.can_crawl ? 1 : 0));
 
   if (subdomains.length === 0) {
     container.innerHTML = `
@@ -442,7 +444,11 @@ function renderSubdomainTable(data) {
     <div class="subdomain-summary">
       <div class="subdomain-summary-stat"><strong>${subdomains.length}</strong> subdomains found</div>
       <div class="subdomain-summary-stat"><strong>${liveCount}</strong> live (2xx/3xx)</div>
-      <div class="subdomain-summary-stat"><strong>${crawlableCount}</strong> crawlable</div>
+      <div class="subdomain-summary-stat"><strong>${crawlableCount}</strong> crawlable${crawlableCount > 0 ? ` <button class="crawl-btn crawl-all-btn" id="crawlAllBtn" onclick="crawlAllSubdomains()">🔍 Look Deeper All</button>` : ''}</div>
+      <div class="subdomain-view-toggle">
+        <button class="toggle-btn${subdomainViewMode === 'table' ? ' active' : ''}" onclick="setSubdomainViewMode('table')">Table</button>
+        <button class="toggle-btn${subdomainViewMode === 'map' ? ' active' : ''}" onclick="setSubdomainViewMode('map')">Map</button>
+      </div>
     </div>
     <table class="subdomain-table">
       <thead>
@@ -514,6 +520,155 @@ function renderSubdomainTable(data) {
 
   html += '</tbody></table>';
   container.innerHTML = html;
+
+  // Restore map view if user was viewing the map
+  if (subdomainViewMode === 'map') {
+    setSubdomainViewMode('map');
+  }
+}
+
+function setSubdomainViewMode(mode) {
+  subdomainViewMode = mode;
+  const content = document.getElementById('subdomainContent');
+  const mapContainer = document.getElementById('subdomainMapContainer');
+
+  // Update toggle buttons
+  document.querySelectorAll('.subdomain-view-toggle .toggle-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.trim().toLowerCase() === mode);
+  });
+
+  if (mode === 'map') {
+    // Hide table rows but keep summary bar visible
+    const table = content.querySelector('.subdomain-table');
+    if (table) table.style.display = 'none';
+    mapContainer.classList.remove('hidden');
+    showSubdomainMap();
+  } else {
+    const table = content.querySelector('.subdomain-table');
+    if (table) table.style.display = '';
+    mapContainer.classList.add('hidden');
+  }
+}
+
+async function showSubdomainMap() {
+  if (!subdomainResults) return;
+  const subdomains = Array.isArray(subdomainResults) ? subdomainResults : (subdomainResults.subdomains || subdomainResults.results || []);
+  const noData = document.getElementById('mapNoData');
+  noData.classList.add('hidden');
+
+  // Collect unique IPs that need geolocation
+  const ipsToFetch = [];
+  for (const sub of subdomains) {
+    const ip = sub.ip_address || sub.ip || '';
+    if (ip && !geoCache[ip] && !ipsToFetch.includes(ip)) {
+      ipsToFetch.push(ip);
+    }
+  }
+
+  // Fetch geolocation for uncached IPs
+  if (ipsToFetch.length > 0) {
+    try {
+      const resp = await fetch('/api/geolocate-ips', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ips: ipsToFetch}),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        for (const r of (data.results || [])) {
+          if (r.status === 'success') {
+            geoCache[r.query] = {lat: r.lat, lon: r.lon, city: r.city, country: r.country, isp: r.isp, org: r.org};
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Geolocation fetch failed:', e);
+    }
+  }
+
+  // Initialize map once
+  if (!subdomainMapInstance) {
+    subdomainMapInstance = L.map('subdomainMap', {zoomControl: true}).setView([20, 0], 2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 19,
+    }).addTo(subdomainMapInstance);
+  }
+
+  // Clear old markers
+  subdomainMapMarkers.forEach(m => subdomainMapInstance.removeLayer(m));
+  subdomainMapMarkers = [];
+
+  // Group subdomains by location
+  const groups = {};
+  for (const sub of subdomains) {
+    const ip = sub.ip_address || sub.ip || '';
+    const geo = geoCache[ip];
+    if (!geo) continue;
+    const key = `${geo.lat},${geo.lon}`;
+    if (!groups[key]) groups[key] = {geo, subs: []};
+    groups[key].subs.push(sub);
+  }
+
+  const keys = Object.keys(groups);
+  if (keys.length === 0) {
+    noData.classList.remove('hidden');
+    setTimeout(() => subdomainMapInstance.invalidateSize(), 100);
+    return;
+  }
+  noData.classList.add('hidden');
+
+  const bounds = [];
+  for (const key of keys) {
+    const {geo, subs} = groups[key];
+    const radius = Math.min(6 + subs.length * 2, 20);
+    const marker = L.circleMarker([geo.lat, geo.lon], {
+      radius,
+      fillColor: '#00ff88',
+      color: '#6b2fc7',
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.7,
+    }).addTo(subdomainMapInstance);
+
+    // Build popup
+    let popupHtml = `<div class="dark-popup">`;
+    popupHtml += `<div class="map-popup-location">${escHtml(geo.city || '?')}, ${escHtml(geo.country || '?')}</div>`;
+    if (geo.org || geo.isp) {
+      popupHtml += `<div class="map-popup-org">${escHtml(geo.org || geo.isp)}</div>`;
+    }
+    popupHtml += `<div class="map-popup-subs">`;
+    for (const s of subs) {
+      const name = s.subdomain || s.domain || s.host || '—';
+      const ip = s.ip_address || s.ip || '';
+      const status = s.status_code || s.status || 0;
+      let statusCls = 'subdomain-status-0';
+      if (status >= 200 && status < 300) statusCls = 'subdomain-status-2xx';
+      else if (status >= 300 && status < 400) statusCls = 'subdomain-status-3xx';
+      else if (status >= 400 && status < 500) statusCls = 'subdomain-status-4xx';
+      else if (status >= 500) statusCls = 'subdomain-status-5xx';
+      popupHtml += `<div class="map-popup-sub-row">
+        <span class="map-popup-sub-name">${escHtml(name)}</span>
+        <span class="map-popup-sub-ip">${escHtml(ip)}</span>
+        <span class="subdomain-status ${statusCls}" style="font-size:0.65rem;">${status || '—'}</span>
+      </div>`;
+    }
+    popupHtml += `</div></div>`;
+    marker.bindPopup(popupHtml, {className: 'dark-popup-container', maxWidth: 350});
+
+    subdomainMapMarkers.push(marker);
+    bounds.push([geo.lat, geo.lon]);
+  }
+
+  setTimeout(() => {
+    subdomainMapInstance.invalidateSize();
+    if (bounds.length > 1) {
+      subdomainMapInstance.fitBounds(bounds, {padding: [30, 30]});
+    } else if (bounds.length === 1) {
+      subdomainMapInstance.setView(bounds[0], 6);
+    }
+  }, 100);
 }
 
 function isApiOrJsUrl(url) {
@@ -609,6 +764,23 @@ async function crawlSubdomain(event, idx, subdomain) {
       }
     }
   }
+}
+
+async function crawlAllSubdomains() {
+  const btn = document.getElementById('crawlAllBtn');
+  const parent = btn?.parentNode;
+  if (btn) btn.outerHTML = '<span id="crawlAllSpinner" class="crawl-spinner"><span class="crawl-spin-icon"></span> Looking deeper...</span>';
+
+  // Find all individual "Look deeper" buttons and click them sequentially
+  const buttons = document.querySelectorAll('[id^="crawl-btn-"]');
+  for (const b of buttons) {
+    b.click();
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  // Remove spinner when done
+  const spinner = document.getElementById('crawlAllSpinner');
+  if (spinner) spinner.remove();
 }
 
 async function analyzeJsDeeper(event, idx, subdomain) {
@@ -743,7 +915,9 @@ function openApiDrawer(idx) {
 
   const domainCount = classified.filter(c => c.isDomain).length;
   const externalCount = classified.length - domainCount;
-  subtitle.textContent = `${classified.length} API${classified.length !== 1 ? 's' : ''} found — ${domainCount} domain, ${externalCount} external`;
+  const piiCount = classified.filter(c => c.api.pii && c.api.pii.detected).length;
+  const piiSuffix = piiCount > 0 ? ` — ${piiCount} with PII` : '';
+  subtitle.textContent = `${classified.length} API${classified.length !== 1 ? 's' : ''} found — ${domainCount} domain, ${externalCount} external${piiSuffix}`;
 
   let html = '';
   for (const { api, isDomain } of classified) {
@@ -763,15 +937,24 @@ function openApiDrawer(idx) {
     const originTag = isDomain
       ? '<span class="api-origin-tag domain">Domain</span>'
       : '<span class="api-origin-tag external">External</span>';
+    const categoryHtml = api.category
+      ? `<span class="api-category-tag">${escHtml(api.category)}</span>`
+      : '';
+    const hasPii = api.pii && api.pii.detected;
+    const piiFields = hasPii ? (api.pii.fields || []).join(', ') : '';
+    const piiHtml = hasPii
+      ? `<span class="api-pii-badge" title="PII: ${escHtml(piiFields)}">⚠ PII</span>`
+      : '';
+    const piiCls = hasPii ? ' api-card-pii' : '';
     const evidence = api.evidence || '';
     const evidenceHtml = evidence
       ? `<div class="api-card-evidence-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.querySelector('span').textContent=this.nextElementSibling.classList.contains('collapsed')?'▶':'▼'"><span>▶</span> Evidence</div><pre class="api-card-evidence collapsed">${escHtml(evidence)}</pre>`
       : '';
-    html += `<div class="api-card ${originCls}">
+    html += `<div class="api-card ${originCls}${piiCls}">
       <div class="api-card-top">
         <span class="api-card-method ${mCls}">${escHtml(method)}</span>
         <span class="api-card-endpoint">${escHtml(api.url || '')}</span>
-        ${originTag}
+        <span class="api-card-tags">${categoryHtml}${piiHtml}${originTag}</span>
       </div>
       <div class="api-card-bottom">
         <span class="api-card-ctx">${escHtml(api.context || '')}</span>
@@ -977,23 +1160,13 @@ function handleEvent(msg) {
         emptyState.style.display = 'block';
       }
 
-      // Switch Live Preview from screenshot to summary table
-      const duration = scanStartTime ? Math.round((Date.now() - scanStartTime) / 1000) : 0;
-      const mins = Math.floor(duration / 60);
-      const secs = duration % 60;
-      const durText = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-      const apiFound = endpoints.filter(ep => ep.api_confidence === 'API' || ep.method === 'GET*').length;
-
-      // Populate summary table
-      document.getElementById('piStatus').textContent = 'Complete';
+      // Switch Live Preview to Summary
+      document.getElementById('piStatus').textContent = 'Completed';
       document.getElementById('piStatus').style.color = 'var(--green)';
       document.getElementById('piTarget').textContent = targetDomain;
-      document.getElementById('piPages').textContent = msg.pages_visited;
-      document.getElementById('piApis').textContent = apiFound;
-      document.getElementById('piApis').className = apiFound > 0 ? 'pi-value highlight' : 'pi-value';
-      document.getElementById('piDuration').textContent = durText;
 
       // Toggle views: hide live, show summary
+      document.getElementById('previewLabel').textContent = 'Summary';
       document.getElementById('previewLive').classList.add('hidden');
       document.getElementById('previewSummary').classList.remove('hidden');
 
@@ -3187,3 +3360,15 @@ function formatAPIDescription(data) {
 
   return html || '<p>No description available</p>';
 }
+
+// Live Preview hover: toggle class on .app so enlarged image floats above the endpoint table
+(function() {
+  const thumb = document.getElementById('previewThumb');
+  const app = document.querySelector('.app');
+  thumb.addEventListener('mouseenter', function(e) {
+    if (e.target.tagName === 'IMG') app.classList.add('preview-hover-active');
+  }, true);
+  thumb.addEventListener('mouseleave', function(e) {
+    if (e.target.tagName === 'IMG') app.classList.remove('preview-hover-active');
+  }, true);
+})();

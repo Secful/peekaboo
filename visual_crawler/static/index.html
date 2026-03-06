@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>👀 Peekaboo – API Discovery</title>
-<link rel="stylesheet" href="/static/css/styles.css?v=4">
+<link rel="stylesheet" href="/static/css/styles.css?v=5">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
 <body>
 <!-- Start Form Overlay -->
@@ -223,22 +225,19 @@
     </div>
 
     <div class="screenshot-section">
-      <div class="label">Live Preview</div>
+      <div class="label" id="previewLabel">Live Preview</div>
       <!-- During scan: full-width screenshot -->
       <div id="previewLive" class="preview-live">
         <div class="preview-live-box" id="previewThumb">
           <div class="idle-icon">👀</div>
         </div>
       </div>
-      <!-- After scan: summary table + create report -->
+      <!-- After scan: summary -->
       <div id="previewSummary" class="preview-layout hidden">
         <div class="preview-info">
           <table class="preview-info-table" id="previewTable">
             <tr><td class="pi-label">Status</td><td class="pi-value" id="piStatus">Complete</td></tr>
-            <tr><td class="pi-label">Target</td><td class="pi-value" id="piTarget">—</td></tr>
-            <tr><td class="pi-label">Pages</td><td class="pi-value" id="piPages">0</td></tr>
-            <tr><td class="pi-label">APIs</td><td class="pi-value highlight" id="piApis">0</td></tr>
-            <tr><td class="pi-label">Duration</td><td class="pi-value" id="piDuration">—</td></tr>
+            <tr><td class="pi-label">Domain</td><td class="pi-value" id="piTarget">—</td></tr>
           </table>
           <button class="create-report-btn" onclick="exportSummaryToHTML()">📄 Create Report</button>
         </div>
@@ -327,6 +326,10 @@
           <div class="icon">🌐</div>
           <div>Start a scan to discover subdomains</div>
         </div>
+      </div>
+      <div class="subdomain-map-container hidden" id="subdomainMapContainer">
+        <div id="subdomainMap" class="subdomain-map"></div>
+        <div class="map-no-data hidden" id="mapNoData">No geolocation data available</div>
       </div>
     </div>
   </div>
@@ -445,5 +448,5 @@
 </div>
 
 </body>
-<script src="/static/js/app.js?v=4"></script>
+<script src="/static/js/app.js?v=5"></script>
 </html>

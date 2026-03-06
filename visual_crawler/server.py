@@ -71,6 +71,11 @@ class AnalyzeJsRequest(BaseModel):
     urls: list[str]
 
 
+class GeolocateIpsRequest(BaseModel):
+    """Request body for IP geolocation."""
+    ips: list[str]
+
+
 def _load_proxy_config() -> Optional[dict]:
     """Load proxy credentials from AWS Secrets Manager.
 
@@ -375,7 +380,13 @@ def create_app() -> FastAPI:
             "- context: A very brief description (under 10 words) of what the call does\n"
             "- source_file: The filename (not full URL) of the JS file where this was found\n"
             "- evidence: The exact code snippet (1-3 lines) from the source that proves this API call exists. "
-            "Copy the relevant lines verbatim from the source code.\n\n"
+            "Copy the relevant lines verbatim from the source code.\n"
+            "- category: Classify the API into one of: Authentication, User Management, Payment, Shopping, "
+            "Analytics, Security, Search, Media, Configuration, Social, Messaging, Data, or Other\n"
+            "- pii: An object with 'detected' (boolean) and 'fields' (array of strings). Set detected=true "
+            "if the URL path, parameters, or request payload suggests PII or sensitive data is transmitted "
+            "(e.g. email, password, credit_card, ssn, phone, address, name, date_of_birth, token, api_key). "
+            "If no PII detected, set detected=false and fields=[].\n\n"
         )
 
         for src in js_sources:
@@ -384,9 +395,11 @@ def create_app() -> FastAPI:
         prompt += (
             "\nReturn ONLY a JSON array. No explanation. Example:\n"
             '[{"method":"GET","url":"/api/users","context":"Fetch user list","source_file":"app.js",'
-            '"evidence":"fetch(\'/api/users\', {method: \'GET\'})"},'
+            '"evidence":"fetch(\'/api/users\', {method: \'GET\'})","category":"User Management",'
+            '"pii":{"detected":false,"fields":[]}},'
             '{"method":"POST","url":"/api/auth/login","context":"User authentication","source_file":"auth.bundle.js",'
-            '"evidence":"axios.post(\'/api/auth/login\', credentials)"}]\n'
+            '"evidence":"axios.post(\'/api/auth/login\', credentials)","category":"Authentication",'
+            '"pii":{"detected":true,"fields":["email","password"]}}]\n'
             "\nIf no API calls found, return an empty array: []"
         )
 
@@ -394,7 +407,7 @@ def create_app() -> FastAPI:
             analyzer = BedrockAPIAnalyzer()
             body = {
                 "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 4000,
+                "max_tokens": 6000,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.2,
             }
@@ -417,6 +430,22 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.error(f"JS analysis via Bedrock failed: {e}")
             raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+    @app.post("/api/geolocate-ips")
+    async def geolocate_ips(request: GeolocateIpsRequest):
+        """Proxy IP geolocation via ip-api.com batch endpoint."""
+        unique_ips = list(dict.fromkeys(request.ips))[:100]
+        if not unique_ips:
+            return JSONResponse(content={"results": []})
+        try:
+            payload = [{"query": ip, "fields": "query,status,country,city,lat,lon,isp,org"} for ip in unique_ips]
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post("http://ip-api.com/batch", json=payload)
+                resp.raise_for_status()
+                return JSONResponse(content={"results": resp.json()})
+        except Exception as e:
+            logger.error(f"IP geolocation failed: {e}")
+            raise HTTPException(status_code=502, detail=f"Geolocation failed: {str(e)}")
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
