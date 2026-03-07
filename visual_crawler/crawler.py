@@ -76,6 +76,9 @@ class APICrawler:
         # BrightData Scraping Browser (remote browser)
         self.scraping_browser_url = scraping_browser_url
         self.using_remote_browser = False
+        # Remote browsers need longer timeouts (CDP hop + anti-bot solving)
+        # BrightData recommends 120s; default UI timeout is 30s, so 4x = 120s
+        self._remote_timeout_multiplier = 4
 
         # State tracking
         self.pages_since_rotation = 0
@@ -222,6 +225,13 @@ class APICrawler:
         '--disable-features=IsolateOrigins,site-per-process',
     ]
 
+    @property
+    def _nav_timeout(self) -> int:
+        """Navigation timeout — longer for remote browsers (CDP hop + anti-bot)."""
+        if self.using_remote_browser:
+            return self.timeout * self._remote_timeout_multiplier
+        return self.timeout
+
     async def _launch_local_browser(self, p):
         """Launch a local Chromium browser with standard args."""
         return await p.chromium.launch(headless=True, args=self._CHROMIUM_ARGS)
@@ -242,10 +252,15 @@ class APICrawler:
                 self.current_viewport = VIEWPORTS[0]  # 1920x1080
 
         context_options = {
-            "user_agent": self.current_user_agent,
             "viewport": self.current_viewport,
             "ignore_https_errors": True,
-            "extra_http_headers": {
+        }
+
+        # Remote browsers (e.g. BrightData Scraping Browser) manage their
+        # own fingerprint and headers — don't override user_agent or headers.
+        if not self.using_remote_browser:
+            context_options["user_agent"] = self.current_user_agent
+            context_options["extra_http_headers"] = {
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept-Encoding": "gzip, deflate, br",
@@ -256,8 +271,7 @@ class APICrawler:
                 "Sec-Fetch-Site": "none",
                 "Sec-Fetch-User": "?1",
                 "Cache-Control": "max-age=0",
-            },
-        }
+            }
 
         # Add proxy if configured (only for local browser)
         # Remote browser already includes IP management
@@ -269,6 +283,11 @@ class APICrawler:
     async def _rotate_browser_identity(self) -> None:
         """Rotate browser identity (user agent, viewport, proxy)."""
         if not self.browser:
+            return
+
+        # Remote browser manages its own identity — skip rotation
+        if self.using_remote_browser:
+            logger.debug("Remote browser: skipping identity rotation")
             return
 
         try:
@@ -433,25 +452,30 @@ class APICrawler:
                 self.browser = await self._launch_local_browser(p)
                 self.using_remote_browser = False
 
-            # Get context options with randomization if stealth mode is enabled
-            context_options = self._get_context_options()
+            if self.using_remote_browser:
+                # Remote browser (BrightData): use default context directly,
+                # don't create a new context — per BrightData SDK docs.
+                self.context = self.browser.contexts[0]
+            else:
+                # Local browser: create context with custom options
+                context_options = self._get_context_options()
 
-            # Log proxy usage
-            if self.proxy_config:
-                logger.warning(f"Playwright using proxy: {self.proxy_config.get('server', 'unknown')}")
-                await self._emit("status", {
-                    "message": f"🔒 Using proxy: {self.proxy_config.get('server', 'unknown')}"
-                })
+                # Log proxy usage
+                if self.proxy_config:
+                    logger.warning(f"Playwright using proxy: {self.proxy_config.get('server', 'unknown')}")
+                    await self._emit("status", {
+                        "message": f"🔒 Using proxy: {self.proxy_config.get('server', 'unknown')}"
+                    })
 
-            self.context = await self.browser.new_context(**context_options)
+                self.context = await self.browser.new_context(**context_options)
 
-            # Log identity info
-            if self.stealth_mode:
-                logger.info(f"Browser identity: UA={self.current_user_agent[:50]}..., "
-                           f"Viewport={self.current_viewport['width']}x{self.current_viewport['height']}")
-                await self._emit("status", {
-                    "message": f"🎭 Identity: {self.current_viewport['width']}x{self.current_viewport['height']}"
-                })
+                # Log identity info
+                if self.stealth_mode:
+                    logger.info(f"Browser identity: UA={self.current_user_agent[:50]}..., "
+                               f"Viewport={self.current_viewport['width']}x{self.current_viewport['height']}")
+                    await self._emit("status", {
+                        "message": f"🎭 Identity: {self.current_viewport['width']}x{self.current_viewport['height']}"
+                    })
 
             start_url = f"https://{self.domain}"
             self._start_url = start_url
@@ -466,8 +490,10 @@ class APICrawler:
                     await self._rotate_browser_identity()
 
                 # Get batch of pages to crawl
+                # Remote browser: one page at a time (shared CDP connection)
+                batch_size = 1 if self.using_remote_browser else self.concurrent_pages
                 batch = []
-                while self.queue and len(batch) < self.concurrent_pages:
+                while self.queue and len(batch) < batch_size:
                     page_url, depth = self.queue.pop(0)
                     if page_url not in self.visited_pages and depth <= self.max_depth:
                         batch.append((page_url, depth))
@@ -482,8 +508,8 @@ class APICrawler:
                         # Sleep in chunks and send heartbeat to keep WebSocket alive
                         await self._sleep_with_heartbeat(delay)
 
-                    # Crawl batch in parallel with per-page timeout (2x page timeout)
-                    max_time_per_page = (self.timeout * 2) // 1000  # Convert ms to seconds, double it
+                    # Crawl batch in parallel with per-page timeout
+                    max_time_per_page = (self._nav_timeout * 2) // 1000  # Convert ms to seconds, double it
                     tasks = [asyncio.create_task(self._crawl_page_with_retry(url, depth)) for url, depth in batch]
                     done, pending = await asyncio.wait(tasks, timeout=max_time_per_page)
                     for task in pending:
@@ -512,17 +538,19 @@ class APICrawler:
 
     async def _crawl_page_with_retry(self, page_url: str, depth: int) -> None:
         """Crawl a page with retry logic and exponential backoff."""
-        for attempt in range(self.max_retries):
+        # Remote browser: no retries — BrightData handles retries internally
+        max_retries = 1 if self.using_remote_browser else self.max_retries
+        for attempt in range(max_retries):
             try:
                 await self._crawl_page(page_url, depth)
                 return  # Success
             except Exception as e:
-                if attempt < self.max_retries - 1:
+                if attempt < max_retries - 1:
                     # Exponential backoff: 2^attempt seconds
                     backoff = 2 ** attempt
-                    logger.warning(f"Retry {attempt + 1}/{self.max_retries} for {page_url} after {backoff}s: {e}")
+                    logger.warning(f"Retry {attempt + 1}/{max_retries} for {page_url} after {backoff}s: {e}")
                     await self._emit("status", {
-                        "message": f"⚠️ Retry {attempt + 1}/{self.max_retries} for {page_url}"
+                        "message": f"⚠️ Retry {attempt + 1}/{max_retries} for {page_url}"
                     })
                     await self._sleep_with_heartbeat(backoff)
 
@@ -530,8 +558,8 @@ class APICrawler:
                     if self.proxy_pool and attempt > 0:
                         await self._rotate_browser_identity()
                 else:
-                    logger.error(f"Failed after {self.max_retries} attempts: {page_url} - {e}")
-                    await self._emit("crawl_error", {"url": page_url, "error": f"Failed after {self.max_retries} retries"})
+                    logger.error(f"Failed for {page_url}: {e}")
+                    await self._emit("crawl_error", {"url": page_url, "error": str(e)[:100]})
 
     async def _crawl_page(self, page_url: str, depth: int):
         """Crawl a single page."""
@@ -556,9 +584,12 @@ class APICrawler:
 
             logger.debug(f"Navigating to: {page_url}")
 
+            # Remote browsers: use domcontentloaded (BrightData handles the rest)
+            wait_event = "domcontentloaded" if self.using_remote_browser else "load"
+
             # Try to navigate with timeout handling
             try:
-                response = await page.goto(page_url, wait_until="load", timeout=self.timeout)
+                response = await page.goto(page_url, wait_until=wait_event, timeout=self._nav_timeout)
             except Exception as nav_error:
                 # Page navigation failed (timeout, DNS error, connection refused, etc.)
                 error_type = type(nav_error).__name__
@@ -566,24 +597,22 @@ class APICrawler:
 
                 logger.warning(f"Navigation failed for {page_url}: {error_type} - {error_msg}")
 
-                # Check if this is a connection error or timeout on the start URL
-                # If so, try with www prefix
+                # On start URL failure, always try www. prefix
+                # (covers timeouts, proxy 502s, DNS errors, protocol errors, etc.)
                 if (not self._tried_www_fallback and
                     page_url == self._start_url and
-                    ("ERR_CONNECTION_REFUSED" in error_msg or "TimeoutError" in error_type or "Timeout" in error_msg) and
                     not self.domain.startswith("www.")):
 
                     self._tried_www_fallback = True
                     www_domain = f"www.{self.domain}"
                     www_url = f"https://{www_domain}"
 
-                    failure_reason = "Connection refused" if "ERR_CONNECTION_REFUSED" in error_msg else "Timeout/Connection failed"
-                    await self._emit("status", {"message": f"⚠️ {failure_reason} for {self.domain}, trying {www_domain}..."})
-                    logger.info(f"Retrying with www prefix due to {failure_reason}: {www_url}")
+                    await self._emit("status", {"message": f"⚠️ {self.domain} failed, trying {www_domain}..."})
+                    logger.info(f"Retrying with www prefix: {www_url}")
 
                     try:
                         # Try with www prefix
-                        response = await page.goto(www_url, wait_until="load", timeout=self.timeout)
+                        response = await page.goto(www_url, wait_until=wait_event, timeout=self._nav_timeout)
 
                         # Success! Update domain for future requests
                         self.domain = www_domain
@@ -626,13 +655,21 @@ class APICrawler:
                 if response.status == 403:
                     await self._emit("status", {"message": f"⚠️ Access denied (403) for {page_url}. Site may be blocking crawlers."})
 
-            # Wait for dynamic content (shorter in fast mode)
-            wait_time = 500 if self.fast_mode else 2000
+            # Wait for dynamic content
+            # Remote browsers need more time for CAPTCHA solving / JS rendering
+            if self.using_remote_browser:
+                wait_time = 5000
+            elif self.fast_mode:
+                wait_time = 500
+            else:
+                wait_time = 2000
             await page.wait_for_timeout(wait_time)
             logger.debug(f"Page loaded: {page_url}")
 
             # Detect blocking (if stealth mode is enabled)
-            if self.stealth_mode:
+            # Skip blocking detection for remote browsers — BrightData handles
+            # CAPTCHAs and anti-bot challenges automatically.
+            if self.stealth_mode and not self.using_remote_browser:
                 blocking_indicators = await self._detect_blocking(page, response)
                 if any(blocking_indicators.values()):
                     # If CAPTCHA detected on start URL, try sitemap fallback first
@@ -919,7 +956,8 @@ class APICrawler:
         urls_found = await fetch_sitemap_urls(
             domain=self.domain,
             page=page,
-            include_subdomains=self.include_subdomains
+            include_subdomains=self.include_subdomains,
+            timeout=self._nav_timeout,
         )
 
         if not urls_found:

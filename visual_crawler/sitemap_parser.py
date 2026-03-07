@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 async def fetch_sitemap_urls(
     domain: str,
     page: Page,
-    include_subdomains: bool = True
+    include_subdomains: bool = True,
+    timeout: int = 15000,
 ) -> list[str]:
     """Fetch and parse sitemap.xml to extract URLs.
 
@@ -40,9 +41,9 @@ async def fetch_sitemap_urls(
         try:
             logger.info(f"Attempting to fetch sitemap: {sitemap_url}")
 
-            # Try to fetch sitemap with shorter timeout (15 seconds)
+            # Try to fetch sitemap with provided timeout
             try:
-                response = await page.goto(sitemap_url, wait_until="load", timeout=15000)
+                response = await page.goto(sitemap_url, wait_until="load", timeout=timeout)
             except Exception as e:
                 logger.debug(f"Failed to fetch {sitemap_url}: {e}")
                 continue

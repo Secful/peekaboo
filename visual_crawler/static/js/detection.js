@@ -3,13 +3,13 @@
 function getPiiMatches(text) {
   if (!text) return [];
   const lower = text.toLowerCase();
-  return PII_KEYWORDS.filter(kw => lower.includes(kw));
+  return PII_KEYWORDS.filter(kw => new RegExp(`(?:^|[^a-z])${kw}(?:$|[^a-z])`).test(lower));
 }
 
 function getAiMatches(text) {
   if (!text) return [];
   const lower = text.toLowerCase();
-  const matches = AI_KEYWORDS.filter(kw => lower.includes(kw));
+  const matches = AI_KEYWORDS.filter(kw => new RegExp(`(?:^|[^a-z])${kw}(?:$|[^a-z])`).test(lower));
   for (const kw of AI_BOUNDED) {
     if (new RegExp(`(?:^|[^a-z])${kw}(?:$|[^a-z])`).test(lower)) matches.push(kw);
   }

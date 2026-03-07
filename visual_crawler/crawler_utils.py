@@ -93,6 +93,18 @@ async def _dismiss_floating_dialogs(page: Page):
             # Italian
             "Accetta", "accetta", "Chiudi", "chiudi", "Continua", "continua",
             "Ho capito", "ho capito", "Sì", "sì", "D'accordo", "d'accordo",
+            # Hebrew
+            "אישור", "אשר", "קיבלתי", "הבנתי", "סגור", "המשך", "אני מסכים",
+            "מסכים", "אפשר", "אוקיי", "כן",
+            # Portuguese
+            "Aceitar", "aceitar", "Fechar", "fechar", "Concordo", "concordo",
+            # Dutch
+            "Accepteren", "accepteren", "Akkoord", "akkoord", "Sluiten", "sluiten",
+            # Cookie-specific text (multi-lang)
+            "Accept all", "Accept All", "Accept cookies", "Accept Cookies",
+            "Allow all", "Allow All", "Allow cookies", "Allow Cookies",
+            "I agree", "I Agree", "Tout accepter", "Alle akzeptieren",
+            "Accetta tutti", "Aceptar todo", "Aceitar tudo",
         ]
 
         # Strategy 1: Try text-based button matching
@@ -136,12 +148,35 @@ async def _dismiss_floating_dialogs(page: Page):
             ".overlay-close",
             "[class*='close'][class*='button']",
             "[class*='dismiss'][class*='button']",
-            # Cookie-specific
+            # Cookie consent frameworks (OneTrust, CookieBot, Didomi, Quantcast, etc.)
+            "#onetrust-accept-btn-handler",
+            ".onetrust-close-btn-handler",
+            "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+            "#CybotCookiebotDialogBodyButtonAccept",
+            "#didomi-notice-agree-button",
+            ".didomi-continue-without-agreeing",
+            "#axeptio_btn_acceptAll",
+            "#tarteaucitronPersonalize2",
+            ".cc-accept-all",
+            ".cc-btn.cc-allow",
+            ".cc-compliance button",
+            "#consent_prompt_submit",
+            "#qc-cmp2-ui button[mode='primary']",
+            ".sp_choice_type_11",
+            "[data-testid='uc-accept-all-button']",
+            # Generic cookie selectors
             ".cookie-consent button",
             ".cookie-banner button",
             "[class*='cookie'] button[class*='accept']",
+            "[class*='cookie'] button[class*='allow']",
+            "[class*='consent'] button[class*='accept']",
+            "[class*='consent'] button[class*='allow']",
+            "[id*='cookie'] button",
             "#cookie-accept",
             "#accept-cookies",
+            "#cookies-accept",
+            "#acceptAllCookies",
+            "#allow-all-cookies",
             # Modal/dialog role-based
             "[role='dialog'] button",
             "[role='alertdialog'] button",
