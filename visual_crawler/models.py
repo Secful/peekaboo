@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from pydantic import BaseModel
+
 
 @dataclass
 class DiscoveredEndpoint:
@@ -29,3 +31,26 @@ class DiscoveredEndpoint:
 
     # LLM-generated description
     llm_description: Optional[str] = None  # Auto-generated API description
+
+
+# Pydantic request models for API routes
+
+class GenerateDescriptionRequest(BaseModel):
+    """Request body for generating API description."""
+    method: str
+    path: str
+    host: str
+    request_body: Optional[str] = None
+    response_body: Optional[str] = None
+    response_status: Optional[int] = None
+    query_params: Optional[list[str]] = None
+
+
+class AnalyzeJsRequest(BaseModel):
+    """Request body for JS source analysis."""
+    urls: list[str]
+
+
+class GeolocateIpsRequest(BaseModel):
+    """Request body for IP geolocation."""
+    ips: list[str]

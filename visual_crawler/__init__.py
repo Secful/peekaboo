@@ -5,7 +5,7 @@ A tool for discovering REST API endpoints by crawling web applications
 and monitoring network traffic.
 """
 
-__version__ = "0.1.0"
+from .version import __version__
 
 # Expose public API
 from .models import DiscoveredEndpoint

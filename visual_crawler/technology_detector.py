@@ -82,7 +82,7 @@ def analyze_technologies(endpoints: list[dict], target_domain: str) -> dict:
     # Process each endpoint
     for endpoint in endpoints:
         # Get endpoint URL and host
-        url = endpoint.get("url", "")
+        url = endpoint.get("full_url", "")
         if not url:
             continue
 
@@ -106,7 +106,7 @@ def analyze_technologies(endpoints: list[dict], target_domain: str) -> dict:
                 break
 
         # Analyze HTTP headers
-        headers = endpoint.get("headers", {})
+        headers = endpoint.get("response_headers", {}) or {}
         if not headers:
             continue
 

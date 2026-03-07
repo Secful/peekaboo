@@ -21,305 +21,20 @@ from playwright.async_api import async_playwright, Page, Response
 from .models import DiscoveredEndpoint
 from .sitemap_parser import fetch_sitemap_urls
 from .technology_detector import analyze_technologies
+from .proxy_pool import ProxyPool
+from .crawler_utils import (
+    _templatize, _is_static, _auto_scroll, _interact,
+    _dismiss_floating_dialogs, _classify,
+)
 from .constants import (
-    STATIC_EXTENSIONS,
-    API_SCRIPT_EXTENSIONS,
-    API_PATH_PATTERNS,
-    API_CONTENT_TYPES,
     DEFINITE_API_CONTENT_TYPES,
     MAYBE_API_CONTENT_TYPES,
-    ID_PATTERNS,
     USER_AGENTS,
     VIEWPORTS,
     CAPTCHA_INDICATORS,
     CLOUDFLARE_INDICATORS,
     ACCESS_DENIED_INDICATORS,
 )
-
-
-class ProxyPool:
-    """Manages a pool of BrightData proxies for rotation."""
-
-    def __init__(self, proxies: list[dict], enable_dynamic_sessions: bool = True) -> None:
-        """Initialize proxy pool.
-
-        Args:
-            proxies: List of proxy dicts with keys: server, username, password
-            enable_dynamic_sessions: If True, generate new session IDs for each rotation (fresh IPs)
-        """
-        self.proxies = proxies if proxies else []
-        self.current_idx = 0
-        self.failed_proxies: set[int] = set()
-        self.request_count = 0
-        self.enable_dynamic_sessions = enable_dynamic_sessions
-
-        # Store base usernames (without session IDs) for dynamic generation
-        self.base_usernames = []
-        if self.enable_dynamic_sessions and self.proxies:
-            for proxy in self.proxies:
-                username = proxy.get('username', '')
-                # Remove existing session ID if present
-                if '-session-' in username:
-                    base_username = username.rsplit('-session-', 1)[0]
-                else:
-                    base_username = username
-                self.base_usernames.append(base_username)
-
-    def get_next_proxy(self) -> Optional[dict]:
-        """Get next proxy in rotation.
-
-        If dynamic_sessions is enabled, generates a NEW session ID for each call,
-        ensuring each rotation gets a fresh residential IP from BrightData.
-        """
-        if not self.proxies:
-            return None
-
-        if len(self.failed_proxies) >= len(self.proxies):
-            logger.warning("All proxies have failed")
-            return None
-
-        # Try to find a working proxy
-        attempts = 0
-        while attempts < len(self.proxies):
-            proxy = self.proxies[self.current_idx]
-            proxy_idx = self.current_idx
-            self.current_idx = (self.current_idx + 1) % len(self.proxies)
-            attempts += 1
-
-            if proxy_idx not in self.failed_proxies:
-                self.request_count += 1
-
-                # Generate new session ID for fresh IP (if enabled)
-                if self.enable_dynamic_sessions and self.base_usernames:
-                    import random
-                    new_session_id = random.randint(100000, 999999)
-                    base_username = self.base_usernames[proxy_idx]
-                    new_username = f"{base_username}-session-{new_session_id}"
-
-                    logger.info(f"🔄 Generated fresh residential IP session: {new_session_id}")
-
-                    # Return proxy with new session ID
-                    return {
-                        "server": proxy["server"],
-                        "username": new_username,
-                        "password": proxy["password"]
-                    }
-
-                return proxy
-
-        return None
-
-    def mark_failed(self, proxy: dict) -> None:
-        """Mark a proxy as failed."""
-        try:
-            idx = self.proxies.index(proxy)
-            self.failed_proxies.add(idx)
-            logger.warning(f"Marked proxy as failed: {proxy.get('server', 'unknown')}")
-        except ValueError:
-            pass
-
-    def reset_failures(self) -> None:
-        """Reset failed proxies (give them another chance)."""
-        self.failed_proxies.clear()
-        logger.info("Reset all proxy failures")
-
-
-def _templatize(path: str) -> str:
-    """Replace ID-like path segments with placeholders."""
-    parts = path.strip("/").split("/")
-    result = []
-    for part in parts:
-        replaced = False
-        for pattern, placeholder in ID_PATTERNS:
-            if pattern.fullmatch(part):
-                result.append(placeholder)
-                replaced = True
-                break
-        if not replaced:
-            result.append(part)
-    return "/" + "/".join(result) if result else "/"
-
-
-def _is_static(req_url: str) -> bool:
-    """Check if a URL points to a static file."""
-    # Parse URL and get path without query parameters
-    parsed_path = urlparse(req_url).path.lower()
-    # Strip trailing slashes/backslashes before checking extension
-    parsed_path = parsed_path.rstrip('/\\')
-    # Check if it ends with any static extension
-    return any(parsed_path.endswith(ext) for ext in STATIC_EXTENSIONS)
-
-
-async def _auto_scroll(page: Page):
-    """Automatically scroll the page to trigger lazy loading."""
-    try:
-        await page.evaluate("""async () => {
-            await new Promise(r => {
-                let t = 0; const s = 400;
-                const i = setInterval(() => {
-                    window.scrollBy(0, s); t += s;
-                    if (t >= document.body.scrollHeight || t > 6000) { clearInterval(i); r(); }
-                }, 150);
-            });
-        }""")
-        await page.wait_for_timeout(800)
-    except Exception:
-        pass
-
-
-async def _interact(page: Page):
-    """Click on interactive elements to trigger API calls."""
-    for sel in ["button:visible", "[role='tab']:visible"]:
-        try:
-            elements = await page.query_selector_all(sel)
-            for el in elements[:3]:
-                try:
-                    await el.click(timeout=2000)
-                    await page.wait_for_timeout(600)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-
-async def _dismiss_floating_dialogs(page: Page):
-    """Attempt to dismiss any floating dialogs, modals, overlays, and popups."""
-    try:
-        # Generic dismiss button text patterns (case-insensitive, multiple languages)
-        dismiss_patterns = [
-            # English
-            "OK", "ok", "Close", "close", "Accept", "accept", "Agree", "agree",
-            "Continue", "continue", "Got it", "got it", "I understand", "Dismiss",
-            "dismiss", "Allow", "allow", "Yes", "yes", "Confirm", "confirm",
-            "No thanks", "no thanks", "Maybe later", "maybe later", "Not now", "not now",
-            # French
-            "Accepter", "accepter", "D'accord", "d'accord", "Fermer", "fermer",
-            "Continuer", "continuer", "Oui", "oui", "Compris", "compris",
-            # Spanish
-            "Aceptar", "aceptar", "Cerrar", "cerrar", "Continuar", "continuar",
-            "Entendido", "entendido", "Sí", "sí", "De acuerdo", "de acuerdo",
-            # German
-            "Akzeptieren", "akzeptieren", "Schließen", "schließen", "Weiter", "weiter",
-            "Verstanden", "verstanden", "Ja", "ja", "Einverstanden", "einverstanden",
-            # Italian
-            "Accetta", "accetta", "Chiudi", "chiudi", "Continua", "continua",
-            "Ho capito", "ho capito", "Sì", "sì", "D'accordo", "d'accordo",
-        ]
-
-        # Strategy 1: Try text-based button matching
-        for pattern in dismiss_patterns:
-            try:
-                selectors = [
-                    f"button:has-text('{pattern}')",
-                    f"a:has-text('{pattern}')",
-                    f"[role='button']:has-text('{pattern}')",
-                    f"div[onclick]:has-text('{pattern}')",
-                    f"span[onclick]:has-text('{pattern}')",
-                ]
-
-                for selector in selectors:
-                    try:
-                        element = page.locator(selector).first
-                        if await element.is_visible(timeout=300):
-                            await element.click(timeout=800)
-                            await page.wait_for_timeout(400)
-                            logger.debug(f"Dismissed dialog with text pattern: {pattern}")
-                            return
-                    except Exception:
-                        continue
-            except Exception:
-                continue
-
-        # Strategy 2: Try common close button symbols and classes
-        close_selectors = [
-            # Close button symbols
-            "button:has-text('×')",
-            "button:has-text('✕')",
-            "a:has-text('×')",
-            "[aria-label*='close' i]",
-            "[aria-label*='dismiss' i]",
-            "[title*='close' i]",
-            # Common modal/dialog close buttons
-            ".modal button.close",
-            ".modal .close-button",
-            ".modal-close",
-            ".dialog-close",
-            ".popup-close",
-            ".overlay-close",
-            "[class*='close'][class*='button']",
-            "[class*='dismiss'][class*='button']",
-            # Cookie-specific
-            ".cookie-consent button",
-            ".cookie-banner button",
-            "[class*='cookie'] button[class*='accept']",
-            "#cookie-accept",
-            "#accept-cookies",
-            # Modal/dialog role-based
-            "[role='dialog'] button",
-            "[role='alertdialog'] button",
-            # Generic modal classes
-            ".modal-footer button",
-            ".dialog-footer button",
-            "[class*='modal'] button[class*='primary']",
-            "[class*='modal'] button[class*='accept']",
-        ]
-
-        for selector in close_selectors:
-            try:
-                element = page.locator(selector).first
-                if await element.is_visible(timeout=300):
-                    await element.click(timeout=800)
-                    await page.wait_for_timeout(400)
-                    logger.debug(f"Dismissed dialog using selector: {selector}")
-                    return
-            except Exception:
-                continue
-
-        # Strategy 3: Try pressing Escape key to close modals
-        try:
-            await page.keyboard.press("Escape")
-            await page.wait_for_timeout(300)
-            logger.debug("Attempted to dismiss dialog with Escape key")
-        except Exception:
-            pass
-
-    except Exception:
-        # Silently fail - not all pages have dialogs
-        pass
-
-
-def _classify(req_url: str, method: str, resource_type: str, response: Response) -> str:
-    """Classify whether a URL is an API endpoint."""
-    parsed = urlparse(req_url)
-    path = parsed.path
-
-    # Non-GET methods are always APIs
-    if method not in ("GET", "HEAD", "OPTIONS"):
-        return f"{method} request"
-
-    # Check Content-Type for JSON/XML responses (regardless of resource type)
-    resp_ct = response.headers.get("content-type", "").lower()
-    if any(ct in resp_ct for ct in API_CONTENT_TYPES):
-        if resource_type in ("xhr", "fetch"):
-            return "XHR/fetch JSON/XML response"
-        return "JSON/XML response"
-
-    # Check for server-side script extensions (PHP, ASP, JSP, etc.)
-    path_lower = path.lower()
-    for ext in API_SCRIPT_EXTENSIONS:
-        if path_lower.endswith(ext):
-            return f"Server-side script ({ext})"
-
-    # Check API path patterns
-    for pattern in API_PATH_PATTERNS:
-        if pattern.search(path):
-            return f"API path pattern"
-
-    # XHR/fetch without JSON is still likely an API
-    if resource_type in ("xhr", "fetch"):
-        return "XHR/fetch request"
-
-    return ""
 
 
 class APICrawler:
@@ -497,6 +212,19 @@ class APICrawler:
         # Try rotating identity after blocking
         if self.rotate_identity and self.blocking_detected_count >= 2:
             await self._rotate_browser_identity()
+
+    _CHROMIUM_ARGS = [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-dev-shm-usage',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+    ]
+
+    async def _launch_local_browser(self, p):
+        """Launch a local Chromium browser with standard args."""
+        return await p.chromium.launch(headless=True, args=self._CHROMIUM_ARGS)
 
     def _get_context_options(self) -> dict:
         """Get browser context options with current settings."""
@@ -697,32 +425,12 @@ class APICrawler:
                     await self._emit("status", {"message": f"⚠️  Remote browser failed, using local browser"})
                     logger.info("🔄 Falling back to local browser...")
                     # Fallback to local browser
-                    self.browser = await p.chromium.launch(
-                        headless=True,
-                        args=[
-                            '--disable-blink-features=AutomationControlled',
-                            '--disable-dev-shm-usage',
-                            '--no-sandbox',
-                            '--disable-setuid-sandbox',
-                            '--disable-web-security',
-                            '--disable-features=IsolateOrigins,site-per-process',
-                        ]
-                    )
+                    self.browser = await self._launch_local_browser(p)
                     self.using_remote_browser = False
             else:
                 # Use local browser (backward compatibility)
                 logger.info("🖥️  Using local Playwright browser...")
-                self.browser = await p.chromium.launch(
-                    headless=True,
-                    args=[
-                        '--disable-blink-features=AutomationControlled',
-                        '--disable-dev-shm-usage',
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-web-security',
-                        '--disable-features=IsolateOrigins,site-per-process',
-                    ]
-                )
+                self.browser = await self._launch_local_browser(p)
                 self.using_remote_browser = False
 
             # Get context options with randomization if stealth mode is enabled
