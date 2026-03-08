@@ -24,7 +24,7 @@ from .technology_detector import analyze_technologies
 from .proxy_pool import ProxyPool
 from .crawler_utils import (
     _templatize, _is_static, _auto_scroll, _interact,
-    _dismiss_floating_dialogs, _classify,
+    _dismiss_floating_dialogs, _classify, _looks_like_js_payload,
 )
 from .constants import (
     DEFINITE_API_CONTENT_TYPES,
@@ -429,35 +429,28 @@ class APICrawler:
         await self._emit("status", {"message": status_msg})
 
         async with async_playwright() as p:
+            self._playwright = p
+
             # Check if BrightData Scraping Browser URL is configured
             if self.scraping_browser_url:
-                # Try to connect to BrightData remote browser
+                # Verify connectivity with a test connection
                 try:
-                    logger.info("🌐 Connecting to BrightData Scraping Browser...")
+                    logger.info("🌐 Testing BrightData Scraping Browser connectivity...")
                     await self._emit("status", {"message": "🌐 Connecting to remote browser..."})
-                    self.browser = await p.chromium.connect_over_cdp(self.scraping_browser_url)
+                    test_browser = await p.chromium.connect_over_cdp(self.scraping_browser_url)
+                    await test_browser.close()
                     self.using_remote_browser = True
-                    logger.info("✅ Connected to BrightData Scraping Browser")
-                    await self._emit("status", {"message": "✅ Connected to remote browser with anti-bot protection"})
+                    logger.info("✅ BrightData Scraping Browser available")
+                    await self._emit("status", {"message": "✅ Remote browser ready (parallel sessions)"})
                 except Exception as e:
                     logger.error(f"❌ Failed to connect to remote browser: {e}")
                     await self._emit("status", {"message": f"⚠️  Remote browser failed, using local browser"})
                     logger.info("🔄 Falling back to local browser...")
-                    # Fallback to local browser
-                    self.browser = await self._launch_local_browser(p)
                     self.using_remote_browser = False
-            else:
-                # Use local browser (backward compatibility)
-                logger.info("🖥️  Using local Playwright browser...")
-                self.browser = await self._launch_local_browser(p)
-                self.using_remote_browser = False
 
-            if self.using_remote_browser:
-                # Remote browser (BrightData): use default context directly,
-                # don't create a new context — per BrightData SDK docs.
-                self.context = self.browser.contexts[0]
-            else:
-                # Local browser: create context with custom options
+            if not self.using_remote_browser:
+                # Local browser: launch once, create context with custom options
+                self.browser = await self._launch_local_browser(p)
                 context_options = self._get_context_options()
 
                 # Log proxy usage
@@ -490,8 +483,8 @@ class APICrawler:
                     await self._rotate_browser_identity()
 
                 # Get batch of pages to crawl
-                # Remote browser: one page at a time (shared CDP connection)
-                batch_size = 1 if self.using_remote_browser else self.concurrent_pages
+                # Remote browser: limit concurrency (each page = separate CDP session)
+                batch_size = min(3, self.concurrent_pages) if self.using_remote_browser else self.concurrent_pages
                 batch = []
                 while self.queue and len(batch) < batch_size:
                     page_url, depth = self.queue.pop(0)
@@ -517,7 +510,9 @@ class APICrawler:
                     if pending:
                         await asyncio.gather(*pending, return_exceptions=True)
 
-            await self.browser.close()
+            # Close local browser (remote browser sessions are closed per-page)
+            if self.browser:
+                await self.browser.close()
 
         # Clear queue if stopped early
         remaining_in_queue = len(self.queue)
@@ -564,7 +559,23 @@ class APICrawler:
     async def _crawl_page(self, page_url: str, depth: int):
         """Crawl a single page."""
         self.visited_pages.add(page_url)
-        page = await self.context.new_page()
+
+        # Remote browser: each page gets its own CDP session
+        # (BrightData allows only one navigation per session)
+        remote_browser = None
+        if self.using_remote_browser and self.scraping_browser_url:
+            try:
+                remote_browser = await self._playwright.chromium.connect_over_cdp(
+                    self.scraping_browser_url
+                )
+                context = remote_browser.contexts[0]
+                page = await context.new_page()
+            except Exception as e:
+                logger.error(f"Failed to connect remote browser for {page_url}: {e}")
+                await self._emit("crawl_error", {"url": page_url, "error": f"Remote browser connection failed"})
+                return
+        else:
+            page = await self.context.new_page()
 
         # Add stealth scripts to mask automation
         await self._add_stealth_scripts(page)
@@ -664,6 +675,14 @@ class APICrawler:
             else:
                 wait_time = 2000
             await page.wait_for_timeout(wait_time)
+
+            # Wait for SPA rendering — network idle signals JS frameworks have
+            # finished fetching data and rendering the page content / nav links.
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass  # Timeout is fine — some pages never go fully idle
+
             logger.debug(f"Page loaded: {page_url}")
 
             # Detect blocking (if stealth mode is enabled)
@@ -755,6 +774,12 @@ class APICrawler:
                     await page.close()
             except Exception:
                 pass
+            # Close per-page remote browser session
+            if remote_browser:
+                try:
+                    await remote_browser.close()
+                except Exception:
+                    pass
 
     async def _on_response(self, response: Response, found_on_page: str):
         """Handle network response events."""
@@ -775,6 +800,10 @@ class APICrawler:
             # Check response content-type for images/media
             content_type = response.headers.get("content-type", "").lower()
             if any(ct in content_type for ct in ["image/", "font/", "video/", "audio/"]):
+                return
+
+            # Skip JavaScript payloads (content-type check)
+            if _looks_like_js_payload(content_type):
                 return
 
             reason = _classify(req_url, method, resource_type, response)
@@ -848,6 +877,18 @@ class APICrawler:
 
                 except Exception as e:
                     logger.warning(f"Failed to capture payloads: {e}")
+
+            # Skip if response body looks like obfuscated JavaScript
+            body_sample = response_body
+            if not body_sample:
+                try:
+                    peek = await response.body()
+                    if peek:
+                        body_sample = peek[:2048].decode('utf-8', errors='ignore')
+                except Exception:
+                    pass
+            if _looks_like_js_payload(content_type, body_sample):
+                return
 
             ep = DiscoveredEndpoint(
                 method=method, path=template_path, host=host, full_url=req_url,

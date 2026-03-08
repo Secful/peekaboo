@@ -1,5 +1,6 @@
 """Helper functions for the API crawler."""
 
+from typing import Optional
 from urllib.parse import urlparse
 
 from playwright.async_api import Page, Response
@@ -207,6 +208,36 @@ async def _dismiss_floating_dialogs(page: Page):
     except Exception:
         # Silently fail - not all pages have dialogs
         pass
+
+
+def _looks_like_js_payload(content_type: str, body: Optional[str] = None) -> bool:
+    """Return True if the response looks like a JavaScript payload rather than API data."""
+    ct = content_type.lower()
+    # Explicit JS content types
+    if any(t in ct for t in ("javascript", "ecmascript")):
+        return True
+    # Check body for obfuscated / minified JS patterns
+    if body:
+        trimmed = body.strip()[:2000]  # only inspect first 2KB
+        # Starts with typical JS constructs (not JSON)
+        if trimmed and trimmed[0] not in ('{', '[', '<', '"'):
+            # Common obfuscated JS signatures
+            js_indicators = 0
+            for pattern in (
+                "function(", "function (", "var ", "let ", "const ", "=>",
+                "!function", "(function", "self.__next",
+                "window.", "document.", "eval(", "atob(",
+                ".call(", ".apply(", ".prototype",
+                "try{", "try {", "catch(", "catch (",
+                ";var ", ";let ", ";const ", "void 0",
+                "===", "!==", "typeof ",
+                "new Function", "String.fromCharCode",
+            ):
+                if pattern in trimmed:
+                    js_indicators += 1
+            if js_indicators >= 2:
+                return True
+    return False
 
 
 def _classify(req_url: str, method: str, resource_type: str, response: Response) -> str:

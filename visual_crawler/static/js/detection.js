@@ -1,8 +1,27 @@
 /* PII/AI detection and domain classification helpers */
 
-function getPiiMatches(text) {
+function _extractJsonKeys(text) {
+  /* Return only JSON keys from a string (recursive). Falls back to full text if not JSON. */
+  if (!text) return '';
+  const trimmed = text.trim();
+  if ((trimmed[0] !== '{' && trimmed[0] !== '[')) return text;
+  try {
+    const obj = JSON.parse(trimmed);
+    const keys = [];
+    (function walk(v) {
+      if (v && typeof v === 'object') {
+        if (Array.isArray(v)) { v.forEach(walk); }
+        else { for (const k of Object.keys(v)) { keys.push(k); walk(v[k]); } }
+      }
+    })(obj);
+    return keys.join(' ');
+  } catch { return text; }
+}
+
+function getPiiMatches(text, jsonKeysOnly) {
   if (!text) return [];
-  const lower = text.toLowerCase();
+  const target = jsonKeysOnly ? _extractJsonKeys(text) : text;
+  const lower = target.toLowerCase();
   return PII_KEYWORDS.filter(kw => new RegExp(`(?:^|[^a-z])${kw}(?:$|[^a-z])`).test(lower));
 }
 

@@ -46,9 +46,18 @@ async def _fetch_subdomains(domain: str, send_event) -> None:
     await send_event({"type": "subdomains_loading"})
     try:
         async with httpx.AsyncClient(timeout=180) as client:
-            resp = await client.get(SUBDOMAIN_LAMBDA_URL, params={"domain": domain})
+            resp = await asyncio.wait_for(
+                client.get(SUBDOMAIN_LAMBDA_URL, params={"domain": domain}),
+                timeout=180,
+            )
             resp.raise_for_status()
             await send_event({"type": "subdomains", "data": resp.json()})
+    except asyncio.TimeoutError:
+        logger.warning(f"Subdomain discovery timed out for {domain}")
+        await send_event({
+            "type": "subdomains_error",
+            "message": "Subdomain discovery timed out (3 min). Click Retry to try again.",
+        })
     except Exception as exc:
         logger.warning(f"Subdomain discovery failed for {domain}: {exc}")
         await send_event({
@@ -88,6 +97,15 @@ async def websocket_endpoint(ws: WebSocket):
                 # WebSocket already disconnected
                 break
             params = json.loads(params_msg)
+
+            # Handle retry_subdomains outside of an active crawl
+            if params.get('action') == 'retry_subdomains':
+                retry_domain = params.get('domain', '').strip()
+                if retry_domain:
+                    asyncio.create_task(
+                        _fetch_subdomains(retry_domain, send_event)
+                    )
+                continue
 
             domain = params.get('domain', '').strip()
             if not domain:
@@ -170,7 +188,7 @@ async def websocket_endpoint(ws: WebSocket):
                 continue
             crawler.on_event(send_event)
 
-            async def _listen_for_stop():
+            async def _listen_for_client():
                 """Listen for client messages while crawl runs."""
                 try:
                     while True:
@@ -179,12 +197,16 @@ async def websocket_endpoint(ws: WebSocket):
                         if data.get('action') == 'stop':
                             crawler.stop()
                             return
+                        elif data.get('action') == 'retry_subdomains':
+                            asyncio.create_task(
+                                _fetch_subdomains(domain, send_event)
+                            )
                 except WebSocketDisconnect:
                     crawler.stop()
                     raise
 
             crawl_task = asyncio.create_task(crawler.crawl())
-            listen_task = asyncio.create_task(_listen_for_stop())
+            listen_task = asyncio.create_task(_listen_for_client())
             subdomain_task = asyncio.create_task(
                 _fetch_subdomains(domain, send_event)
             )

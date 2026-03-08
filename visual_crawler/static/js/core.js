@@ -184,6 +184,12 @@ function togglePause() {
   }
 }
 
+function retrySubdomains() {
+  if (appState.ws && appState.ws.readyState === WebSocket.OPEN && appState.targetDomain) {
+    appState.ws.send(JSON.stringify({ action: 'retry_subdomains', domain: appState.targetDomain }));
+  }
+}
+
 function stopScan() {
   if (appState.ws && appState.ws.readyState === WebSocket.OPEN) {
     appState.ws.send(JSON.stringify({ action: 'stop' }));
@@ -365,6 +371,7 @@ function handleEvent(msg) {
 
     case 'subdomains_loading':
       appState.subdomainResults = null;
+      document.getElementById('tabSubdomains').classList.add('tab-loading');
       document.getElementById('subdomainContent').innerHTML = `
         <div class="subdomain-loading">
           <div class="spinner"></div>
@@ -375,6 +382,7 @@ function handleEvent(msg) {
       break;
 
     case 'subdomains':
+      document.getElementById('tabSubdomains').classList.remove('tab-loading');
       appState.subdomainResults = msg.data;
       renderSubdomainTable(msg.data);
       {
@@ -384,9 +392,13 @@ function handleEvent(msg) {
       break;
 
     case 'subdomains_error':
+      document.getElementById('tabSubdomains').classList.remove('tab-loading');
       appState.subdomainResults = null;
       document.getElementById('subdomainContent').innerHTML = `
-        <div class="subdomain-error">${escHtml(msg.message)}</div>`;
+        <div class="subdomain-error">
+          ${escHtml(msg.message)}
+          <button class="retry-subdomains-btn" onclick="retrySubdomains()">Retry</button>
+        </div>`;
       addLog('⚠️', msg.message, 'error');
       break;
 

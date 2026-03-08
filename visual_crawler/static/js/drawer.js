@@ -114,12 +114,12 @@ function openDrawer(ep) {
     ${(() => {
       if (ep.api_confidence !== 'API') return '';
       const sources = [
-        { label: 'Path', text: ep.path },
-        { label: 'Query', text: (ep.query_params || []).join(' ') },
-        { label: 'Request Body', text: ep.request_body || '' },
-        { label: 'Response Body', text: ep.response_body || '' },
+        { label: 'Path', text: ep.path, jsonKeys: false },
+        { label: 'Query', text: (ep.query_params || []).join(' '), jsonKeys: false },
+        { label: 'Request Body', text: ep.request_body || '', jsonKeys: true },
+        { label: 'Response Body', text: ep.response_body || '', jsonKeys: true },
       ];
-      const piiHits = sources.flatMap(s => getPiiMatches(s.text).map(kw => ({ source: s.label, keyword: kw })));
+      const piiHits = sources.flatMap(s => getPiiMatches(s.text, s.jsonKeys).map(kw => ({ source: s.label, keyword: kw })));
       const aiHits  = sources.flatMap(s => getAiMatches(s.text).map(kw => ({ source: s.label, keyword: kw })));
       const aiUniqueKws = new Set(aiHits.map(h => h.keyword));
       const showAi = aiUniqueKws.size > 1;

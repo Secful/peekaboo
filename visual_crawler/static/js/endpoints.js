@@ -64,14 +64,14 @@ function addEndpointRow(ep, flash=false) {
     const textToScan = [ep.path, ...(ep.query_params || []), ep.request_body || '', ep.response_body || ''].join(' ');
     // PII: collect matches per source
     const piiSources = [
-      { label: 'path', text: ep.path },
-      { label: 'query', text: (ep.query_params || []).join(' ') },
-      { label: 'request', text: ep.request_body || '' },
-      { label: 'response', text: ep.response_body || '' },
+      { label: 'path', text: ep.path, jsonKeys: false },
+      { label: 'query', text: (ep.query_params || []).join(' '), jsonKeys: false },
+      { label: 'request', text: ep.request_body || '', jsonKeys: true },
+      { label: 'response', text: ep.response_body || '', jsonKeys: true },
     ];
     const piiDetails = [];
     for (const src of piiSources) {
-      const matches = getPiiMatches(src.text);
+      const matches = getPiiMatches(src.text, src.jsonKeys);
       if (matches.length) piiDetails.push(`${src.label}: ${matches.join(', ')}`);
     }
     if (piiDetails.length) pathSuffixBadges += ` <span class="api-pii-badge" title="PII — ${escHtml(piiDetails.join(' | '))}" style="font-size:0.6rem;vertical-align:middle;">PII</span>`;

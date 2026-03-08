@@ -576,3 +576,23 @@ function toggleUrlList(event, listId) {
     }
   }
 }
+
+/* Fixed-position thumbnail preview on hover — escapes overflow:auto clipping */
+(function() {
+  let preview = null;
+  document.addEventListener('mouseover', function(e) {
+    if (!e.target.classList.contains('subdomain-thumb')) return;
+    const rect = e.target.getBoundingClientRect();
+    preview = document.createElement('img');
+    preview.className = 'subdomain-thumb-preview';
+    preview.src = e.target.src;
+    // Position to the left of the thumbnail, vertically centered
+    preview.style.top = (rect.top + rect.height / 2 - 135) + 'px';
+    preview.style.right = (window.innerWidth - rect.left + 8) + 'px';
+    document.body.appendChild(preview);
+  });
+  document.addEventListener('mouseout', function(e) {
+    if (!e.target.classList.contains('subdomain-thumb')) return;
+    if (preview) { preview.remove(); preview = null; }
+  });
+})();
