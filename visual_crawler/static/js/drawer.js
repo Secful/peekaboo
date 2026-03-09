@@ -114,19 +114,14 @@ function openDrawer(ep) {
     ${(() => {
       if (ep.api_confidence !== 'API') return '';
       const sources = [
-        { label: 'Path', text: ep.path, jsonKeys: false },
         { label: 'Query', text: (ep.query_params || []).join(' '), jsonKeys: false },
         { label: 'Request Body', text: ep.request_body || '', jsonKeys: true },
         { label: 'Response Body', text: ep.response_body || '', jsonKeys: true },
       ];
       const piiHits = sources.flatMap(s => getPiiMatches(s.text, s.jsonKeys).map(kw => ({ source: s.label, keyword: kw })));
-      const aiHits  = sources.flatMap(s => getAiMatches(s.text).map(kw => ({ source: s.label, keyword: kw })));
-      const aiUniqueKws = new Set(aiHits.map(h => h.keyword));
-      const showAi = aiUniqueKws.size > 1;
-      if (!piiHits.length && !showAi) return '';
+      if (!piiHits.length) return '';
       let html = '<div class="detail-section"><div class="detail-label">Detection Evidence</div><div class="detail-value">';
-      if (piiHits.length) html += '<div style="margin-bottom:0.4rem"><strong style="color:#ef4444">PII:</strong> ' + piiHits.map(h => `<span class="query-param" style="background:rgba(239,68,68,0.12);color:#fca5a5;border:1px solid rgba(239,68,68,0.25)">${escHtml(h.keyword)} <span style="color:var(--text-muted);font-size:0.7rem">(${escHtml(h.source)})</span></span>`).join('') + '</div>';
-      if (showAi) html += '<div><strong style="color:#06b6d4">AI:</strong> ' + aiHits.map(h => `<span class="query-param" style="background:rgba(6,182,212,0.12);color:#67e8f9;border:1px solid rgba(6,182,212,0.25)">${escHtml(h.keyword)} <span style="color:var(--text-muted);font-size:0.7rem">(${escHtml(h.source)})</span></span>`).join('') + '</div>';
+      html += '<div><strong style="color:#ef4444">PII:</strong> ' + piiHits.map(h => `<span class="query-param" style="background:rgba(239,68,68,0.12);color:#fca5a5;border:1px solid rgba(239,68,68,0.25)">${escHtml(h.keyword)} <span style="color:var(--text-muted);font-size:0.7rem">(${escHtml(h.source)})</span></span>`).join('') + '</div>';
       html += '</div></div>';
       return html;
     })()}

@@ -58,13 +58,10 @@ function addEndpointRow(ep, flash=false) {
     typeBadge = '<span style="display:inline-block;padding:0.15rem 0.4rem;background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.3);border-radius:3px;font-size:0.7rem;font-weight:600;margin-right:0.5rem;">Maybe</span>';
   }
 
-  // PII / AI badges — only for confirmed APIs on domain/subdomains
+  // PII badges — only for confirmed APIs on domain/subdomains
   let pathSuffixBadges = '';
   if (ep.api_confidence === 'API' && isDomainEndpoint(ep)) {
-    const textToScan = [ep.path, ...(ep.query_params || []), ep.request_body || '', ep.response_body || ''].join(' ');
-    // PII: collect matches per source
     const piiSources = [
-      { label: 'path', text: ep.path, jsonKeys: false },
       { label: 'query', text: (ep.query_params || []).join(' '), jsonKeys: false },
       { label: 'request', text: ep.request_body || '', jsonKeys: true },
       { label: 'response', text: ep.response_body || '', jsonKeys: true },
@@ -75,14 +72,6 @@ function addEndpointRow(ep, flash=false) {
       if (matches.length) piiDetails.push(`${src.label}: ${matches.join(', ')}`);
     }
     if (piiDetails.length) pathSuffixBadges += ` <span class="api-pii-badge" title="PII — ${escHtml(piiDetails.join(' | '))}" style="font-size:0.6rem;vertical-align:middle;">PII</span>`;
-    // AI: collect matches per source (require > 1 unique keyword to reduce false positives)
-    const aiDetails = [];
-    const aiUniqueKws = new Set();
-    for (const src of piiSources) {
-      const matches = getAiMatches(src.text);
-      if (matches.length) { aiDetails.push(`${src.label}: ${matches.join(', ')}`); matches.forEach(m => aiUniqueKws.add(m)); }
-    }
-    if (aiUniqueKws.size > 1) pathSuffixBadges += ` <span class="ai-badge" title="AI — ${escHtml(aiDetails.join(' | '))}" style="font-size:0.6rem;vertical-align:middle;">AI</span>`;
   }
 
   // Method with tooltip
@@ -133,12 +122,9 @@ function renderActiveScans(scans) {
     return;
   }
 
-  // Build domain list with validation
-  const domains = others
-    .map(s => s.domain || 'unknown')
-    .join(', ');
-
-  badge.textContent = `${others.length} other scan${others.length > 1 ? 's' : ''} active: ${domains}`;
+  const fullText = `${others.length} other scan${others.length > 1 ? 's' : ''} active: ${others.map(s => s.domain || 'unknown').join(', ')}`;
+  badge.textContent = `${others.length} scan${others.length > 1 ? 's' : ''} active`;
+  badge.title = fullText;
   badge.classList.remove('hidden');
 }
 

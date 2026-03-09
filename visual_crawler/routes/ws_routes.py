@@ -5,11 +5,14 @@ import itertools
 import json
 import logging
 import os
+from datetime import datetime, timezone
 
 import httpx
+from dataclasses import asdict
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..crawler import APICrawler
+from ..scan_logger import save_scan
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,9 @@ router = APIRouter()
 _scan_id_counter = itertools.count(1)
 _active_scans: dict[int, str] = {}          # scan_id -> domain
 _connected_clients: dict[int, WebSocket] = {}  # scan_id -> ws
+_subdomains_ready: dict[int, bool] = {}     # scan_id -> True once subdomains sent
+_pending_insights: dict[int, list] = {}     # scan_id -> queued security payloads
+_client_domains: dict[int, str] = {}        # scan_id -> domain (persists until WS disconnect)
 
 
 async def _broadcast_active_scans() -> None:
@@ -41,7 +47,7 @@ async def _broadcast_active_scans() -> None:
             pass
 
 
-async def _fetch_subdomains(domain: str, send_event) -> None:
+async def _fetch_subdomains(domain: str, send_event, scan_id: int = 0) -> None:
     """Call the subdomain-discovery Lambda and push results via WebSocket."""
     await send_event({"type": "subdomains_loading"})
     try:
@@ -52,6 +58,14 @@ async def _fetch_subdomains(domain: str, send_event) -> None:
             )
             resp.raise_for_status()
             await send_event({"type": "subdomains", "data": resp.json()})
+            # Mark subdomains as rendered and flush any queued security insights
+            if scan_id:
+                _subdomains_ready[scan_id] = True
+                for payload in _pending_insights.pop(scan_id, []):
+                    try:
+                        await send_event(payload)
+                    except Exception:
+                        pass
     except asyncio.TimeoutError:
         logger.warning(f"Subdomain discovery timed out for {domain}")
         await send_event({
@@ -103,7 +117,7 @@ async def websocket_endpoint(ws: WebSocket):
                 retry_domain = params.get('domain', '').strip()
                 if retry_domain:
                     asyncio.create_task(
-                        _fetch_subdomains(retry_domain, send_event)
+                        _fetch_subdomains(retry_domain, send_event, scan_id)
                     )
                 continue
 
@@ -156,8 +170,12 @@ async def websocket_endpoint(ws: WebSocket):
                         "message": f"Using proxy: {proxy_config['server']}"
                     })
 
+            # Record scan start time for logging
+            scan_started_at = datetime.now(timezone.utc)
+
             # Register this scan as active and notify all clients
             _active_scans[scan_id] = domain
+            _client_domains[scan_id] = domain
             await _broadcast_active_scans()
 
             try:
@@ -199,7 +217,7 @@ async def websocket_endpoint(ws: WebSocket):
                             return
                         elif data.get('action') == 'retry_subdomains':
                             asyncio.create_task(
-                                _fetch_subdomains(domain, send_event)
+                                _fetch_subdomains(domain, send_event, scan_id)
                             )
                 except WebSocketDisconnect:
                     crawler.stop()
@@ -208,7 +226,7 @@ async def websocket_endpoint(ws: WebSocket):
             crawl_task = asyncio.create_task(crawler.crawl())
             listen_task = asyncio.create_task(_listen_for_client())
             subdomain_task = asyncio.create_task(
-                _fetch_subdomains(domain, send_event)
+                _fetch_subdomains(domain, send_event, scan_id)
             )
             try:
                 # Wait for crawl to finish; listener runs alongside
@@ -233,6 +251,47 @@ async def websocket_endpoint(ws: WebSocket):
                         await subdomain_task
                     except Exception:
                         pass
+                # Save scan results to S3 (fire-and-forget)
+                try:
+                    finished_at = datetime.now(timezone.utc)
+                    duration = (finished_at - scan_started_at).total_seconds()
+                    endpoints_for_log = []
+                    for ep in crawler.endpoints:
+                        ep_dict = asdict(ep)
+                        ep_dict.pop("request_body", None)
+                        ep_dict.pop("response_body", None)
+                        endpoints_for_log.append(ep_dict)
+                    scan_data = {
+                        "scan_id": scan_id,
+                        "domain": domain,
+                        "started_at": scan_started_at.isoformat(),
+                        "finished_at": finished_at.isoformat(),
+                        "duration_seconds": round(duration),
+                        "params": {
+                            "max_pages": max_pages,
+                            "max_depth": max_depth,
+                            "fast_mode": fast_mode,
+                            "include_subdomains": include_subdomains,
+                            "api_filter": api_filter,
+                            "use_proxy": use_proxy,
+                        },
+                        "results": {
+                            "total_endpoints": len(crawler.endpoints),
+                            "confirmed_apis": sum(
+                                1 for ep in crawler.endpoints
+                                if ep.api_confidence == "API"
+                            ),
+                            "pages_visited": len(crawler.visited_pages),
+                            "pages_skipped": len(crawler.queue),
+                        },
+                        "endpoints": endpoints_for_log,
+                    }
+                    asyncio.create_task(
+                        asyncio.to_thread(save_scan, scan_data)
+                    )
+                except Exception as log_exc:
+                    logger.warning("Failed to prepare scan log: %s", log_exc)
+
                 # Scan finished — remove from active, but keep client connected
                 _active_scans.pop(scan_id, None)
                 await _broadcast_active_scans()
@@ -242,4 +301,7 @@ async def websocket_endpoint(ws: WebSocket):
     finally:
         _active_scans.pop(scan_id, None)
         _connected_clients.pop(scan_id, None)
+        _subdomains_ready.pop(scan_id, None)
+        _pending_insights.pop(scan_id, None)
+        _client_domains.pop(scan_id, None)
         await _broadcast_active_scans()

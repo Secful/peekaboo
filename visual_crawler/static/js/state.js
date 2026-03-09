@@ -20,6 +20,7 @@ const appState = {
   subdomainResults: null,
   lastScreenshotBase64: null,
   subdomainApis: {},
+  securityInsights: {},
   geoCache: {},
   subdomainMapInstance: null,
   subdomainMapMarkers: [],

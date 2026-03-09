@@ -204,6 +204,18 @@ BEDROCK_POLICY='{
       "Effect": "Allow",
       "Action": "secretsmanager:GetSecretValue",
       "Resource": "arn:aws:secretsmanager:*:'${ACCOUNT_ID}':secret:peekaboo/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::'${PREFIX}'-scan-logs-'${ACCOUNT_ID}'",
+        "arn:aws:s3:::'${PREFIX}'-scan-logs-'${ACCOUNT_ID}'/*"
+      ]
     }
   ]
 }'
@@ -219,6 +231,19 @@ if ! aws iam get-policy --policy-arn "${BEDROCK_POLICY_ARN}" &>/dev/null; then
 fi
 aws iam attach-role-policy --role-name "${TASK_ROLE_NAME}" \
   --policy-arn "${BEDROCK_POLICY_ARN}" 2>/dev/null || true
+
+# ── 5b. S3 Bucket for Scan Logs ────────────────────────────────────────────
+echo ""
+echo "▸ Step 5b: S3 Scan Log Bucket"
+SCAN_LOG_BUCKET="${PREFIX}-scan-logs-${ACCOUNT_ID}"
+if aws s3api head-bucket --bucket "${SCAN_LOG_BUCKET}" --region "${REGION}" 2>/dev/null; then
+  echo "  ✔ Bucket ${SCAN_LOG_BUCKET} already exists"
+else
+  aws s3api create-bucket --bucket "${SCAN_LOG_BUCKET}" --region "${REGION}" \
+    $(if [[ "${REGION}" != "us-east-1" ]]; then echo "--create-bucket-configuration LocationConstraint=${REGION}"; fi) \
+    > /dev/null
+  echo "  ✔ Created bucket ${SCAN_LOG_BUCKET}"
+fi
 
 # ── 6. CloudWatch Log Group ─────────────────────────────────────────────────
 echo ""
@@ -339,7 +364,8 @@ TASK_DEF=$(cat <<TASKDEF
     "environment": [
       {"name": "BASIC_AUTH_USER", "value": "${BASIC_AUTH_USER}"},
       {"name": "BASIC_AUTH_PASS", "value": "${BASIC_AUTH_PASS}"},
-      {"name": "AWS_DEFAULT_REGION", "value": "${REGION}"}
+      {"name": "AWS_DEFAULT_REGION", "value": "${REGION}"},
+      {"name": "SCAN_LOG_BUCKET", "value": "${SCAN_LOG_BUCKET}"}
     ],
     "logConfiguration": {
       "logDriver": "awslogs",

@@ -2,13 +2,15 @@
 
 const PII_KEYWORDS = [
   'email','password','passwd','pwd','ssn','social_security','credit_card',
-  'card_number','cvv','cvc','expir','phone','mobile','address','zipcode',
-  'zip_code','postal','date_of_birth','dob','birth_date','first_name',
-  'last_name','full_name','username','login','credential','secret',
-  'token','api_key','apikey','auth_token','access_token','refresh_token',
-  'session','cookie','passport','driver_license','national_id','tax_id',
-  'bank_account','routing_number','iban','swift','salary','income',
-  'medical','health','diagnosis','patient','insurance','beneficiary',
+  'card_number','cvv','cvc','expir','phone','mobile_number','mobile_phone',
+  'cell_phone','street_address','home_address','billing_address',
+  'shipping_address','mailing_address','zipcode','zip_code','postal_code',
+  'date_of_birth','dob','birth_date','first_name','last_name','full_name',
+  'username','login','credential','secret','token','api_key','apikey',
+  'auth_token','access_token','refresh_token','session','passport',
+  'driver_license','national_id','tax_id','bank_account','routing_number',
+  'iban','swift','salary','income','medical','health_record','health_info',
+  'health_condition','diagnosis','patient','insurance','beneficiary',
   'biometric','fingerprint','face_id','geolocation',
 ];
 

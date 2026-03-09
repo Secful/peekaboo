@@ -76,7 +76,7 @@ function renderSubdomainTable(data) {
     html += `
       <tr id="sub-row-${idx}">
         <td style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${idx + 1}</td>
-        <td class="subdomain-name"><span id="crawl-td-${idx}">${escHtml(name)}${aiBadgeHtml}${crawlBtnHtml}</span></td>
+        <td class="subdomain-name"><span id="crawl-td-${idx}" data-subdomain="${escHtml(name)}">${escHtml(name)}${aiBadgeHtml}${crawlBtnHtml}</span></td>
         <td><span class="subdomain-status ${statusCls}">${status || '—'}</span></td>
         <td class="subdomain-title" title="${escHtml(title)}">${escHtml(title)}</td>
         <td class="subdomain-techs">${techHtml}</td>
@@ -96,6 +96,11 @@ function renderSubdomainTable(data) {
 
   html += '</tbody></table>';
   container.innerHTML = html;
+
+  // Apply security pills for any already-received insights
+  for (const subdomain of Object.keys(appState.securityInsights)) {
+    applySecurityPill(subdomain);
+  }
 
   // Restore map view if user was viewing the map
   if (appState.subdomainViewMode === 'map') {
@@ -301,14 +306,18 @@ async function crawlSubdomain(event, idx, subdomain) {
   const expandRow = document.getElementById(`crawled-row-${idx}`);
   const listDiv = document.getElementById(`crawled-list-${idx}`);
 
+  // Preserve security pill if present
+  const secPill = wrapper.querySelector('.security-pill');
+  const secPillHtml = secPill ? ` ${secPill.outerHTML}` : '';
+
   // Replace crawl button with spinner, keep subdomain name
-  wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Looking deeper...</span>`;
+  wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Looking deeper...</span>`;
 
   const maxRetries = 2;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 0) {
-        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Retry ${attempt}/${maxRetries}...</span>`;
+        wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Retry ${attempt}/${maxRetries}...</span>`;
         await new Promise(r => setTimeout(r, 1500 * attempt));
       }
 
@@ -325,7 +334,7 @@ async function crawlSubdomain(event, idx, subdomain) {
         const evenDeeperBtn = jsUrls.length > 0
           ? ` <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`
           : '';
-        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawled-urls-pill" onclick="toggleUrlList(event, 'url-list-${idx}')">${urls.length} resources</span>${evenDeeperBtn}`;
+        wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawled-urls-pill" onclick="toggleUrlList(event, 'url-list-${idx}')">${urls.length} resources</span>${evenDeeperBtn}`;
         // Store JS URLs as data attribute for the analyzer
         const expandRow2 = document.getElementById(`crawled-row-${idx}`);
         if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsUrls);
@@ -348,16 +357,16 @@ async function crawlSubdomain(event, idx, subdomain) {
         if (jsOnly.length > 0) {
           const expandRow2 = document.getElementById(`crawled-row-${idx}`);
           if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsOnly);
-          wrapper.innerHTML = `${escHtml(subdomain)} <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`;
+          wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`;
           listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`;
         } else {
-          wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-done-empty">Nothing interesting here</span>`;
+          wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawl-done-empty">Nothing interesting here</span>`;
         }
       }
       return; // Success — exit the retry loop
     } catch (err) {
       if (attempt === maxRetries) {
-        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-error" title="${escHtml(err.message)}">Failed</span>`;
+        wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawl-error" title="${escHtml(err.message)}">Failed</span>`;
       }
     }
   }
@@ -413,7 +422,7 @@ async function analyzeJsDeeper(event, idx, subdomain) {
       const resp = await fetch('/api/analyze-js', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({urls: jsUrls})
+        body: JSON.stringify({urls: jsUrls.slice(0, 25)})
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
@@ -537,9 +546,9 @@ function openApiDrawer(idx) {
     html += `<div class="api-card ${originCls}${piiCls}">
       <div class="api-card-top">
         <span class="api-card-method ${mCls}">${escHtml(method)}</span>
-        <span class="api-card-endpoint">${escHtml(api.url || '')}</span>
-        <span class="api-card-tags">${apiAiHtml}${categoryHtml}${piiHtml}${originTag}</span>
+        <span class="api-card-endpoint" title="${escHtml(api.url || '')}">${escHtml(api.url || '')}</span>
       </div>
+      <div class="api-card-tags-row">${apiAiHtml}${categoryHtml}${piiHtml}${originTag}</div>
       <div class="api-card-bottom">
         <span class="api-card-ctx">${escHtml(api.context || '')}</span>
         <span class="api-card-src">${srcHtml}</span>
@@ -575,6 +584,127 @@ function toggleUrlList(event, listId) {
       if (!results || !results.innerHTML.trim()) expandRow.classList.add('hidden');
     }
   }
+}
+
+/* Security Insights — pill + drawer */
+
+function applySecurityPill(subdomain) {
+  const data = appState.securityInsights[subdomain];
+  if (!data) return;
+
+  // Find the subdomain row by data attribute
+  const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
+  if (!span || span.querySelector('.security-pill')) return;
+
+  const findings = data.findings || [];
+  const pill = document.createElement('span');
+
+  if (findings.length === 0) {
+    pill.className = 'security-pill security-pill-clean';
+    pill.textContent = '\u2713 clean';
+    pill.title = 'Scans for known CVEs, exposed sensitive files, server misconfigurations, and subdomain takeover vulnerabilities.';
+  } else {
+    const maxSeverity = getMaxSeverity(findings);
+    const severityClass = getSeverityPillClass(maxSeverity);
+    const label = findings.length === 1 ? '1 finding' : `${findings.length} findings`;
+    pill.className = `security-pill ${severityClass}`;
+    pill.textContent = label;
+    pill.onclick = function(e) { e.stopPropagation(); openSecurityDrawer(subdomain); };
+  }
+
+  span.appendChild(document.createTextNode(' '));
+  span.appendChild(pill);
+}
+
+function getMaxSeverity(findings) {
+  const order = ['critical', 'high', 'medium', 'low', 'info'];
+  for (const s of order) {
+    if (findings.some(f => (f.severity || '').toLowerCase() === s)) return s;
+  }
+  return 'info';
+}
+
+function getSeverityPillClass(severity) {
+  switch ((severity || '').toLowerCase()) {
+    case 'critical': case 'high': return 'security-pill-red';
+    case 'medium': return 'security-pill-yellow';
+    case 'low': case 'info': default: return 'security-pill-blue';
+  }
+}
+
+function getSeverityBadgeClass(severity) {
+  switch ((severity || '').toLowerCase()) {
+    case 'critical': return 'severity-critical';
+    case 'high': return 'severity-high';
+    case 'medium': return 'severity-medium';
+    case 'low': return 'severity-low';
+    case 'info': default: return 'severity-info';
+  }
+}
+
+function openSecurityDrawer(subdomain) {
+  const data = appState.securityInsights[subdomain];
+  if (!data) return;
+
+  const drawer = document.getElementById('securityDrawer');
+  const title = document.getElementById('securityDrawerTitle');
+  const subtitle = document.getElementById('securityDrawerSubtitle');
+  const content = document.getElementById('securityDrawerContent');
+
+  title.textContent = subdomain;
+  const duration = data.scan_duration_secs ? `${data.scan_duration_secs.toFixed(1)}s` : '—';
+  subtitle.textContent = `${data.findings_count || data.findings.length} finding${(data.findings_count || data.findings.length) !== 1 ? 's' : ''} — scan duration: ${duration}`;
+
+  const findings = data.findings || [];
+
+  // Severity breakdown
+  const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  for (const f of findings) {
+    const s = (f.severity || 'info').toLowerCase();
+    if (counts[s] !== undefined) counts[s]++;
+    else counts.info++;
+  }
+  const total = findings.length || 1;
+
+  let barHtml = '<div class="severity-bar">';
+  for (const [sev, count] of Object.entries(counts)) {
+    if (count === 0) continue;
+    const pct = ((count / total) * 100).toFixed(1);
+    barHtml += `<div class="severity-bar-segment severity-bar-${sev}" style="width:${pct}%" title="${sev}: ${count}"></div>`;
+  }
+  barHtml += '</div>';
+
+  const legendParts = [];
+  for (const [sev, count] of Object.entries(counts)) {
+    if (count > 0) legendParts.push(`<span class="severity-legend-item"><span class="severity-legend-dot severity-dot-${sev}"></span>${count} ${sev}</span>`);
+  }
+  const legendHtml = `<div class="severity-legend">${legendParts.join('')}</div>`;
+
+  // Finding cards
+  let cardsHtml = '';
+  for (const f of findings) {
+    const sev = (f.severity || 'info').toLowerCase();
+    const badgeClass = getSeverityBadgeClass(sev);
+    const tagsHtml = (f.tags || []).map(t => `<span class="security-tag">${escHtml(t)}</span>`).join('');
+
+    cardsHtml += `<div class="security-finding-card security-card-${sev}">
+      <div class="security-finding-top">
+        <span class="severity-badge ${badgeClass}">${escHtml(sev.toUpperCase())}</span>
+        <span class="security-finding-name">${escHtml(f.name || '')}</span>
+      </div>
+      <div class="security-finding-template">${escHtml(f.template_id || '')}</div>
+      ${f.description ? `<div class="security-finding-desc">${escHtml(f.description)}</div>` : ''}
+      ${f.matched_at ? `<div class="security-finding-match"><span class="security-match-label">Matched:</span> <a href="${escHtml(f.matched_at)}" target="_blank" rel="noopener">${escHtml(f.matched_at)}</a></div>` : ''}
+      ${tagsHtml ? `<div class="security-finding-tags">${tagsHtml}</div>` : ''}
+    </div>`;
+  }
+
+  content.innerHTML = barHtml + legendHtml + cardsHtml;
+  drawer.classList.add('open');
+}
+
+function closeSecurityDrawer() {
+  document.getElementById('securityDrawer').classList.remove('open');
 }
 
 /* Fixed-position thumbnail preview on hover — escapes overflow:auto clipping */

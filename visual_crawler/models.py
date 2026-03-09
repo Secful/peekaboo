@@ -54,3 +54,24 @@ class AnalyzeJsRequest(BaseModel):
 class GeolocateIpsRequest(BaseModel):
     """Request body for IP geolocation."""
     ips: list[str]
+
+
+class SecurityFinding(BaseModel):
+    """A single security finding from an external scanner."""
+    template_id: str
+    name: str
+    severity: str
+    type: str
+    matched_at: str
+    description: str = ""
+    tags: list[str] = []
+
+
+class SecurityInsightsRequest(BaseModel):
+    """Request body for security insights from an external scanner."""
+    domain: str
+    subdomain: str
+    url: str
+    scan_duration_secs: float = 0.0
+    findings_count: int = 0
+    findings: list[SecurityFinding] = []

@@ -217,6 +217,7 @@ function newScan() {
   resetTimer();
   appState.capturedScreenshots = [];
   appState.subdomainResults = null;
+  appState.securityInsights = {};
 
   // Reset map state
   Object.keys(appState.geoCache).forEach(k => delete appState.geoCache[k]);
@@ -244,7 +245,7 @@ function newScan() {
   document.getElementById('statPages').textContent = '0';
   document.getElementById('statHosts').textContent = '0';
   document.getElementById('statQueue').textContent = '0';
-  document.getElementById('previewThumb').innerHTML = '<div class="idle-icon">👀</div>';
+  document.getElementById('previewThumb').innerHTML = '<div class="idle-scanner"><span class="idle-scanner-label"><span class="idle-scanner-dot"></span>Scanning</span></div>';
   document.getElementById('previewLabel').textContent = 'Live Preview';
   document.getElementById('previewLive').classList.remove('hidden');
   document.getElementById('previewSummary').classList.add('hidden');
@@ -400,6 +401,16 @@ function handleEvent(msg) {
           <button class="retry-subdomains-btn" onclick="retrySubdomains()">Retry</button>
         </div>`;
       addLog('⚠️', msg.message, 'error');
+      break;
+
+    case 'security_insights':
+      appState.securityInsights[msg.subdomain] = msg;
+      applySecurityPill(msg.subdomain);
+      if (msg.findings_count > 0) {
+        addLog('🛡️', `Security findings for ${msg.subdomain}: ${msg.findings_count} findings`, 'error');
+      } else {
+        addLog('🛡️', `${msg.subdomain}: security scan clean`, '');
+      }
       break;
 
     case 'crawl_error':

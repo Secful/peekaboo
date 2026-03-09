@@ -1,10 +1,10 @@
 /* PII/AI detection and domain classification helpers */
 
 function _extractJsonKeys(text) {
-  /* Return only JSON keys from a string (recursive). Falls back to full text if not JSON. */
+  /* Return only JSON keys from a string (recursive). Returns empty string if not valid JSON. */
   if (!text) return '';
   const trimmed = text.trim();
-  if ((trimmed[0] !== '{' && trimmed[0] !== '[')) return text;
+  if ((trimmed[0] !== '{' && trimmed[0] !== '[')) return '';
   try {
     const obj = JSON.parse(trimmed);
     const keys = [];
@@ -15,7 +15,7 @@ function _extractJsonKeys(text) {
       }
     })(obj);
     return keys.join(' ');
-  } catch { return text; }
+  } catch { return ''; }
 }
 
 function getPiiMatches(text, jsonKeysOnly) {
