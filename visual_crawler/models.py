@@ -95,3 +95,24 @@ class SecurityInsightsRequest(BaseModel):
     scan_duration_secs: float = 0.0
     findings_count: int = 0
     findings: list[SecurityFinding] = []
+
+
+class AgenticFinding(BaseModel):
+    """A single agentic/AI discovery finding from an external scanner."""
+    name: str
+    path: str
+    file_url: str = ""
+    description: str = ""
+    status_code: int = 0
+    content_type: str = ""
+    is_sse: bool = False
+
+
+class AgenticRequest(BaseModel):
+    """Request body for agentic/AI discovery findings from an external scanner."""
+    domain: str
+    subdomain: str
+    url: str
+    scan_duration_secs: float = 0.0
+    findings_count: int = 0
+    findings: list[AgenticFinding] = []

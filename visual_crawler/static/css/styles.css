@@ -913,7 +913,7 @@
     color: var(--green); font-weight: 500;
     min-width: 250px;
   }
-  .subdomain-table .subdomain-name span {
+  .subdomain-table .subdomain-name > span {
     display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3rem;
   }
   .subdomain-table .subdomain-techs {
@@ -1504,6 +1504,7 @@
     display: inline-block; padding: 0.15rem 0.55rem; border-radius: 10px;
     font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
     user-select: none; margin-left: 0.35rem; vertical-align: middle;
+    order: 99;
   }
   .security-pill-red {
     background: rgba(239, 68, 68, 0.15); color: #ef4444;
@@ -1515,6 +1516,11 @@
     border: 1px solid rgba(245, 158, 11, 0.3);
   }
   .security-pill-yellow:hover { background: rgba(245, 158, 11, 0.25); }
+  .security-pill-orange {
+    background: rgba(233, 115, 25, 0.15); color: #e97319;
+    border: 1px solid rgba(233, 115, 25, 0.3);
+  }
+  .security-pill-orange:hover { background: rgba(233, 115, 25, 0.25); }
   .security-pill-blue {
     background: rgba(59, 130, 246, 0.15); color: #3b82f6;
     border: 1px solid rgba(59, 130, 246, 0.3);
@@ -1678,3 +1684,82 @@
     background: rgba(59, 130, 246, 0.15); color: #3b82f6;
     border: 1px solid rgba(59, 130, 246, 0.3);
   }
+
+  /* ── Agentic Discovery Drawer ── */
+  .agentic-drawer {
+    position: fixed; top: 0; right: -520px; bottom: 0; width: 520px;
+    background: var(--surface); border-left: 1px solid var(--border);
+    box-shadow: -5px 0 20px rgba(0,0,0,0.3); z-index: 2000;
+    transition: right 0.3s ease; overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+  .agentic-drawer.open { right: 0; }
+  .agentic-drawer-header {
+    padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: flex-start;
+    background: var(--surface2); flex-shrink: 0;
+  }
+  .agentic-drawer-header h3 {
+    font-size: 1rem; margin: 0; font-weight: 700; letter-spacing: -0.02em;
+    color: #3b82f6; font-family: 'JetBrains Mono', monospace;
+  }
+  .agentic-drawer-subtitle {
+    font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; font-weight: 500;
+  }
+  .agentic-drawer-content {
+    padding: 1rem 1.5rem; flex: 1; overflow-y: auto;
+  }
+
+  /* Agentic pill on subdomain rows */
+  .agentic-pill {
+    display: inline-block; padding: 0.15rem 0.55rem; border-radius: 10px;
+    font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    user-select: none; margin-left: 0.35rem; vertical-align: middle;
+  }
+
+  /* Agentic finding cards */
+  .agentic-finding-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-left: 3px solid #3b82f6;
+    border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;
+    transition: border-color 0.2s;
+  }
+  .agentic-finding-card:hover { border-color: var(--purple); }
+  .agentic-finding-top {
+    display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;
+  }
+  .agentic-finding-name {
+    font-weight: 600; font-size: 0.9rem; color: var(--text);
+  }
+  .agentic-finding-path {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;
+    color: #3b82f6; margin-bottom: 0.35rem; word-break: break-all;
+  }
+  .agentic-finding-desc {
+    font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;
+    margin-bottom: 0.35rem;
+  }
+  .agentic-finding-meta {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    margin-top: 0.25rem;
+  }
+  .agentic-status-badge {
+    display: inline-block; padding: 0.1rem 0.45rem; border-radius: 4px;
+    font-size: 0.72rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+  }
+  .agentic-content-type {
+    font-size: 0.72rem; color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .agentic-sse-badge {
+    display: inline-block; padding: 0.1rem 0.45rem; border-radius: 4px;
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.03em;
+    background: rgba(6, 182, 212, 0.12); color: #06b6d4;
+    border: 1px solid rgba(6, 182, 212, 0.3);
+  }
+  .agentic-finding-link {
+    font-size: 0.72rem; color: var(--green); text-decoration: none;
+    font-weight: 600; transition: color 0.15s;
+  }
+  .agentic-finding-link:hover { text-decoration: underline; }

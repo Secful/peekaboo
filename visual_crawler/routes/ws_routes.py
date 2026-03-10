@@ -29,7 +29,6 @@ _scan_id_counter = itertools.count(1)
 _active_scans: dict[int, str] = {}          # scan_id -> domain
 _connected_clients: dict[int, WebSocket] = {}  # scan_id -> ws
 _subdomains_ready: dict[int, bool] = {}     # scan_id -> True once subdomains sent
-_pending_insights: dict[int, list] = {}     # scan_id -> queued security payloads
 _client_domains: dict[int, str] = {}        # scan_id -> domain (persists until WS disconnect)
 
 
@@ -58,14 +57,19 @@ async def _fetch_subdomains(domain: str, send_event, scan_id: int = 0) -> None:
             )
             resp.raise_for_status()
             await send_event({"type": "subdomains", "data": resp.json()})
-            # Mark subdomains as rendered and flush any queued security insights
+            # Mark subdomains as rendered and push any stored scanner results
             if scan_id:
                 _subdomains_ready[scan_id] = True
-                for payload in _pending_insights.pop(scan_id, []):
-                    try:
-                        await send_event(payload)
-                    except Exception:
-                        pass
+                domain_for_store = _client_domains.get(scan_id)
+                if domain_for_store:
+                    from ..scanner_store import scanner_store
+                    stored = scanner_store.get_all_for_domain(domain_for_store)
+                    logger.warning(f"Flushing {len(stored)} stored scanner results for {domain_for_store}")
+                    for payload in stored:
+                        try:
+                            await send_event(payload)
+                        except Exception:
+                            pass
     except asyncio.TimeoutError:
         logger.warning(f"Subdomain discovery timed out for {domain}")
         await send_event({
@@ -302,6 +306,5 @@ async def websocket_endpoint(ws: WebSocket):
         _active_scans.pop(scan_id, None)
         _connected_clients.pop(scan_id, None)
         _subdomains_ready.pop(scan_id, None)
-        _pending_insights.pop(scan_id, None)
         _client_domains.pop(scan_id, None)
         await _broadcast_active_scans()

@@ -8,7 +8,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, AnalyzeJsRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest
+from ..models import GenerateDescriptionRequest, AnalyzeJsRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -251,9 +251,10 @@ async def scan_history_detail(domain: str, scan_key: str):
 @router.post("/api/security-insights")
 async def security_insights(request: SecurityInsightsRequest):
     """Receive security findings from an external scanner and push to connected UI clients."""
-    from .ws_routes import (
-        _client_domains, _connected_clients, _subdomains_ready, _pending_insights,
-    )
+    from .ws_routes import _client_domains, _connected_clients, _subdomains_ready
+    from ..scanner_store import scanner_store
+
+    logger.warning(f"Got {request.findings_count} security findings for subdomain {request.subdomain}")
 
     payload = {
         "type": "security_insights",
@@ -265,33 +266,21 @@ async def security_insights(request: SecurityInsightsRequest):
         "findings": [f.model_dump() for f in request.findings],
     }
 
+    scanner_store.store_security_insights(request.domain, request.subdomain, payload)
+
     pushed_to = 0
-    # Use _client_domains (persists until WS disconnect) instead of _active_scans
-    # so insights arriving after scan completion still reach the client.
     for scan_id, domain in list(_client_domains.items()):
         if domain != request.domain:
             continue
         ws = _connected_clients.get(scan_id)
         if ws is None:
             continue
-
         if _subdomains_ready.get(scan_id):
-            # Subdomains already rendered — push immediately
             try:
                 await ws.send_json(payload)
                 pushed_to += 1
             except Exception:
                 logger.warning(f"Failed to push security insights to scan {scan_id}")
-        else:
-            # Queue until subdomains are ready
-            _pending_insights.setdefault(scan_id, []).append(payload)
-            pushed_to += 1  # will be delivered once ready
-
-    if pushed_to == 0:
-        logger.warning(
-            f"Security insights for {request.subdomain}: no active scan found for domain={request.domain} "
-            f"(client_domains={dict(_client_domains)})"
-        )
 
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
 
@@ -299,9 +288,8 @@ async def security_insights(request: SecurityInsightsRequest):
 @router.post("/api/jsresources")
 async def js_resources(request: JsResourcesRequest):
     """Receive JS resource URLs from an external scanner and push to connected UI clients."""
-    from .ws_routes import (
-        _client_domains, _connected_clients, _subdomains_ready, _pending_insights,
-    )
+    from .ws_routes import _client_domains, _connected_clients, _subdomains_ready
+    from ..scanner_store import scanner_store
 
     payload = {
         "type": "js_resources",
@@ -313,6 +301,8 @@ async def js_resources(request: JsResourcesRequest):
         "urls": request.urls,
     }
 
+    scanner_store.store_js_resources(request.domain, request.subdomain, payload)
+
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
         if domain != request.domain:
@@ -320,22 +310,12 @@ async def js_resources(request: JsResourcesRequest):
         ws = _connected_clients.get(scan_id)
         if ws is None:
             continue
-
         if _subdomains_ready.get(scan_id):
             try:
                 await ws.send_json(payload)
                 pushed_to += 1
             except Exception:
                 logger.warning(f"Failed to push JS resources to scan {scan_id}")
-        else:
-            _pending_insights.setdefault(scan_id, []).append(payload)
-            pushed_to += 1
-
-    if pushed_to == 0:
-        logger.warning(
-            f"JS resources for {request.subdomain}: no active scan found for domain={request.domain} "
-            f"(client_domains={dict(_client_domains)})"
-        )
 
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
 
@@ -343,11 +323,10 @@ async def js_resources(request: JsResourcesRequest):
 @router.post("/api/openports")
 async def open_ports(request: OpenPortsRequest):
     """Receive open port scan results from an external scanner and push to connected UI clients."""
-    from .ws_routes import (
-        _client_domains, _connected_clients, _subdomains_ready, _pending_insights,
-    )
+    from .ws_routes import _client_domains, _connected_clients, _subdomains_ready
+    from ..scanner_store import scanner_store
 
-    logger.info(f"Got {request.open_ports_count} open ports for subdomain {request.subdomain}")
+    logger.warning(f"Got {request.open_ports_count} open ports for subdomain {request.subdomain}")
 
     payload = {
         "type": "open_ports",
@@ -359,6 +338,8 @@ async def open_ports(request: OpenPortsRequest):
         "open_ports": request.open_ports,
     }
 
+    scanner_store.store_open_ports(request.domain, request.subdomain, payload)
+
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
         if domain != request.domain:
@@ -366,21 +347,49 @@ async def open_ports(request: OpenPortsRequest):
         ws = _connected_clients.get(scan_id)
         if ws is None:
             continue
-
         if _subdomains_ready.get(scan_id):
             try:
                 await ws.send_json(payload)
                 pushed_to += 1
             except Exception:
                 logger.warning(f"Failed to push open ports to scan {scan_id}")
-        else:
-            _pending_insights.setdefault(scan_id, []).append(payload)
-            pushed_to += 1
 
-    if pushed_to == 0:
-        logger.warning(
-            f"Open ports for {request.subdomain}: no active scan found for domain={request.domain} "
-            f"(client_domains={dict(_client_domains)})"
-        )
+    logger.warning(f"Open ports for {request.subdomain}: pushed_to={pushed_to}, subdomains_ready={dict(_subdomains_ready)}, client_domains={dict(_client_domains)}")
+    return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+
+@router.post("/api/agentic")
+async def agentic(request: AgenticRequest):
+    """Receive agentic/AI discovery findings from an external scanner and push to connected UI clients."""
+    from .ws_routes import _client_domains, _connected_clients, _subdomains_ready
+    from ..scanner_store import scanner_store
+
+    logger.warning(f"Got {request.findings_count} agentic findings for subdomain {request.subdomain}")
+
+    payload = {
+        "type": "agentic",
+        "domain": request.domain,
+        "subdomain": request.subdomain,
+        "url": request.url,
+        "scan_duration_secs": request.scan_duration_secs,
+        "findings_count": request.findings_count,
+        "findings": [f.model_dump() for f in request.findings],
+    }
+
+    scanner_store.store_agentic(request.domain, request.subdomain, payload)
+
+    pushed_to = 0
+    for scan_id, domain in list(_client_domains.items()):
+        if domain != request.domain:
+            continue
+        ws = _connected_clients.get(scan_id)
+        if ws is None:
+            continue
+        if _subdomains_ready.get(scan_id):
+            try:
+                await ws.send_json(payload)
+                pushed_to += 1
+            except Exception:
+                logger.warning(f"Failed to push agentic findings to scan {scan_id}")
 
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})

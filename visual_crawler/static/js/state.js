@@ -23,6 +23,7 @@ const appState = {
   securityInsights: {},
   jsResources: {},
   openPorts: {},
+  agentic: {},
   geoCache: {},
   subdomainMapInstance: null,
   subdomainMapMarkers: [],

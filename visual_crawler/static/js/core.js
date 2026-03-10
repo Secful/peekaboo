@@ -219,6 +219,7 @@ function newScan() {
   appState.subdomainResults = null;
   appState.securityInsights = {};
   appState.openPorts = {};
+  appState.agentic = {};
 
   // Reset map state
   Object.keys(appState.geoCache).forEach(k => delete appState.geoCache[k]);
@@ -432,6 +433,14 @@ function handleEvent(msg) {
       }
       break;
 
+    case 'agentic':
+      appState.agentic[msg.subdomain] = msg;
+      applyAgenticPill(msg.subdomain);
+      if (msg.findings_count > 0) {
+        addLog('🤖', `Agentic findings for ${msg.subdomain}: ${msg.findings_count} findings`, '');
+      }
+      break;
+
     case 'crawl_error':
       addLog('⚠️', `Error on ${shortenUrl(msg.url)}: ${msg.error}`, 'error');
       break;
@@ -484,6 +493,10 @@ function handleEvent(msg) {
       document.getElementById('previewSummary').classList.remove('hidden');
 
       showScanSummary(msg);
+
+      if (!appState.subdomainResults) {
+        addLog('🌐', 'Subdomain discovery still in progress...', '');
+      }
 
       const scanDuration = appState.scanStartTime ? (Date.now() - appState.scanStartTime) / 1000 : Infinity;
       if (scanDuration < 60) {

@@ -1,7 +1,9 @@
 """FastAPI server for the Visual API Crawler."""
 
 import os
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from pathlib import Path
 
@@ -13,6 +15,7 @@ from .proxy_config import (
     _load_brightdata_proxy_pool,
     _load_scraping_browser_url,
 )
+from .scanner_store import scanner_store
 from .routes.static_routes import router as static_router
 from .routes.api_routes import router as api_router
 from .routes.ws_routes import router as ws_router
@@ -20,9 +23,22 @@ from .routes.ws_routes import router as ws_router
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Periodic cleanup of expired scanner store entries."""
+    async def _cleanup_loop():
+        while True:
+            await asyncio.sleep(3600)
+            scanner_store.cleanup_expired()
+
+    task = asyncio.create_task(_cleanup_loop())
+    yield
+    task.cancel()
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    app = FastAPI()
+    app = FastAPI(lifespan=_lifespan)
 
     auth_user = os.getenv('BASIC_AUTH_USER')
     auth_pass = os.getenv('BASIC_AUTH_PASS')

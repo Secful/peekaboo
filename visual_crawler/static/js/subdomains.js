@@ -107,6 +107,11 @@ function renderSubdomainTable(data) {
     applySecurityPill(subdomain);
   }
 
+  // Apply agentic pills for any already-received findings
+  for (const subdomain of Object.keys(appState.agentic)) {
+    applyAgenticPill(subdomain);
+  }
+
   // Restore map view if user was viewing the map
   if (appState.subdomainViewMode === 'map') {
     setSubdomainViewMode('map');
@@ -687,11 +692,12 @@ function applyJsResources(subdomain, urls) {
 
 function applySecurityPill(subdomain) {
   const data = appState.securityInsights[subdomain];
-  if (!data) return;
+  if (!data) { console.warn(`[security-pill] No data for ${subdomain}`); return; }
 
   // Find the subdomain row by data attribute
   const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
-  if (!span || span.querySelector('.security-pill')) return;
+  if (!span) { console.warn(`[security-pill] No DOM element for subdomain: ${subdomain}`); return; }
+  if (span.querySelector('.security-pill')) return;
 
   const findings = data.findings || [];
   const pill = document.createElement('span');
@@ -819,7 +825,7 @@ function applyOpenPortsPill(subdomain) {
   const ports = data.open_ports || [];
   if (ports.length === 0) return;
 
-  const colorClass = 'security-pill-red';
+  const colorClass = 'security-pill-orange';
 
   const label = ports.length === 1 ? '1 port' : `${ports.length} ports`;
   const pill = document.createElement('span');
@@ -867,6 +873,76 @@ function openOpenPortsDrawer(subdomain) {
 
 function closeOpenPortsDrawer() {
   document.getElementById('openPortsDrawer').classList.remove('open');
+}
+
+/* Agentic Discovery — pill + drawer */
+
+function applyAgenticPill(subdomain) {
+  const data = appState.agentic[subdomain];
+  if (!data) return;
+
+  const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
+  if (!span || span.querySelector('.agentic-pill')) return;
+
+  const findings = data.findings || [];
+  if (findings.length === 0) return;
+
+  const pill = document.createElement('span');
+  pill.className = 'agentic-pill security-pill-blue';
+  pill.textContent = `${findings.length} agentic`;
+  pill.setAttribute('onclick', `event.stopPropagation(); openAgenticDrawer('${subdomain.replace(/'/g, "\\'")}')`);
+
+  span.appendChild(document.createTextNode(' '));
+  span.appendChild(pill);
+}
+
+function openAgenticDrawer(subdomain) {
+  const data = appState.agentic[subdomain];
+  if (!data) return;
+
+  const drawer = document.getElementById('agenticDrawer');
+  const title = document.getElementById('agenticDrawerTitle');
+  const subtitle = document.getElementById('agenticDrawerSubtitle');
+  const content = document.getElementById('agenticDrawerContent');
+
+  title.textContent = subdomain;
+  const duration = data.scan_duration_secs ? `${data.scan_duration_secs.toFixed(1)}s` : '—';
+  const count = data.findings ? data.findings.length : 0;
+  subtitle.textContent = `${count} finding${count !== 1 ? 's' : ''} — scan duration: ${duration}`;
+
+  const findings = data.findings || [];
+  let html = '';
+  for (const f of findings) {
+    const statusCls = f.status_code >= 200 && f.status_code < 300 ? 'status-2xx'
+      : f.status_code >= 300 && f.status_code < 400 ? 'status-3xx'
+      : f.status_code >= 400 && f.status_code < 500 ? 'status-4xx'
+      : f.status_code >= 500 ? 'status-5xx' : '';
+    const sseBadge = f.is_sse ? '<span class="agentic-sse-badge">SSE</span>' : '';
+    const linkHtml = f.file_url
+      ? `<a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" class="agentic-finding-link">View source</a>`
+      : '';
+
+    html += `<div class="agentic-finding-card">
+      <div class="agentic-finding-top">
+        <span class="agentic-finding-name">${escHtml(f.name)}</span>
+        ${sseBadge}
+      </div>
+      <div class="agentic-finding-path">${escHtml(f.path)}</div>
+      ${f.description ? `<div class="agentic-finding-desc">${escHtml(f.description)}</div>` : ''}
+      <div class="agentic-finding-meta">
+        ${f.status_code ? `<span class="agentic-status-badge ${statusCls}">${f.status_code}</span>` : ''}
+        ${f.content_type ? `<span class="agentic-content-type">${escHtml(f.content_type)}</span>` : ''}
+        ${linkHtml}
+      </div>
+    </div>`;
+  }
+
+  content.innerHTML = html;
+  drawer.classList.add('open');
+}
+
+function closeAgenticDrawer() {
+  document.getElementById('agenticDrawer').classList.remove('open');
 }
 
 /* Fixed-position thumbnail preview on hover — escapes overflow:auto clipping */
