@@ -8,7 +8,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, AnalyzeJsRequest, GeolocateIpsRequest, SecurityInsightsRequest
+from ..models import GenerateDescriptionRequest, AnalyzeJsRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -290,6 +290,50 @@ async def security_insights(request: SecurityInsightsRequest):
     if pushed_to == 0:
         logger.warning(
             f"Security insights for {request.subdomain}: no active scan found for domain={request.domain} "
+            f"(client_domains={dict(_client_domains)})"
+        )
+
+    return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+
+@router.post("/api/jsresources")
+async def js_resources(request: JsResourcesRequest):
+    """Receive JS resource URLs from an external scanner and push to connected UI clients."""
+    from .ws_routes import (
+        _client_domains, _connected_clients, _subdomains_ready, _pending_insights,
+    )
+
+    payload = {
+        "type": "js_resources",
+        "domain": request.domain,
+        "subdomain": request.subdomain,
+        "url": request.url,
+        "scan_duration_secs": request.scan_duration_secs,
+        "urls_count": request.urls_count,
+        "urls": request.urls,
+    }
+
+    pushed_to = 0
+    for scan_id, domain in list(_client_domains.items()):
+        if domain != request.domain:
+            continue
+        ws = _connected_clients.get(scan_id)
+        if ws is None:
+            continue
+
+        if _subdomains_ready.get(scan_id):
+            try:
+                await ws.send_json(payload)
+                pushed_to += 1
+            except Exception:
+                logger.warning(f"Failed to push JS resources to scan {scan_id}")
+        else:
+            _pending_insights.setdefault(scan_id, []).append(payload)
+            pushed_to += 1
+
+    if pushed_to == 0:
+        logger.warning(
+            f"JS resources for {request.subdomain}: no active scan found for domain={request.domain} "
             f"(client_domains={dict(_client_domains)})"
         )
 

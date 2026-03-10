@@ -390,7 +390,8 @@
 
 
   /* Right panel – endpoint table */
-  .right-panel { display:flex; flex-direction:column; overflow:hidden; }
+  .right-panel { display:flex; flex-direction:column; overflow:hidden; position:relative; z-index:1; }
+  .preview-hover-active .right-panel { z-index:0 !important; }
   .table-controls {
     padding:0.75rem 1rem; display:flex; gap:0.5rem; align-items:center;
     border-bottom:1px solid var(--border); background:var(--surface);

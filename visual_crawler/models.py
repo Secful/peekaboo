@@ -56,6 +56,16 @@ class GeolocateIpsRequest(BaseModel):
     ips: list[str]
 
 
+class JsResourcesRequest(BaseModel):
+    """Request body for JS resources discovered by an external scanner."""
+    domain: str
+    subdomain: str
+    url: str
+    scan_duration_secs: float = 0.0
+    urls_count: int = 0
+    urls: list[str] = []
+
+
 class SecurityFinding(BaseModel):
     """A single security finding from an external scanner."""
     template_id: str

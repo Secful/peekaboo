@@ -24,7 +24,7 @@ function renderSubdomainTable(data) {
     <div class="subdomain-summary">
       <div class="subdomain-summary-stat"><strong>${subdomains.length}</strong> subdomains found</div>
       <div class="subdomain-summary-stat"><strong>${liveCount}</strong> live (2xx/3xx)</div>
-      <div class="subdomain-summary-stat"><strong>${crawlableCount}</strong> crawlable${crawlableCount > 0 ? ` <button class="crawl-btn crawl-all-btn" id="crawlAllBtn" onclick="crawlAllSubdomains()">🔍 Look Deeper All</button>` : ''}</div>
+      <div class="subdomain-summary-stat"><strong>${crawlableCount}</strong> crawlable</div>
       <div class="subdomain-view-toggle">
         <button class="toggle-btn${appState.subdomainViewMode === 'table' ? ' active' : ''}" onclick="setSubdomainViewMode('table')">Table</button>
         <button class="toggle-btn${appState.subdomainViewMode === 'map' ? ' active' : ''}" onclick="setSubdomainViewMode('map')">Map</button>
@@ -67,10 +67,7 @@ function renderSubdomainTable(data) {
       thumbHtml = `<img class="subdomain-thumb" src="${thumbSrc}" alt="${escHtml(name)}">`;
     }
 
-    // Crawl button inline with subdomain name
-    const crawlBtnHtml = crawlable
-      ? ` <button class="crawl-btn" id="crawl-btn-${idx}" onclick="crawlSubdomain(event, ${idx}, '${escHtml(name)}')">🔍 Look deeper</button>`
-      : '';
+    const crawlBtnHtml = '';
     const aiBadgeHtml = isAiRelated(name) ? ' <span class="ai-badge">AI</span>' : '';
 
     html += `
@@ -96,6 +93,11 @@ function renderSubdomainTable(data) {
 
   html += '</tbody></table>';
   container.innerHTML = html;
+
+  // Apply JS resources for any already-received data
+  for (const subdomain of Object.keys(appState.jsResources)) {
+    applyJsResources(subdomain, appState.jsResources[subdomain].urls || []);
+  }
 
   // Apply security pills for any already-received insights
   for (const subdomain of Object.keys(appState.securityInsights)) {
@@ -306,18 +308,16 @@ async function crawlSubdomain(event, idx, subdomain) {
   const expandRow = document.getElementById(`crawled-row-${idx}`);
   const listDiv = document.getElementById(`crawled-list-${idx}`);
 
-  // Preserve security pill if present
-  const secPill = wrapper.querySelector('.security-pill');
-  const secPillHtml = secPill ? ` ${secPill.outerHTML}` : '';
-
   // Replace crawl button with spinner, keep subdomain name
-  wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Looking deeper...</span>`;
+  wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Looking deeper...</span>`;
+  applySecurityPill(subdomain);
 
   const maxRetries = 2;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 0) {
-        wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Retry ${attempt}/${maxRetries}...</span>`;
+        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-spinner"><span class="crawl-spin-icon"></span> Retry ${attempt}/${maxRetries}...</span>`;
+        applySecurityPill(subdomain);
         await new Promise(r => setTimeout(r, 1500 * attempt));
       }
 
@@ -334,7 +334,7 @@ async function crawlSubdomain(event, idx, subdomain) {
         const evenDeeperBtn = jsUrls.length > 0
           ? ` <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`
           : '';
-        wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawled-urls-pill" onclick="toggleUrlList(event, 'url-list-${idx}')">${urls.length} resources</span>${evenDeeperBtn}`;
+        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawled-urls-pill" onclick="toggleUrlList(event, 'url-list-${idx}')">${urls.length} resources</span>${evenDeeperBtn}`;
         // Store JS URLs as data attribute for the analyzer
         const expandRow2 = document.getElementById(`crawled-row-${idx}`);
         if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsUrls);
@@ -357,16 +357,18 @@ async function crawlSubdomain(event, idx, subdomain) {
         if (jsOnly.length > 0) {
           const expandRow2 = document.getElementById(`crawled-row-${idx}`);
           if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsOnly);
-          wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`;
+          wrapper.innerHTML = `${escHtml(subdomain)} <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`;
           listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`;
         } else {
-          wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawl-done-empty">Nothing interesting here</span>`;
+          wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-done-empty">Nothing interesting here</span>`;
         }
       }
+      applySecurityPill(subdomain);
       return; // Success — exit the retry loop
     } catch (err) {
       if (attempt === maxRetries) {
-        wrapper.innerHTML = `${escHtml(subdomain)}${secPillHtml} <span class="crawl-error" title="${escHtml(err.message)}">Failed</span>`;
+        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-error" title="${escHtml(err.message)}">Failed</span>`;
+        applySecurityPill(subdomain);
       }
     }
   }
@@ -586,6 +588,98 @@ function toggleUrlList(event, listId) {
   }
 }
 
+/* JS Resources — pushed from external scanner */
+
+function applyJsResources(subdomain, urls) {
+  // Find the wrapper span by data-subdomain attribute
+  const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
+  if (!span) return;
+
+  // Skip if already applied (pill or empty label already present)
+  if (span.querySelector('.crawled-urls-pill, .crawl-done-empty')) return;
+
+  // Find the row index from the span id (crawl-td-{idx})
+  const idMatch = (span.id || '').match(/^crawl-td-(\d+)$/);
+  if (!idMatch) return;
+  const idx = idMatch[1];
+
+  // Remove the "Look deeper" button if present (this replaces it)
+  const crawlBtn = span.querySelector('.crawl-btn');
+  if (crawlBtn) crawlBtn.remove();
+
+  // Remove any existing spinner
+  for (const el of span.querySelectorAll('.crawl-spinner')) {
+    el.remove();
+  }
+
+  if (urls.length === 0) {
+    span.appendChild(document.createTextNode(' '));
+    const empty = document.createElement('span');
+    empty.className = 'crawl-done-empty';
+    empty.textContent = 'Nothing interesting here';
+    span.appendChild(empty);
+  } else {
+    // Filter JS files for the "Hunt for API's" button
+    const jsUrls = urls.filter(u => /\.js(\?|#|$)/i.test(u));
+
+    // Add "x resources" pill
+    span.appendChild(document.createTextNode(' '));
+    const pill = document.createElement('span');
+    pill.className = 'crawled-urls-pill';
+    pill.textContent = `${urls.length} resources`;
+    pill.setAttribute('onclick', `toggleUrlList(event, 'url-list-${idx}')`);
+    span.appendChild(pill);
+
+    // Add "Hunt for API's" button if there are JS files
+    if (jsUrls.length > 0) {
+      span.appendChild(document.createTextNode(' '));
+      const huntBtn = document.createElement('button');
+      huntBtn.className = 'even-deeper-btn';
+      huntBtn.id = `even-deeper-btn-${idx}`;
+      huntBtn.setAttribute('onclick', `analyzeJsDeeper(event, ${idx}, '${subdomain.replace(/'/g, "\\'")}')`);
+      huntBtn.textContent = "🔬 Hunt for API's";
+      span.appendChild(huntBtn);
+    }
+
+    // Ensure expandable row exists (crawlable subdomains have it; non-crawlable don't)
+    let expandRow = document.getElementById(`crawled-row-${idx}`);
+    let listDiv = document.getElementById(`crawled-list-${idx}`);
+    if (!expandRow) {
+      const mainRow = document.getElementById(`sub-row-${idx}`);
+      if (mainRow) {
+        expandRow = document.createElement('tr');
+        expandRow.id = `crawled-row-${idx}`;
+        expandRow.className = 'crawled-urls-row hidden';
+        expandRow.innerHTML = `<td colspan="6" class="crawled-urls-cell"><div class="crawled-urls-list" id="crawled-list-${idx}"></div></td>`;
+        mainRow.insertAdjacentElement('afterend', expandRow);
+        listDiv = document.getElementById(`crawled-list-${idx}`);
+      }
+    }
+
+    // Store JS URLs in data attribute so analyzeJsDeeper can find them
+    if (expandRow && jsUrls.length > 0) {
+      expandRow.dataset.jsUrls = JSON.stringify(jsUrls);
+    }
+
+    if (listDiv) {
+      const urlItems = urls.map(u => {
+        let display = u;
+        try {
+          const parsed = new URL(u);
+          display = parsed.pathname + parsed.search;
+          if (display.length > 90) display = display.slice(0, 80) + '…';
+        } catch {}
+        return `<div class="crawled-url-item"><a href="${escHtml(u)}" target="_blank" rel="noopener" title="${escHtml(u)}">${escHtml(display)}</a></div>`;
+      }).join('');
+      listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`
+        + `<div id="url-list-${idx}" class="url-list-collapsible collapsed">${urlItems}</div>`;
+    }
+  }
+
+  // Re-apply security pill (may have been shifted)
+  applySecurityPill(subdomain);
+}
+
 /* Security Insights — pill + drawer */
 
 function applySecurityPill(subdomain) {
@@ -601,7 +695,7 @@ function applySecurityPill(subdomain) {
 
   if (findings.length === 0) {
     pill.className = 'security-pill security-pill-clean';
-    pill.textContent = '\u2713 clean';
+    pill.textContent = '\u2713';
     pill.title = 'Scans for known CVEs, exposed sensitive files, server misconfigurations, and subdomain takeover vulnerabilities.';
   } else {
     const maxSeverity = getMaxSeverity(findings);
@@ -609,7 +703,7 @@ function applySecurityPill(subdomain) {
     const label = findings.length === 1 ? '1 finding' : `${findings.length} findings`;
     pill.className = `security-pill ${severityClass}`;
     pill.textContent = label;
-    pill.onclick = function(e) { e.stopPropagation(); openSecurityDrawer(subdomain); };
+    pill.setAttribute('onclick', `event.stopPropagation(); openSecurityDrawer('${subdomain.replace(/'/g, "\\'")}')`);
   }
 
   span.appendChild(document.createTextNode(' '));

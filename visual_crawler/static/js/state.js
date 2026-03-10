@@ -21,6 +21,7 @@ const appState = {
   lastScreenshotBase64: null,
   subdomainApis: {},
   securityInsights: {},
+  jsResources: {},
   geoCache: {},
   subdomainMapInstance: null,
   subdomainMapMarkers: [],

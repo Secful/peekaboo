@@ -377,7 +377,7 @@ function handleEvent(msg) {
         <div class="subdomain-loading">
           <div class="spinner"></div>
           <div class="loading-text">Discovering subdomains...</div>
-          <div class="loading-subtext">This may take up to 2 minutes</div>
+          <div class="loading-subtext">This may take up to 3 minutes</div>
         </div>`;
       addLog('🌐', 'Subdomain discovery started...', '');
       break;
@@ -410,6 +410,16 @@ function handleEvent(msg) {
         addLog('🛡️', `Security findings for ${msg.subdomain}: ${msg.findings_count} findings`, 'error');
       } else {
         addLog('🛡️', `${msg.subdomain}: security scan clean`, '');
+      }
+      break;
+
+    case 'js_resources':
+      appState.jsResources[msg.subdomain] = msg;
+      applyJsResources(msg.subdomain, msg.urls || []);
+      if (msg.urls_count > 0) {
+        addLog('📦', `JS resources for ${msg.subdomain}: ${msg.urls_count} files`, '');
+      } else {
+        addLog('📦', `${msg.subdomain}: no JS resources found`, '');
       }
       break;
 

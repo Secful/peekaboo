@@ -96,6 +96,9 @@ class APICrawler:
         self._tried_www_fallback = False
         self._start_url = None
 
+        # Alias domains discovered via cross-domain redirects (e.g. .com → .nl)
+        self._alias_domains: set[str] = set()
+
         # Callback to push events to the dashboard
         self._on_event = None
 
@@ -657,6 +660,17 @@ class APICrawler:
                     await self._emit("status", {"message": f"⚠️ Skipped {page_url} (navigation failed). Continuing scan..."})
                     return
 
+            # Detect cross-domain redirect on start URL (e.g. .com → .nl)
+            if page_url == self._start_url and not self._alias_domains:
+                try:
+                    final_host = urlparse(page.url).hostname.lower()
+                    if final_host != self.domain and not final_host.endswith(f".{self.domain}"):
+                        base = final_host.removeprefix("www.")
+                        self._alias_domains.add(base)
+                        await self._emit("status", {"message": f"🔀 Redirect detected → {base} (added to scope)"})
+                except Exception:
+                    pass
+
             # Check for HTTP error status codes
             if response and response.status >= 400:
                 error_msg = f"HTTP {response.status} error"
@@ -815,8 +829,7 @@ class APICrawler:
             host_lower = host.lower()
 
             # Determine if this is a subdomain/target domain API
-            is_target_domain = (host_lower == self.domain or
-                               (self.include_subdomains and host_lower.endswith(f".{self.domain}")))
+            is_target_domain = self._host_in_scope(host_lower)
 
             # Apply API filter
             if self.api_filter == "subdomain" and not is_target_domain:
@@ -944,8 +957,7 @@ class APICrawler:
                 host_lower = host.lower()
 
                 # Determine if this is a subdomain/target domain API
-                is_target_domain = (host_lower == self.domain or
-                                   (self.include_subdomains and host_lower.endswith(f".{self.domain}")))
+                is_target_domain = self._host_in_scope(host_lower)
 
                 # Apply API filter
                 if self.api_filter == "subdomain" and not is_target_domain:
@@ -974,12 +986,19 @@ class APICrawler:
         except Exception:
             pass
 
+    def _host_in_scope(self, host: str) -> bool:
+        """Check if a hostname matches the target domain or any alias domain."""
+        h = host.lower()
+        for d in [self.domain] + list(self._alias_domains):
+            if h == d or (self.include_subdomains and h.endswith(f".{d}")):
+                return True
+        return False
+
     def _is_in_scope(self, href: str) -> bool:
         """Check if a link is within crawling scope."""
         try:
             host = urlparse(href).hostname or ""
-            host = host.lower()
-            return host == self.domain or (self.include_subdomains and host.endswith(f".{self.domain}"))
+            return self._host_in_scope(host)
         except Exception:
             return False
 
