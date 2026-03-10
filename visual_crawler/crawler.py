@@ -932,8 +932,8 @@ class APICrawler:
             for href in hrefs:
                 if self._is_in_scope(href):
                     links.add(href.split("#")[0].split("?")[0])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Link extraction failed: {e}")
         return list(links)
 
     async def _extract_api_hints_from_source(self, page: Page, found_on_page: str):
