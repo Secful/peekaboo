@@ -218,6 +218,7 @@ function newScan() {
   appState.capturedScreenshots = [];
   appState.subdomainResults = null;
   appState.securityInsights = {};
+  appState.openPorts = {};
 
   // Reset map state
   Object.keys(appState.geoCache).forEach(k => delete appState.geoCache[k]);
@@ -420,6 +421,14 @@ function handleEvent(msg) {
         addLog('📦', `JS resources for ${msg.subdomain}: ${msg.urls_count} files`, '');
       } else {
         addLog('📦', `${msg.subdomain}: no JS resources found`, '');
+      }
+      break;
+
+    case 'open_ports':
+      appState.openPorts[msg.subdomain] = msg;
+      applyOpenPortsPill(msg.subdomain);
+      if (msg.open_ports_count > 0) {
+        addLog('🔌', `Open ports for ${msg.subdomain}: ${msg.open_ports_count} ports`, '');
       }
       break;
 

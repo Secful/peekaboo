@@ -66,6 +66,16 @@ class JsResourcesRequest(BaseModel):
     urls: list[str] = []
 
 
+class OpenPortsRequest(BaseModel):
+    """Request body for open ports discovered by an external scanner."""
+    domain: str
+    subdomain: str
+    ip: str = ""
+    scan_duration_secs: float = 0.0
+    open_ports_count: int = 0
+    open_ports: list[dict] = []
+
+
 class SecurityFinding(BaseModel):
     """A single security finding from an external scanner."""
     template_id: str

@@ -22,6 +22,7 @@ const appState = {
   subdomainApis: {},
   securityInsights: {},
   jsResources: {},
+  openPorts: {},
   geoCache: {},
   subdomainMapInstance: null,
   subdomainMapMarkers: [],

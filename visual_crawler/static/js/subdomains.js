@@ -36,7 +36,6 @@ function renderSubdomainTable(data) {
           <th style="width:50px">#</th>
           <th>Subdomain</th>
           <th style="width:60px">Status</th>
-          <th>Title</th>
           <th>Technologies</th>
           <th style="width:90px">Screenshot</th>
         </tr>
@@ -73,9 +72,8 @@ function renderSubdomainTable(data) {
     html += `
       <tr id="sub-row-${idx}">
         <td style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${idx + 1}</td>
-        <td class="subdomain-name"><span id="crawl-td-${idx}" data-subdomain="${escHtml(name)}">${escHtml(name)}${aiBadgeHtml}${crawlBtnHtml}</span></td>
+        <td class="subdomain-name"><span id="crawl-td-${idx}" data-subdomain="${escHtml(name)}" title="${escHtml(title)}">${escHtml(name)}${aiBadgeHtml}${crawlBtnHtml}</span></td>
         <td><span class="subdomain-status ${statusCls}">${status || '—'}</span></td>
-        <td class="subdomain-title" title="${escHtml(title)}">${escHtml(title)}</td>
         <td class="subdomain-techs">${techHtml}</td>
         <td>${thumbHtml}</td>
       </tr>`;
@@ -97,6 +95,11 @@ function renderSubdomainTable(data) {
   // Apply JS resources for any already-received data
   for (const subdomain of Object.keys(appState.jsResources)) {
     applyJsResources(subdomain, appState.jsResources[subdomain].urls || []);
+  }
+
+  // Apply open ports pills for any already-received data
+  for (const subdomain of Object.keys(appState.openPorts)) {
+    applyOpenPortsPill(subdomain);
   }
 
   // Apply security pills for any already-received insights
@@ -799,6 +802,71 @@ function openSecurityDrawer(subdomain) {
 
 function closeSecurityDrawer() {
   document.getElementById('securityDrawer').classList.remove('open');
+}
+
+/* Open Ports — pill + drawer */
+
+const SENSITIVE_PORTS = new Set([21, 22, 23, 25, 135, 139, 445, 1433, 1521, 3306, 3389, 5432, 5900, 6379, 8443, 9200, 27017]);
+const WEB_PORTS = new Set([80, 443, 8080, 8443]);
+
+function applyOpenPortsPill(subdomain) {
+  const data = appState.openPorts[subdomain];
+  if (!data) return;
+
+  const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
+  if (!span || span.querySelector('.open-ports-pill')) return;
+
+  const ports = data.open_ports || [];
+  if (ports.length === 0) return;
+
+  const colorClass = 'security-pill-red';
+
+  const label = ports.length === 1 ? '1 port' : `${ports.length} ports`;
+  const pill = document.createElement('span');
+  pill.className = `open-ports-pill ${colorClass}`;
+  pill.textContent = label;
+  pill.setAttribute('onclick', `event.stopPropagation(); openOpenPortsDrawer('${subdomain.replace(/'/g, "\\'")}')`);
+
+  span.appendChild(document.createTextNode(' '));
+  span.appendChild(pill);
+}
+
+function openOpenPortsDrawer(subdomain) {
+  const data = appState.openPorts[subdomain];
+  if (!data) return;
+
+  const drawer = document.getElementById('openPortsDrawer');
+  const title = document.getElementById('openPortsDrawerTitle');
+  const subtitle = document.getElementById('openPortsDrawerSubtitle');
+  const content = document.getElementById('openPortsDrawerContent');
+
+  title.textContent = subdomain;
+  const duration = data.scan_duration_secs ? `${data.scan_duration_secs.toFixed(1)}s` : '—';
+  const ip = data.ip || '—';
+  subtitle.textContent = `${data.open_ports.length} open port${data.open_ports.length !== 1 ? 's' : ''} — IP: ${ip} — scan: ${duration}`;
+
+  const ports = data.open_ports || [];
+  let html = '<table class="open-ports-table"><thead><tr><th>Port</th><th>Protocol</th><th>Service</th></tr></thead><tbody>';
+  for (const p of ports) {
+    const port = p.port || '—';
+    const proto = p.protocol || 'tcp';
+    const service = p.service || '—';
+    const isSensitive = SENSITIVE_PORTS.has(p.port);
+    const badgeClass = isSensitive ? 'port-badge-sensitive' : 'port-badge-normal';
+    html += `<tr class="port-row">
+      <td><span class="port-badge ${badgeClass}">${port}</span></td>
+      <td>${escHtml(proto)}</td>
+      <td>${escHtml(service)}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+
+  content.innerHTML = html;
+  drawer.classList.add('open');
+}
+
+function closeOpenPortsDrawer() {
+  document.getElementById('openPortsDrawer').classList.remove('open');
 }
 
 /* Fixed-position thumbnail preview on hover — escapes overflow:auto clipping */

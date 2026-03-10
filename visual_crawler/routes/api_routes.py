@@ -8,7 +8,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, AnalyzeJsRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest
+from ..models import GenerateDescriptionRequest, AnalyzeJsRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -334,6 +334,52 @@ async def js_resources(request: JsResourcesRequest):
     if pushed_to == 0:
         logger.warning(
             f"JS resources for {request.subdomain}: no active scan found for domain={request.domain} "
+            f"(client_domains={dict(_client_domains)})"
+        )
+
+    return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+
+@router.post("/api/openports")
+async def open_ports(request: OpenPortsRequest):
+    """Receive open port scan results from an external scanner and push to connected UI clients."""
+    from .ws_routes import (
+        _client_domains, _connected_clients, _subdomains_ready, _pending_insights,
+    )
+
+    logger.info(f"Got {request.open_ports_count} open ports for subdomain {request.subdomain}")
+
+    payload = {
+        "type": "open_ports",
+        "domain": request.domain,
+        "subdomain": request.subdomain,
+        "ip": request.ip,
+        "scan_duration_secs": request.scan_duration_secs,
+        "open_ports_count": request.open_ports_count,
+        "open_ports": request.open_ports,
+    }
+
+    pushed_to = 0
+    for scan_id, domain in list(_client_domains.items()):
+        if domain != request.domain:
+            continue
+        ws = _connected_clients.get(scan_id)
+        if ws is None:
+            continue
+
+        if _subdomains_ready.get(scan_id):
+            try:
+                await ws.send_json(payload)
+                pushed_to += 1
+            except Exception:
+                logger.warning(f"Failed to push open ports to scan {scan_id}")
+        else:
+            _pending_insights.setdefault(scan_id, []).append(payload)
+            pushed_to += 1
+
+    if pushed_to == 0:
+        logger.warning(
+            f"Open ports for {request.subdomain}: no active scan found for domain={request.domain} "
             f"(client_domains={dict(_client_domains)})"
         )
 
