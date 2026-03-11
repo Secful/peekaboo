@@ -133,6 +133,11 @@ function renderSubdomainTable(data) {
     applyAgenticPill(subdomain);
   }
 
+  // Apply extracted API results for any already-received data
+  for (const subdomain of Object.keys(appState.extractedApis)) {
+    applyExtractedApis(subdomain);
+  }
+
   // Restore map view if user was viewing the map
   if (appState.subdomainViewMode === 'map') {
     setSubdomainViewMode('map');
@@ -361,9 +366,12 @@ async function crawlSubdomain(event, idx, subdomain) {
       if (urls.length > 0) {
         // Build unified pill: [N JS | ▶]
         const rightZone = jsUrls.length > 0
-          ? `<span class="js-pill-divider"></span><span class="js-pill-right" id="js-pill-right-${idx}" title="Hunt for APIs" onclick="event.stopPropagation(); analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">▶</span>`
+          ? `<span class="js-pill-divider"></span><span class="js-pill-right analyzing" id="js-pill-right-${idx}" title="Analyzing JS files..."><span class="js-pill-spin">⟳</span></span>`
           : '';
         wrapper.innerHTML = `${escHtml(subdomain)} <span class="js-pill" id="js-pill-${idx}"><span class="js-pill-left" title="Toggle JS file list" onclick="event.stopPropagation(); toggleJsPillFiles(${idx})">${urls.length} JS</span>${rightZone}</span>`;
+        if (appState.extractedApis[subdomain]) {
+          applyExtractedApis(subdomain);
+        }
 
         const expandRow2 = document.getElementById(`crawled-row-${idx}`);
         if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsUrls);
@@ -384,10 +392,13 @@ async function crawlSubdomain(event, idx, subdomain) {
           const expandRow2 = document.getElementById(`crawled-row-${idx}`);
           if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsOnly);
           // Unified pill with only right zone (no file list to toggle)
-          wrapper.innerHTML = `${escHtml(subdomain)} <span class="js-pill" id="js-pill-${idx}"><span class="js-pill-left" style="cursor:default">${jsOnly.length} JS</span><span class="js-pill-divider"></span><span class="js-pill-right" id="js-pill-right-${idx}" title="Hunt for APIs" onclick="event.stopPropagation(); analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">▶</span></span>`;
+          wrapper.innerHTML = `${escHtml(subdomain)} <span class="js-pill" id="js-pill-${idx}"><span class="js-pill-left" style="cursor:default">${jsOnly.length} JS</span><span class="js-pill-divider"></span><span class="js-pill-right analyzing" id="js-pill-right-${idx}" title="Analyzing JS files..."><span class="js-pill-spin">⟳</span></span></span>`;
           listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`;
+          if (appState.extractedApis[subdomain]) {
+            applyExtractedApis(subdomain);
+          }
         } else {
-          wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-done-empty">Nothing interesting here</span>`;
+          wrapper.innerHTML = escHtml(subdomain);
         }
       }
       applySecurityPill(subdomain);
@@ -416,106 +427,6 @@ async function crawlAllSubdomains() {
   // Remove spinner when done
   const spinner = document.getElementById('crawlAllSpinner');
   if (spinner) spinner.remove();
-}
-
-async function analyzeJsDeeper(event, idx, subdomain) {
-  event.stopPropagation();
-  const right = document.getElementById(`js-pill-right-${idx}`);
-  const resultsDiv = document.getElementById(`even-deeper-results-${idx}`);
-
-  // Prevent double-click while analyzing or after completion
-  if (right && (right.classList.contains('analyzing') || right.classList.contains('has-apis') || right.classList.contains('no-apis'))) return;
-
-  // Collect JS URLs from stored data attribute
-  const expandRow = document.getElementById(`crawled-row-${idx}`);
-  let jsUrls = [];
-  try { jsUrls = JSON.parse(expandRow.dataset.jsUrls || '[]'); } catch {};
-
-  if (jsUrls.length === 0) return;
-
-  // Show spinner in the right zone of the pill
-  if (right) {
-    right.classList.add('analyzing');
-    right.innerHTML = '<span class="js-pill-spin">⟳</span>';
-    right.title = 'Analyzing JS files...';
-  }
-
-  if (resultsDiv) resultsDiv.innerHTML = '';
-
-  const maxRetries = 2;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      if (attempt > 0) {
-        if (right) right.innerHTML = `<span class="js-pill-spin">⟳</span> ${attempt}/${maxRetries}`;
-        if (resultsDiv) resultsDiv.innerHTML = '';
-        await new Promise(r => setTimeout(r, 1500 * attempt));
-      }
-
-      const resp = await fetch('/api/analyze-js', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({urls: jsUrls.slice(0, 25)})
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      const apis = data.apis || [];
-
-      // Filter out variable names (url must contain at least one '/') and deduplicate
-      const staticExts = /\.(js|css|html|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map|xml|json)(\?|#|$)/i;
-      const dedupSeen = new Set();
-      const dedupApis = apis.filter(a => {
-        const url = a.url || '';
-        if (!url.includes('/')) return false;
-        if (staticExts.test(url.split('/').pop())) return false;
-        const k = `${(a.method || 'GET').toUpperCase()}|${url}|${a.source_file || ''}`;
-        if (dedupSeen.has(k)) return false;
-        dedupSeen.add(k);
-        return true;
-      });
-
-      if (right) right.classList.remove('analyzing');
-
-      if (dedupApis.length > 0) {
-        appState.subdomainApis[idx] = { subdomain, apis: dedupApis, jsUrls };
-
-        if (right) {
-          right.classList.add('has-apis');
-          right.textContent = `${dedupApis.length} APIs`;
-          right.title = 'Open API drawer';
-          right.setAttribute('onclick', `event.stopPropagation(); openApiDrawer(${idx})`);
-        }
-
-        if (resultsDiv) resultsDiv.innerHTML = '';
-
-        // Collapse file list
-        const urlListFound = document.getElementById(`url-list-${idx}`);
-        if (urlListFound) urlListFound.classList.add('collapsed');
-        const left = document.querySelector(`#js-pill-${idx} .js-pill-left`);
-        if (left) left.classList.remove('active');
-
-        openApiDrawer(idx);
-      } else {
-        if (right) {
-          right.classList.add('no-apis');
-          right.textContent = '0 APIs';
-          right.title = 'No APIs found';
-          right.removeAttribute('onclick');
-        }
-      }
-      return;
-    } catch (err) {
-      if (attempt === maxRetries) {
-        if (right) {
-          right.classList.remove('analyzing');
-          right.textContent = '✗';
-          right.title = `Analysis failed: ${err.message}`;
-          right.style.color = 'var(--delete)';
-        }
-        if (resultsDiv) resultsDiv.innerHTML = `<div class="even-deeper-error">Analysis failed: ${escHtml(err.message)}</div>`;
-      }
-    }
-  }
 }
 
 function openApiDrawer(idx) {
@@ -645,11 +556,7 @@ function applyJsResources(subdomain, urls) {
   }
 
   if (urls.length === 0) {
-    span.appendChild(document.createTextNode(' '));
-    const empty = document.createElement('span');
-    empty.className = 'crawl-done-empty';
-    empty.textContent = 'Nothing interesting here';
-    span.appendChild(empty);
+    // No JS resources — show nothing extra
   } else {
     const jsUrls = urls.filter(u => /\.js(\?|#|$)/i.test(u));
 
@@ -673,15 +580,19 @@ function applyJsResources(subdomain, urls) {
       pill.appendChild(divider);
 
       const right = document.createElement('span');
-      right.className = 'js-pill-right';
+      right.className = 'js-pill-right analyzing';
       right.id = `js-pill-right-${idx}`;
-      right.textContent = '▶';
-      right.title = 'Hunt for APIs';
-      right.setAttribute('onclick', `event.stopPropagation(); analyzeJsDeeper(event, ${idx}, '${subdomain.replace(/'/g, "\\'")}')`);
+      right.innerHTML = '<span class="js-pill-spin">⟳</span>';
+      right.title = 'Analyzing JS files...';
       pill.appendChild(right);
     }
 
     span.appendChild(pill);
+
+    // If extracted API results already arrived, apply them immediately (skip spinner)
+    if (appState.extractedApis[subdomain]) {
+      applyExtractedApis(subdomain);
+    }
 
     // Ensure expandable row exists (crawlable subdomains have it; non-crawlable don't)
     let expandRow = document.getElementById(`crawled-row-${idx}`);
@@ -698,7 +609,7 @@ function applyJsResources(subdomain, urls) {
       }
     }
 
-    // Store JS URLs in data attribute so analyzeJsDeeper can find them
+    // Store JS URLs in data attribute
     if (expandRow && jsUrls.length > 0) {
       expandRow.dataset.jsUrls = JSON.stringify(jsUrls);
     }
@@ -721,6 +632,70 @@ function applyJsResources(subdomain, urls) {
   console.log(`[js-resources] Applied to ${subdomain} (${urls.length} urls)`);
   // Re-apply security pill (may have been shifted)
   applySecurityPill(subdomain);
+}
+
+/* Extracted APIs — results from api_extractor_lambda */
+
+function applyExtractedApis(subdomain) {
+  const data = appState.extractedApis[subdomain];
+  if (!data) return;
+
+  // Find the wrapper span by data-subdomain attribute
+  const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
+  if (!span) return; // JS resources pill hasn't rendered yet — applyJsResources will pick this up
+
+  // Find the row index from the span id (crawl-td-{idx})
+  const idMatch = (span.id || '').match(/^crawl-td-(\d+)$/);
+  if (!idMatch) return;
+  const idx = idMatch[1];
+
+  const right = document.getElementById(`js-pill-right-${idx}`);
+  if (!right) return; // Pill doesn't have a right zone (no JS files)
+
+  // Normalize findings PII format: Lambda sends list like ["email","phone"] or ["none"]
+  const findings = (data.findings || []).map(f => {
+    const piiRaw = f.pii || ['none'];
+    const isNone = piiRaw.length === 1 && piiRaw[0] === 'none';
+    return {
+      ...f,
+      pii: isNone ? { detected: false, fields: [] } : { detected: true, fields: piiRaw }
+    };
+  });
+
+  // Filter and deduplicate
+  const staticExts = /\.(js|css|html|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map|xml|json)(\?|#|$)/i;
+  const dedupSeen = new Set();
+  const dedupApis = findings.filter(a => {
+    const url = a.url || '';
+    if (!url.includes('/')) return false;
+    if (staticExts.test(url.split('/').pop())) return false;
+    const k = `${(a.method || 'GET').toUpperCase()}|${url}|${a.source_file || ''}`;
+    if (dedupSeen.has(k)) return false;
+    dedupSeen.add(k);
+    return true;
+  });
+
+  // Get jsUrls from JS resources data
+  const jsUrls = (appState.jsResources[subdomain] && appState.jsResources[subdomain].urls) || [];
+
+  // Store in subdomainApis so openApiDrawer works
+  appState.subdomainApis[idx] = { subdomain, apis: dedupApis, jsUrls };
+
+  // Update the right zone
+  right.classList.remove('analyzing');
+  if (dedupApis.length > 0) {
+    right.classList.add('has-apis');
+    right.textContent = `${dedupApis.length} APIs`;
+    right.title = 'Open API drawer';
+    right.setAttribute('onclick', `event.stopPropagation(); openApiDrawer(${idx})`);
+  } else {
+    right.classList.add('no-apis');
+    right.textContent = '0 APIs';
+    right.title = 'No APIs found';
+    right.removeAttribute('onclick');
+  }
+
+  console.log(`[extracted-apis] Applied to ${subdomain} (${dedupApis.length} APIs)`);
 }
 
 function toggleJsPillFiles(idx) {

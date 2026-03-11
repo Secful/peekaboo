@@ -225,6 +225,7 @@ function newScan() {
   appState.jsResources = {};
   appState.openPorts = {};
   appState.agentic = {};
+  appState.extractedApis = {};
 
   // Reset map state
   Object.keys(appState.geoCache).forEach(k => delete appState.geoCache[k]);
@@ -443,6 +444,14 @@ function handleEvent(msg) {
       applyAgenticPill(msg.subdomain);
       if (msg.findings_count > 0) {
         addLog('🤖', `Agentic findings for ${msg.subdomain}: ${msg.findings_count} findings`, '');
+      }
+      break;
+
+    case 'extracted_apis':
+      appState.extractedApis[msg.subdomain] = msg;
+      applyExtractedApis(msg.subdomain);
+      if (msg.findings_count > 0) {
+        addLog('🔬', `Extracted APIs for ${msg.subdomain}: ${msg.findings_count} endpoints`, '');
       }
       break;
 

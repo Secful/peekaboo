@@ -46,11 +46,6 @@ class GenerateDescriptionRequest(BaseModel):
     query_params: Optional[list[str]] = None
 
 
-class AnalyzeJsRequest(BaseModel):
-    """Request body for JS source analysis."""
-    urls: list[str]
-
-
 class GeolocateIpsRequest(BaseModel):
     """Request body for IP geolocation."""
     ips: list[str]
@@ -173,3 +168,26 @@ class AgenticRequest(BaseModel):
     findings_count: int = 0
     findings: list[AgenticFinding] = []
     mcp: Optional[MCPResult] = None
+
+
+class ExtractedApiFinding(BaseModel):
+    """A single API endpoint extracted from JS source by the external Lambda."""
+    method: str
+    url: str
+    context: str
+    source_file: str
+    evidence: str
+    category: str
+    pii: list[str] = ["none"]
+
+
+class ExtractedApiRequest(BaseModel):
+    """Request body for extracted API findings from the api_extractor_lambda."""
+    domain: str
+    subdomain: str
+    url: str
+    js_files_analyzed: int = 0
+    js_files_total: int = 0
+    scan_duration_secs: float = 0.0
+    findings_count: int = 0
+    findings: list[ExtractedApiFinding] = []
