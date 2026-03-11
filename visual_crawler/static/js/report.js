@@ -37,8 +37,8 @@ function exportSummaryToHTML() {
 
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: linear-gradient(135deg, #0a0e17 0%, #1a1f2e 100%);
-      color: #ffffff;
+      background: #f8f9fb;
+      color: #1f2937;
       padding: 2rem;
       line-height: 1.6;
     }
@@ -46,19 +46,19 @@ function exportSummaryToHTML() {
     .container {
       max-width: 1200px;
       margin: 0 auto;
-      background: #13161f;
+      background: #ffffff;
       border-radius: 16px;
       padding: 3rem;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.08);
     }
 
     .header {
       text-align: center;
       margin-bottom: 3rem;
       padding: 2.5rem 2rem;
-      background: linear-gradient(135deg, rgba(74, 29, 150, 0.15), rgba(0, 255, 136, 0.05));
+      background: linear-gradient(135deg, rgba(74, 29, 150, 0.06), rgba(5, 150, 105, 0.04));
       border-radius: 12px;
-      border: 1px solid #2a2f3f;
+      border: 1px solid #e5e7eb;
     }
 
     .header .logo-container {
@@ -72,12 +72,12 @@ function exportSummaryToHTML() {
     .header .salt-logo {
       height: 1.8rem;
       width: auto;
-      color: #00ff88;
+      color: #4a1d96;
     }
 
     .header .report-title {
       font-size: 2rem;
-      color: #ffffff;
+      color: #1f2937;
       margin-bottom: 0.5rem;
       font-weight: 700;
       letter-spacing: -0.02em;
@@ -85,15 +85,15 @@ function exportSummaryToHTML() {
 
     .header .report-subtitle {
       font-size: 0.95rem;
-      color: #8b92a7;
+      color: #6b7280;
       margin-bottom: 2rem;
       font-weight: 500;
     }
 
     .header .target-info {
       display: inline-block;
-      background: rgba(0, 255, 136, 0.1);
-      border: 1px solid rgba(0, 255, 136, 0.3);
+      background: rgba(74, 29, 150, 0.06);
+      border: 1px solid rgba(74, 29, 150, 0.2);
       border-radius: 8px;
       padding: 1rem 2rem;
       margin: 1rem 0;
@@ -101,7 +101,7 @@ function exportSummaryToHTML() {
 
     .header .target-label {
       font-size: 0.75rem;
-      color: #8b92a7;
+      color: #6b7280;
       text-transform: uppercase;
       letter-spacing: 0.1em;
       font-weight: 600;
@@ -110,7 +110,7 @@ function exportSummaryToHTML() {
 
     .header .target {
       font-size: 1.5rem;
-      color: #00ff88;
+      color: #4a1d96;
       font-weight: 600;
       font-family: 'JetBrains Mono', monospace;
     }
@@ -128,7 +128,7 @@ function exportSummaryToHTML() {
 
     .section-title {
       font-size: 1.5rem;
-      color: #00ff88;
+      color: #4a1d96;
       margin-bottom: 1.5rem;
       display: flex;
       align-items: center;
@@ -144,10 +144,10 @@ function exportSummaryToHTML() {
     }
 
     .stat-card {
-      background: #1a1e2b;
+      background: #f3f4f6;
       padding: 1.5rem;
       border-radius: 12px;
-      border: 1px solid #2a2f3f;
+      border: 1px solid #e5e7eb;
       transition: transform 0.2s;
     }
 
@@ -157,7 +157,7 @@ function exportSummaryToHTML() {
     }
 
     .stat-label {
-      color: #8b92a7;
+      color: #6b7280;
       font-size: 0.85rem;
       font-weight: 600;
       text-transform: uppercase;
@@ -168,11 +168,11 @@ function exportSummaryToHTML() {
     .stat-value {
       font-size: 1.8rem;
       font-weight: 700;
-      color: #00ff88;
+      color: #059669;
     }
 
     .stat-subtext {
-      color: #8b92a7;
+      color: #6b7280;
       font-size: 0.85rem;
       margin-top: 0.25rem;
     }
@@ -185,13 +185,13 @@ function exportSummaryToHTML() {
     }
 
     .domain-tag {
-      background: #1a1e2b;
+      background: #f3f4f6;
       padding: 0.75rem 1rem;
       border-radius: 8px;
-      border: 1px solid #2a2f3f;
+      border: 1px solid #e5e7eb;
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.9rem;
-      color: #ffffff;
+      color: #1f2937;
     }
 
     .domain-tag.subdomain {
@@ -200,15 +200,15 @@ function exportSummaryToHTML() {
     }
 
     .domain-tag.external {
-      border-color: #f59e0b;
-      background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+      border-color: #d97706;
+      background: linear-gradient(135deg, rgba(217, 119, 6, 0.06), rgba(217, 119, 6, 0.03));
     }
 
     .table-container {
       overflow-x: auto;
       margin-top: 1rem;
       border-radius: 8px;
-      border: 1px solid #2a2f3f;
+      border: 1px solid #e5e7eb;
     }
 
     table {
@@ -234,12 +234,12 @@ function exportSummaryToHTML() {
     }
 
     tbody tr {
-      border-bottom: 1px solid #2a2f3f;
+      border-bottom: 1px solid #e5e7eb;
       transition: background 0.2s;
     }
 
     tbody tr:hover {
-      background: #1a1e2b;
+      background: rgba(74, 29, 150, 0.04);
     }
 
     td {
@@ -257,11 +257,11 @@ function exportSummaryToHTML() {
       text-transform: uppercase;
     }
 
-    .method-GET { background: #00ff88; color: #0a0e17; }
-    .method-POST { background: #3b82f6; color: #ffffff; }
-    .method-PUT { background: #f59e0b; color: #ffffff; }
-    .method-PATCH { background: #8b5cf6; color: #ffffff; }
-    .method-DELETE { background: #ef4444; color: #ffffff; }
+    .method-GET { background: #059669; color: #ffffff; }
+    .method-POST { background: #2563eb; color: #ffffff; }
+    .method-PUT { background: #d97706; color: #ffffff; }
+    .method-PATCH { background: #7c3aed; color: #ffffff; }
+    .method-DELETE { background: #dc2626; color: #ffffff; }
     .method-default { background: #6b7280; color: #ffffff; }
 
     .status-badge {
@@ -278,58 +278,58 @@ function exportSummaryToHTML() {
     .status-5xx { background: #ef4444; color: #ffffff; }
 
     .endpoint-path {
-      color: #00ff88;
+      color: #059669;
       word-break: break-all;
     }
 
     .endpoint-host {
-      color: #8b92a7;
+      color: #6b7280;
     }
 
     .empty-state {
       text-align: center;
       padding: 2rem;
-      color: #8b92a7;
+      color: #6b7280;
       font-style: italic;
     }
 
     .footer {
       margin-top: 3rem;
       padding-top: 2rem;
-      border-top: 2px solid #2a2f3f;
+      border-top: 2px solid #e5e7eb;
       text-align: center;
-      color: #8b92a7;
+      color: #6b7280;
       font-size: 0.9rem;
     }
 
     .footer strong {
-      color: #00ff88;
+      color: #4a1d96;
     }
 
     .contact-btn {
       display: inline-block;
       margin-top: 1.5rem;
       padding: 0.75rem 2rem;
-      background: linear-gradient(135deg, #00ff88, #00cc6a);
-      color: #0a0e17;
+      background: linear-gradient(135deg, #4a1d96, #6b2fc7);
+      color: #ffffff;
       text-decoration: none;
       border-radius: 8px;
       font-weight: 700;
       font-size: 0.95rem;
       transition: transform 0.2s, box-shadow 0.2s;
-      box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+      box-shadow: 0 4px 12px rgba(74, 29, 150, 0.2);
     }
 
     .contact-btn:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(0, 255, 136, 0.4);
+      box-shadow: 0 6px 16px rgba(74, 29, 150, 0.3);
     }
 
     .filter-controls {
-      background: #1a1e2b;
+      background: #f3f4f6;
       padding: 1.5rem;
       border-radius: 12px;
-      border: 1px solid #2a2f3f;
+      border: 1px solid #e5e7eb;
       margin-bottom: 1.5rem;
     }
 
@@ -344,7 +344,7 @@ function exportSummaryToHTML() {
     .filter-label {
       font-size: 0.85rem;
       font-weight: 600;
-      color: #8b92a7;
+      color: #6b7280;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       min-width: 80px;
@@ -354,18 +354,18 @@ function exportSummaryToHTML() {
       flex: 1;
       min-width: 300px;
       padding: 0.75rem 1rem;
-      background: #13161f;
-      border: 1px solid #2a2f3f;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
       border-radius: 8px;
-      color: #ffffff;
+      color: #1f2937;
       font-size: 0.9rem;
       font-family: 'Inter', sans-serif;
     }
 
     .search-box:focus {
       outline: none;
-      border-color: #00ff88;
-      box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.1);
+      border-color: #4a1d96;
+      box-shadow: 0 0 0 3px rgba(74, 29, 150, 0.1);
     }
 
     .filter-buttons {
@@ -376,10 +376,10 @@ function exportSummaryToHTML() {
 
     .filter-btn {
       padding: 0.5rem 1rem;
-      background: #13161f;
-      border: 1px solid #2a2f3f;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
       border-radius: 6px;
-      color: #ffffff;
+      color: #1f2937;
       font-size: 0.8rem;
       font-weight: 600;
       cursor: pointer;
@@ -389,34 +389,34 @@ function exportSummaryToHTML() {
 
     .filter-btn:hover {
       border-color: #4a1d96;
-      background: #1a1e2b;
+      background: rgba(74, 29, 150, 0.05);
     }
 
     .filter-btn.active {
-      background: #00ff88;
-      color: #0a0e17;
-      border-color: #00ff88;
+      background: #4a1d96;
+      color: #ffffff;
+      border-color: #4a1d96;
     }
 
     .filter-btn.clear {
-      background: #ef4444;
-      border-color: #ef4444;
+      background: #dc2626;
+      border-color: #dc2626;
       color: #ffffff;
     }
 
     .filter-btn.clear:hover {
-      background: #dc2626;
-      border-color: #dc2626;
+      background: #b91c1c;
+      border-color: #b91c1c;
     }
 
     .results-count {
-      color: #8b92a7;
+      color: #6b7280;
       font-size: 0.9rem;
       padding: 0.5rem 0;
     }
 
     .results-count strong {
-      color: #00ff88;
+      color: #059669;
     }
 
     .domain-search {
@@ -426,9 +426,9 @@ function exportSummaryToHTML() {
     .screenshot-section {
       margin: 2rem 0;
       padding: 1.5rem;
-      background: #1a1e2b;
+      background: #f3f4f6;
       border-radius: 12px;
-      border: 1px solid #2a2f3f;
+      border: 1px solid #e5e7eb;
     }
 
     .screenshot-header {
@@ -438,7 +438,7 @@ function exportSummaryToHTML() {
       margin-bottom: 1rem;
       font-size: 1.1rem;
       font-weight: 600;
-      color: #00ff88;
+      color: #4a1d96;
     }
 
     .screenshot-container {
@@ -448,8 +448,8 @@ function exportSummaryToHTML() {
       margin: 0 auto;
       border-radius: 8px;
       overflow: hidden;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-      border: 2px solid #2a2f3f;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      border: 2px solid #e5e7eb;
     }
 
     .screenshot-container img {
@@ -462,7 +462,7 @@ function exportSummaryToHTML() {
       margin-top: 0.75rem;
       text-align: center;
       font-size: 0.85rem;
-      color: #8b92a7;
+      color: #6b7280;
       font-style: italic;
     }
 
@@ -473,7 +473,7 @@ function exportSummaryToHTML() {
       margin: 0 auto;
       overflow: hidden;
       border-radius: 12px;
-      background: #1a1e2b;
+      background: #ffffff;
     }
 
     .carousel-wrapper {
@@ -500,7 +500,7 @@ function exportSummaryToHTML() {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: #0a0e17;
+      background: #f3f4f6;
     }
 
     .carousel-slide img {
@@ -514,16 +514,16 @@ function exportSummaryToHTML() {
       bottom: 0;
       left: 0;
       right: 0;
-      background: linear-gradient(transparent, rgba(0,0,0,0.95));
+      background: linear-gradient(transparent, rgba(0,0,0,0.75));
       padding: 2.5rem 1.5rem 1.5rem;
-      color: #00ff88;
+      color: #ffffff;
       font-size: 0.9rem;
       text-align: center;
       font-family: 'JetBrains Mono', monospace;
       word-break: break-all;
       font-weight: 500;
       text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-      border-top: 2px solid rgba(0, 255, 136, 0.3);
+      border-top: 2px solid rgba(74, 29, 150, 0.3);
     }
 
     .carousel-nav {
@@ -546,8 +546,8 @@ function exportSummaryToHTML() {
     }
 
     .carousel-nav:hover {
-      background: rgba(0, 255, 136, 0.9);
-      color: #0a0e17;
+      background: rgba(74, 29, 150, 0.95);
+      color: #ffffff;
       transform: translateY(-50%) scale(1.1);
     }
 
@@ -570,14 +570,14 @@ function exportSummaryToHTML() {
       width: 0.75rem;
       height: 0.75rem;
       border-radius: 50%;
-      background: #2a2f3f;
+      background: #e5e7eb;
       border: 2px solid #4a1d96;
       cursor: pointer;
       transition: all 0.3s;
     }
 
     .carousel-dot.active {
-      background: #00ff88;
+      background: #4a1d96;
       transform: scale(1.3);
     }
 
@@ -589,14 +589,14 @@ function exportSummaryToHTML() {
     .carousel-counter {
       text-align: center;
       margin-top: 0.5rem;
-      color: #8b92a7;
+      color: #6b7280;
       font-size: 0.85rem;
     }
 
     .cta-section {
       margin: 3rem 0;
       padding: 3rem 2rem;
-      background: linear-gradient(135deg, rgba(74, 29, 150, 0.2), rgba(0, 255, 136, 0.1));
+      background: linear-gradient(135deg, rgba(74, 29, 150, 0.06), rgba(5, 150, 105, 0.04));
       border-radius: 16px;
       border: 2px solid #4a1d96;
       text-align: center;
@@ -606,33 +606,33 @@ function exportSummaryToHTML() {
       font-size: 2rem;
       font-weight: 700;
       margin-bottom: 1rem;
-      background: linear-gradient(135deg, #00ff88, #4a1d96);
+      background: linear-gradient(135deg, #059669, #4a1d96);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
     .cta-subtitle {
       font-size: 1.1rem;
-      color: #8b92a7;
+      color: #6b7280;
       margin-bottom: 2rem;
     }
 
     .cta-button {
       display: inline-block;
       padding: 1rem 2.5rem;
-      background: linear-gradient(135deg, #00ff88, #00cc6a);
-      color: #0a0e17;
+      background: linear-gradient(135deg, #4a1d96, #6b2fc7);
+      color: #ffffff;
       text-decoration: none;
       border-radius: 12px;
       font-weight: 700;
       font-size: 1.1rem;
       transition: transform 0.2s, box-shadow 0.2s;
-      box-shadow: 0 4px 16px rgba(0, 255, 136, 0.3);
+      box-shadow: 0 4px 16px rgba(74, 29, 150, 0.2);
     }
 
     .cta-button:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 255, 136, 0.5);
+      box-shadow: 0 6px 20px rgba(74, 29, 150, 0.3);
     }
 
     .hidden {
@@ -675,11 +675,11 @@ function exportSummaryToHTML() {
           <path d="m9.44 40.25c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.2301-2.23-2.2301s-2.23 0.9985-2.23 2.2301c0 1.2315 0.99841 2.23 2.23 2.23z" fill="currentColor"></path>
           <path d="m16.66 40.25c1.2316 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9984-2.2301-2.23-2.2301s-2.23 0.9985-2.23 2.2301c0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
           <path d="m23.88 40.25c1.2315 0 2.23-0.9985 2.23-2.23 0-1.2316-0.9985-2.2301-2.23-2.2301-1.2316 0-2.23 0.9985-2.23 2.2301 0 1.2315 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
-          <path d="m67.28 18.85-7.33-1.1c-3.31-0.53-4.41-2.34-4.41-4.63 0-3.27 2.21-5.52 7.41-5.52 5.52 0 7.99 2.69 8.38 6.66h3.53c-0.4-5.65-4.19-9.53-11.87-9.53s-11.16 3.75-11.16 8.47c0 4.41 2.34 6.93 7.46 7.68l6.93 1.06c3.71 0.62 5.34 2.16 5.34 5.25 0 3.4-1.85 5.47-7.9 5.47-6.8 0-9.13-3.31-9.22-7.86h-3.57c0 5.78 3.27 10.72 12.8 10.72 8.16 0 11.61-3.22 11.61-8.83 0-4.72-2.78-7.02-7.99-7.86z" fill="#fff"></path>
-          <path d="m89.69 5.52-11.12 29.35h3.66l2.85-7.45h10.48c1.65 0 2.99-1.33 3-2.98l3.97 10.44h3.71l-11.12-29.35h-5.43zm-3.49 18.89 6.18-16.24 6.17 16.24z" fill="#fff"></path>
-          <path d="m115.53 5.52h-3.66v29.35h19.02v-2.96h-15.36z" fill="#fff"></path>
-          <path d="m127.96 5.52v2.95h24.67v-2.95z" fill="#fff"></path>
-          <path d="m142.14 34.86v-22.78c0-2-1.62-3.61-3.61-3.61v26.39z" fill="#fff"></path>
+          <path d="m67.28 18.85-7.33-1.1c-3.31-0.53-4.41-2.34-4.41-4.63 0-3.27 2.21-5.52 7.41-5.52 5.52 0 7.99 2.69 8.38 6.66h3.53c-0.4-5.65-4.19-9.53-11.87-9.53s-11.16 3.75-11.16 8.47c0 4.41 2.34 6.93 7.46 7.68l6.93 1.06c3.71 0.62 5.34 2.16 5.34 5.25 0 3.4-1.85 5.47-7.9 5.47-6.8 0-9.13-3.31-9.22-7.86h-3.57c0 5.78 3.27 10.72 12.8 10.72 8.16 0 11.61-3.22 11.61-8.83 0-4.72-2.78-7.02-7.99-7.86z" fill="#4a1d96"></path>
+          <path d="m89.69 5.52-11.12 29.35h3.66l2.85-7.45h10.48c1.65 0 2.99-1.33 3-2.98l3.97 10.44h3.71l-11.12-29.35h-5.43zm-3.49 18.89 6.18-16.24 6.17 16.24z" fill="#4a1d96"></path>
+          <path d="m115.53 5.52h-3.66v29.35h19.02v-2.96h-15.36z" fill="#4a1d96"></path>
+          <path d="m127.96 5.52v2.95h24.67v-2.95z" fill="#4a1d96"></path>
+          <path d="m142.14 34.86v-22.78c0-2-1.62-3.61-3.61-3.61v26.39z" fill="#4a1d96"></path>
         </svg>
       </div>
 
@@ -708,7 +708,7 @@ function exportSummaryToHTML() {
               <div class="carousel-slide">
                 <img src="data:image/jpeg;base64,${screenshot.image}" alt="Screenshot ${index + 1} of ${appState.targetDomain}">
                 <div class="carousel-slide-caption">
-                  <div style="font-size: 0.75rem; color: #8b92a7; margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.05em;">Source URL</div>
+                  <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.05em;">Source URL</div>
                   ${screenshot.url}
                 </div>
               </div>
@@ -785,7 +785,7 @@ function exportSummaryToHTML() {
         </div>
         ${externals.length > 5 ? `
           <div style="text-align:center;margin-top:1rem;">
-            <button onclick="toggleExternalDomains()" id="showMoreExternalBtn" style="padding:0.5rem 1.5rem;background:rgba(139,146,167,0.1);border:1px solid rgba(139,146,167,0.3);border-radius:6px;color:#8b92a7;cursor:pointer;font-size:0.85rem;font-weight:500;">
+            <button onclick="toggleExternalDomains()" id="showMoreExternalBtn" style="padding:0.5rem 1.5rem;background:rgba(107,114,128,0.08);border:1px solid rgba(107,114,128,0.2);border-radius:6px;color:#6b7280;cursor:pointer;font-size:0.85rem;font-weight:500;">
               Show ${externals.length - 5} more
             </button>
           </div>
@@ -815,7 +815,7 @@ function exportSummaryToHTML() {
         if (hasServerTech) {
           html += `
           <div style="margin-bottom:2rem;">
-            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+            <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
               <span>\u{1F4BB}</span> Server-Side Languages
             </h3>
             <div class="stats-grid">
@@ -837,7 +837,7 @@ function exportSummaryToHTML() {
         if (hasWebServers) {
           html += `
           <div style="margin-bottom:2rem;">
-            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+            <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
               <span>\u{1F310}</span> Web Servers
             </h3>
             <div class="stats-grid">
@@ -859,7 +859,7 @@ function exportSummaryToHTML() {
         if (hasCdns) {
           html += `
           <div style="margin-bottom:2rem;">
-            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+            <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
               <span>\u26A1</span> Content Delivery Networks
             </h3>
             <div class="stats-grid">
@@ -878,7 +878,7 @@ function exportSummaryToHTML() {
         if (hasFrameworks) {
           html += `
           <div style="margin-bottom:2rem;">
-            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+            <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
               <span>\u{1F3D7}\uFE0F</span> Frameworks & Libraries
             </h3>
             <div class="stats-grid">
@@ -897,7 +897,7 @@ function exportSummaryToHTML() {
         if (hasOther) {
           html += `
           <div style="margin-bottom:1rem;">
-            <h3 style="font-size:1.1rem;color:#00ff88;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+            <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
               <span>\u2699\uFE0F</span> Other Technologies
             </h3>
             <div class="stats-grid">
@@ -1082,26 +1082,26 @@ function exportSummaryToHTML() {
                 status >= 400 && status < 500 ? 'status-4xx' :
                 status >= 500 ? 'status-5xx' : '';
               const thumbHtml = screenshot && screenshot.length > 100
-                ? '<img src="data:image/jpeg;base64,' + screenshot + '" style="width:120px;height:68px;object-fit:cover;border-radius:4px;border:1px solid #2a2f3f;">'
-                : '<span style="color:#8b92a7;">\u2014</span>';
+                ? '<img src="data:image/jpeg;base64,' + screenshot + '" style="width:120px;height:68px;object-fit:cover;border-radius:4px;border:1px solid #e5e7eb;">'
+                : '<span style="color:#6b7280;">\u2014</span>';
               const techHtml = techs.length > 0
-                ? '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;">' + techs.map(t => '<span style="display:inline-block;padding:0.15rem 0.5rem;background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.3);border-radius:4px;font-size:0.7rem;color:#5eead4;white-space:nowrap;line-height:1.4;">' + t + '</span>').join('') + '</div>'
-                : '<span style="color:#8b92a7;">\u2014</span>';
+                ? '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;">' + techs.map(t => '<span style="display:inline-block;padding:0.15rem 0.5rem;background:rgba(5,150,105,0.06);border:1px solid rgba(5,150,105,0.2);border-radius:4px;font-size:0.7rem;color:#047857;white-space:nowrap;line-height:1.4;">' + t + '</span>').join('') + '</div>'
+                : '<span style="color:#6b7280;">\u2014</span>';
               // Read crawled URLs from the DOM if they were fetched
               const listEl = document.getElementById('crawled-list-' + i);
               const domUrls = listEl ? Array.from(listEl.querySelectorAll('.crawled-url-item a')).map(a => a.href) : [];
               const urlsSuffix = domUrls.length > 0
-                ? ' <span style="color:#a78bfa;font-size:0.75rem;font-weight:600;">(' + domUrls.length + ' URLs)</span>'
+                ? ' <span style="color:#7c3aed;font-size:0.75rem;font-weight:600;">(' + domUrls.length + ' URLs)</span>'
                 : '';
               return '<tr>' +
                 '<td>' + (i + 1) + '</td>' +
-                '<td style="color:#00ff88;font-family:JetBrains Mono,monospace;font-size:0.85rem;">' + name + urlsSuffix + '</td>' +
+                '<td style="color:#059669;font-family:JetBrains Mono,monospace;font-size:0.85rem;">' + name + urlsSuffix + '</td>' +
                 '<td>' + (status ? '<span class="status-badge ' + statusClass + '">' + status + '</span>' : '\u2014') + '</td>' +
                 '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + title + '</td>' +
                 '<td>' + techHtml + '</td>' +
                 '<td>' + thumbHtml + '</td>' +
                 '</tr>' +
-                (domUrls.length > 0 ? '<tr><td colspan="6" style="padding:0;"><details style="cursor:pointer;padding:0.3rem 1rem 0.3rem 3rem;background:rgba(0,0,0,0.15);"><summary style="color:#a78bfa;font-size:0.75rem;font-weight:600;">' + domUrls.length + ' crawled URLs</summary><div style="max-height:150px;overflow-y:auto;margin-top:0.3rem;padding:0.3rem;background:rgba(0,0,0,0.2);border-radius:4px;">' + domUrls.map(u => { let d = u; try { const p = new URL(u); d = p.pathname + p.search; if (d.length > 90) d = d.slice(0,80) + '\u2026'; } catch {} return '<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;padding:0.15rem 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="' + u + '" target="_blank" style="color:#8b92a7;text-decoration:none;">' + d + '</a></div>'; }).join('') + '</div></details></td></tr>' : '');
+                (domUrls.length > 0 ? '<tr><td colspan="6" style="padding:0;"><details style="cursor:pointer;padding:0.3rem 1rem 0.3rem 3rem;background:rgba(74,29,150,0.04);"><summary style="color:#7c3aed;font-size:0.75rem;font-weight:600;">' + domUrls.length + ' crawled URLs</summary><div style="max-height:150px;overflow-y:auto;margin-top:0.3rem;padding:0.3rem;background:rgba(0,0,0,0.03);border-radius:4px;">' + domUrls.map(u => { let d = u; try { const p = new URL(u); d = p.pathname + p.search; if (d.length > 90) d = d.slice(0,80) + '\u2026'; } catch {} return '<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;padding:0.15rem 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="' + u + '" target="_blank" style="color:#6b7280;text-decoration:none;">' + d + '</a></div>'; }).join('') + '</div></details></td></tr>' : '');
             }).join('')}
           </tbody>
         </table>

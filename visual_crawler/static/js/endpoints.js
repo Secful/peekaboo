@@ -53,9 +53,9 @@ function addEndpointRow(ep, flash=false) {
   // API confidence badge (inline with path)
   let typeBadge = '';
   if (ep.api_confidence === 'API') {
-    typeBadge = '<span style="display:inline-block;padding:0.15rem 0.4rem;background:rgba(34,211,238,0.15);color:#22d3ee;border:1px solid rgba(34,211,238,0.3);border-radius:3px;font-size:0.7rem;font-weight:600;margin-right:0.5rem;">API</span>';
+    typeBadge = '<span style="display:inline-block;padding:0.15rem 0.4rem;background:rgba(6,182,212,0.1);color:#0891b2;border:1px solid rgba(6,182,212,0.25);border-radius:3px;font-size:0.7rem;font-weight:600;margin-right:0.5rem;">API</span>';
   } else if (ep.api_confidence === 'Maybe API') {
-    typeBadge = '<span style="display:inline-block;padding:0.15rem 0.4rem;background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.3);border-radius:3px;font-size:0.7rem;font-weight:600;margin-right:0.5rem;">Maybe</span>';
+    typeBadge = '<span style="display:inline-block;padding:0.15rem 0.4rem;background:rgba(217,119,6,0.1);color:#d97706;border:1px solid rgba(217,119,6,0.25);border-radius:3px;font-size:0.7rem;font-weight:600;margin-right:0.5rem;">Maybe</span>';
   }
 
   // PII badges — only for confirmed APIs on domain/subdomains

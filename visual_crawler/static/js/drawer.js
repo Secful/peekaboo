@@ -121,7 +121,7 @@ function openDrawer(ep) {
       const piiHits = sources.flatMap(s => getPiiMatches(s.text, s.jsonKeys).map(kw => ({ source: s.label, keyword: kw })));
       if (!piiHits.length) return '';
       let html = '<div class="detail-section"><div class="detail-label">Detection Evidence</div><div class="detail-value">';
-      html += '<div><strong style="color:#ef4444">PII:</strong> ' + piiHits.map(h => `<span class="query-param" style="background:rgba(239,68,68,0.12);color:#fca5a5;border:1px solid rgba(239,68,68,0.25)">${escHtml(h.keyword)} <span style="color:var(--text-muted);font-size:0.7rem">(${escHtml(h.source)})</span></span>`).join('') + '</div>';
+      html += '<div><strong style="color:#ef4444">PII:</strong> ' + piiHits.map(h => `<span class="query-param" style="background:rgba(220,38,38,0.08);color:#dc2626;border:1px solid rgba(220,38,38,0.2)">${escHtml(h.keyword)} <span style="color:var(--text-muted);font-size:0.7rem">(${escHtml(h.source)})</span></span>`).join('') + '</div>';
       html += '</div></div>';
       return html;
     })()}

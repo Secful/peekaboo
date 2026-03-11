@@ -261,8 +261,8 @@ async function showSubdomainMap() {
     const radius = Math.min(6 + subs.length * 2, 20);
     const marker = L.circleMarker([geo.lat, geo.lon], {
       radius,
-      fillColor: '#00ff88',
-      color: '#6b2fc7',
+      fillColor: '#059669',
+      color: '#4a1d96',
       weight: 2,
       opacity: 1,
       fillOpacity: 0.7,
@@ -369,12 +369,12 @@ async function crawlSubdomain(event, idx, subdomain) {
           ? `<span class="js-pill-divider"></span><span class="js-pill-right analyzing" id="js-pill-right-${idx}" title="Analyzing JS files..."><span class="js-pill-spin">⟳</span></span>`
           : '';
         wrapper.innerHTML = `${escHtml(subdomain)} <span class="js-pill" id="js-pill-${idx}"><span class="js-pill-left" title="Toggle JS file list" onclick="event.stopPropagation(); toggleJsPillFiles(${idx})">${urls.length} JS</span>${rightZone}</span>`;
-        if (appState.extractedApis[subdomain]) {
-          applyExtractedApis(subdomain);
-        }
 
         const expandRow2 = document.getElementById(`crawled-row-${idx}`);
         if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsUrls);
+        if (appState.extractedApis[subdomain]) {
+          applyExtractedApis(subdomain);
+        }
         const urlItems = urls.map(u => {
           let display = u;
           try {
@@ -462,10 +462,11 @@ function openApiDrawer(idx) {
     const mCls = 'method-' + method;
     const srcName = api.source_file || '';
     const srcBaseName = srcName.split('/').pop().split('?')[0].toLowerCase();
+    const jsPool = (appState.jsResources[data.subdomain] && appState.jsResources[data.subdomain].urls) || data.jsUrls;
     const srcUrl = srcName ? (
-      data.jsUrls.find(u => u.endsWith(srcName) || u.includes('/' + srcName)) ||
-      data.jsUrls.find(u => { const uBase = u.split('/').pop().split('?')[0].toLowerCase(); return uBase === srcBaseName; }) ||
-      data.jsUrls.find(u => srcBaseName && u.toLowerCase().includes(srcBaseName)) ||
+      jsPool.find(u => u.endsWith(srcName) || u.includes('/' + srcName)) ||
+      jsPool.find(u => { const uBase = u.split('/').pop().split('?')[0].toLowerCase(); return uBase === srcBaseName; }) ||
+      jsPool.find(u => srcBaseName && u.toLowerCase().includes(srcBaseName)) ||
       '') : '';
     const srcHtml = srcUrl
       ? `<a href="${escHtml(srcUrl)}" target="_blank" rel="noopener">${escHtml(srcName)}</a>`
@@ -675,7 +676,7 @@ function applyExtractedApis(subdomain) {
     return true;
   });
 
-  // Get jsUrls from JS resources data
+  // Get jsUrls from JS resources (authoritative source via /api/jsresources)
   const jsUrls = (appState.jsResources[subdomain] && appState.jsResources[subdomain].urls) || [];
 
   // Store in subdomainApis so openApiDrawer works
