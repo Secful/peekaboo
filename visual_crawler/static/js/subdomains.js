@@ -60,10 +60,11 @@ function renderSubdomainTable(data) {
       : '<span style="color:var(--muted);font-size:0.75rem;">—</span>';
 
     // Screenshot is raw base64 JPEG from Lambda — add data URI prefix
+    // Blank/white screenshots are hidden (detected async via canvas sampling)
     let thumbHtml = '<span style="color:var(--muted);font-size:0.75rem;">—</span>';
     if (screenshot && screenshot.length > 100) {
       const thumbSrc = screenshot.startsWith('data:') ? screenshot : `data:image/jpeg;base64,${screenshot}`;
-      thumbHtml = `<img class="subdomain-thumb" src="${thumbSrc}" alt="${escHtml(name)}">`;
+      thumbHtml = `<img class="subdomain-thumb" src="${thumbSrc}" alt="${escHtml(name)}" data-check-blank="1" style="display:none">`;
     }
 
     const crawlBtnHtml = '';
@@ -91,6 +92,26 @@ function renderSubdomainTable(data) {
 
   html += '</tbody></table>';
   container.innerHTML = html;
+
+  // Detect and hide blank/white screenshots — show only non-blank ones
+  container.querySelectorAll('img[data-check-blank="1"]').forEach(img => {
+    const reveal = () => {
+      const c = document.createElement('canvas');
+      const sz = 16;           // sample at 16×16
+      c.width = sz; c.height = sz;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, sz, sz);
+      const d = ctx.getImageData(0, 0, sz, sz).data;
+      let total = 0;
+      for (let i = 0; i < d.length; i += 4) total += d[i] + d[i + 1] + d[i + 2];
+      const avg = total / (sz * sz * 3);
+      if (avg < 250) {         // not blank — show it
+        img.style.display = '';
+      }
+      img.removeAttribute('data-check-blank');
+    };
+    if (img.complete) reveal(); else img.onload = reveal;
+  });
 
   // Apply JS resources for any already-received data
   for (const subdomain of Object.keys(appState.jsResources)) {
@@ -335,18 +356,17 @@ async function crawlSubdomain(event, idx, subdomain) {
 
       const rawUrls = data.crawled_urls || data.urls || (Array.isArray(data) ? data : []);
       const urls = rawUrls.filter(isApiOrJsUrl);
-      // Find JS files in both filtered and raw lists
       const jsUrls = rawUrls.filter(u => /\.js(\?|#|$)/i.test(u));
+
       if (urls.length > 0) {
-        // Show pill with count next to name, plus "Even Deeper" if JS files exist
-        const evenDeeperBtn = jsUrls.length > 0
-          ? ` <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`
+        // Build unified pill: [N JS | ▶]
+        const rightZone = jsUrls.length > 0
+          ? `<span class="js-pill-divider"></span><span class="js-pill-right" id="js-pill-right-${idx}" title="Hunt for APIs" onclick="event.stopPropagation(); analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">▶</span>`
           : '';
-        wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawled-urls-pill" onclick="toggleUrlList(event, 'url-list-${idx}')">${urls.length} resources</span>${evenDeeperBtn}`;
-        // Store JS URLs as data attribute for the analyzer
+        wrapper.innerHTML = `${escHtml(subdomain)} <span class="js-pill" id="js-pill-${idx}"><span class="js-pill-left" title="Toggle JS file list" onclick="event.stopPropagation(); toggleJsPillFiles(${idx})">${urls.length} JS</span>${rightZone}</span>`;
+
         const expandRow2 = document.getElementById(`crawled-row-${idx}`);
         if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsUrls);
-        // Populate expandable row with collapsible URL list + separate API results area
         const urlItems = urls.map(u => {
           let display = u;
           try {
@@ -358,14 +378,13 @@ async function crawlSubdomain(event, idx, subdomain) {
         }).join('');
         listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`
           + `<div id="url-list-${idx}" class="url-list-collapsible collapsed">${urlItems}</div>`;
-        // Keep row hidden — it will show when user expands URL list or APIs are found
       } else {
-        // No API URLs but still might have JS files in raw list
         const jsOnly = rawUrls.filter(u => /\.js(\?|#|$)/i.test(u));
         if (jsOnly.length > 0) {
           const expandRow2 = document.getElementById(`crawled-row-${idx}`);
           if (expandRow2) expandRow2.dataset.jsUrls = JSON.stringify(jsOnly);
-          wrapper.innerHTML = `${escHtml(subdomain)} <button class="even-deeper-btn" id="even-deeper-btn-${idx}" onclick="analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">🔬 Hunt for API's</button>`;
+          // Unified pill with only right zone (no file list to toggle)
+          wrapper.innerHTML = `${escHtml(subdomain)} <span class="js-pill" id="js-pill-${idx}"><span class="js-pill-left" style="cursor:default">${jsOnly.length} JS</span><span class="js-pill-divider"></span><span class="js-pill-right" id="js-pill-right-${idx}" title="Hunt for APIs" onclick="event.stopPropagation(); analyzeJsDeeper(event, ${idx}, '${escHtml(subdomain)}')">▶</span></span>`;
           listDiv.innerHTML = `<div id="even-deeper-results-${idx}" class="even-deeper-results"></div>`;
         } else {
           wrapper.innerHTML = `${escHtml(subdomain)} <span class="crawl-done-empty">Nothing interesting here</span>`;
@@ -401,8 +420,11 @@ async function crawlAllSubdomains() {
 
 async function analyzeJsDeeper(event, idx, subdomain) {
   event.stopPropagation();
-  const btn = document.getElementById(`even-deeper-btn-${idx}`);
+  const right = document.getElementById(`js-pill-right-${idx}`);
   const resultsDiv = document.getElementById(`even-deeper-results-${idx}`);
+
+  // Prevent double-click while analyzing or after completion
+  if (right && (right.classList.contains('analyzing') || right.classList.contains('has-apis') || right.classList.contains('no-apis'))) return;
 
   // Collect JS URLs from stored data attribute
   const expandRow = document.getElementById(`crawled-row-${idx}`);
@@ -411,20 +433,21 @@ async function analyzeJsDeeper(event, idx, subdomain) {
 
   if (jsUrls.length === 0) return;
 
-  // Replace button with spinner
-  btn.outerHTML = `<span class="crawl-spinner" id="even-deeper-spinner-${idx}"><span class="crawl-spin-icon"></span> Hunting for APIs...</span>`;
+  // Show spinner in the right zone of the pill
+  if (right) {
+    right.classList.add('analyzing');
+    right.innerHTML = '<span class="js-pill-spin">⟳</span>';
+    right.title = 'Analyzing JS files...';
+  }
 
-  // Show inline loading state
   if (resultsDiv) resultsDiv.innerHTML = '';
 
   const maxRetries = 2;
-  let lastErr = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 0) {
-        const spinnerEl = document.getElementById(`even-deeper-spinner-${idx}`);
-        if (spinnerEl) spinnerEl.innerHTML = `<span class="crawl-spin-icon"></span> Retry ${attempt}/${maxRetries}...`;
+        if (right) right.innerHTML = `<span class="js-pill-spin">⟳</span> ${attempt}/${maxRetries}`;
         if (resultsDiv) resultsDiv.innerHTML = '';
         await new Promise(r => setTimeout(r, 1500 * attempt));
       }
@@ -437,9 +460,6 @@ async function analyzeJsDeeper(event, idx, subdomain) {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       const apis = data.apis || [];
-
-      // Remove spinner, add API count pill
-      const spinner = document.getElementById(`even-deeper-spinner-${idx}`);
 
       // Filter out variable names (url must contain at least one '/') and deduplicate
       const staticExts = /\.(js|css|html|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map|xml|json)(\?|#|$)/i;
@@ -454,40 +474,44 @@ async function analyzeJsDeeper(event, idx, subdomain) {
         return true;
       });
 
+      if (right) right.classList.remove('analyzing');
+
       if (dedupApis.length > 0) {
-        // Store deduplicated results for the drawer
         appState.subdomainApis[idx] = { subdomain, apis: dedupApis, jsUrls };
 
-        const apiLabel = `<span class="api-count-pill has-apis" onclick="openApiDrawer(${idx})">${dedupApis.length} APIs</span>`;
-        if (spinner) spinner.outerHTML = apiLabel;
-
-        // Clear inline results area — APIs now live in the drawer
-        if (resultsDiv) resultsDiv.innerHTML = '';
-
-        // Collapse the JS file list
-        const urlListFound = document.getElementById(`url-list-${idx}`);
-        if (urlListFound) urlListFound.classList.add('collapsed');
-        const wrapperFound = document.getElementById(`crawl-td-${idx}`);
-        if (wrapperFound) {
-          const pillEl = wrapperFound.querySelector('.crawled-urls-pill');
-          if (pillEl) pillEl.classList.remove('active');
+        if (right) {
+          right.classList.add('has-apis');
+          right.textContent = `${dedupApis.length} APIs`;
+          right.title = 'Open API drawer';
+          right.setAttribute('onclick', `event.stopPropagation(); openApiDrawer(${idx})`);
         }
 
-        // Auto-open the drawer
+        if (resultsDiv) resultsDiv.innerHTML = '';
+
+        // Collapse file list
+        const urlListFound = document.getElementById(`url-list-${idx}`);
+        if (urlListFound) urlListFound.classList.add('collapsed');
+        const left = document.querySelector(`#js-pill-${idx} .js-pill-left`);
+        if (left) left.classList.remove('active');
+
         openApiDrawer(idx);
       } else {
-        const apiLabel = `<span class="api-count-pill no-apis">No APIs here..</span>`;
-        if (spinner) spinner.outerHTML = apiLabel;
-        // Hide the expandable row entirely
-        const expandRowEl = document.getElementById(`crawled-row-${idx}`);
-        if (expandRowEl) expandRowEl.classList.add('hidden');
+        if (right) {
+          right.classList.add('no-apis');
+          right.textContent = '0 APIs';
+          right.title = 'No APIs found';
+          right.removeAttribute('onclick');
+        }
       }
-      return; // Success — exit the retry loop
+      return;
     } catch (err) {
-      lastErr = err;
       if (attempt === maxRetries) {
-        const spinner = document.getElementById(`even-deeper-spinner-${idx}`);
-        if (spinner) spinner.outerHTML = `<span class="crawl-error" title="${escHtml(err.message)}">Analysis failed</span>`;
+        if (right) {
+          right.classList.remove('analyzing');
+          right.textContent = '✗';
+          right.title = `Analysis failed: ${err.message}`;
+          right.style.color = 'var(--delete)';
+        }
         if (resultsDiv) resultsDiv.innerHTML = `<div class="even-deeper-error">Analysis failed: ${escHtml(err.message)}</div>`;
       }
     }
@@ -601,14 +625,14 @@ function toggleUrlList(event, listId) {
 function applyJsResources(subdomain, urls) {
   // Find the wrapper span by data-subdomain attribute
   const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
-  if (!span) return;
+  if (!span) { console.warn(`[js-resources] No DOM element for subdomain: ${subdomain}`); return; }
 
-  // Skip if already applied (pill or empty label already present)
-  if (span.querySelector('.crawled-urls-pill, .crawl-done-empty')) return;
+  // Skip if already applied (unified pill or empty label already present)
+  if (span.querySelector('.js-pill, .crawl-done-empty')) return;
 
   // Find the row index from the span id (crawl-td-{idx})
   const idMatch = (span.id || '').match(/^crawl-td-(\d+)$/);
-  if (!idMatch) return;
+  if (!idMatch) { console.warn(`[js-resources] No row index for subdomain: ${subdomain}`); return; }
   const idx = idMatch[1];
 
   // Remove the "Look deeper" button if present (this replaces it)
@@ -627,27 +651,37 @@ function applyJsResources(subdomain, urls) {
     empty.textContent = 'Nothing interesting here';
     span.appendChild(empty);
   } else {
-    // Filter JS files for the "Hunt for API's" button
     const jsUrls = urls.filter(u => /\.js(\?|#|$)/i.test(u));
 
-    // Add "x resources" pill
+    // Build unified pill: [N JS | ▶]
     span.appendChild(document.createTextNode(' '));
     const pill = document.createElement('span');
-    pill.className = 'crawled-urls-pill';
-    pill.textContent = `${urls.length} resources`;
-    pill.setAttribute('onclick', `toggleUrlList(event, 'url-list-${idx}')`);
-    span.appendChild(pill);
+    pill.className = 'js-pill';
+    pill.id = `js-pill-${idx}`;
 
-    // Add "Hunt for API's" button if there are JS files
+    const left = document.createElement('span');
+    left.className = 'js-pill-left';
+    left.textContent = `${urls.length} JS`;
+    left.title = 'Toggle JS file list';
+    left.setAttribute('onclick', `event.stopPropagation(); toggleJsPillFiles(${idx})`);
+
+    pill.appendChild(left);
+
     if (jsUrls.length > 0) {
-      span.appendChild(document.createTextNode(' '));
-      const huntBtn = document.createElement('button');
-      huntBtn.className = 'even-deeper-btn';
-      huntBtn.id = `even-deeper-btn-${idx}`;
-      huntBtn.setAttribute('onclick', `analyzeJsDeeper(event, ${idx}, '${subdomain.replace(/'/g, "\\'")}')`);
-      huntBtn.textContent = "🔬 Hunt for API's";
-      span.appendChild(huntBtn);
+      const divider = document.createElement('span');
+      divider.className = 'js-pill-divider';
+      pill.appendChild(divider);
+
+      const right = document.createElement('span');
+      right.className = 'js-pill-right';
+      right.id = `js-pill-right-${idx}`;
+      right.textContent = '▶';
+      right.title = 'Hunt for APIs';
+      right.setAttribute('onclick', `event.stopPropagation(); analyzeJsDeeper(event, ${idx}, '${subdomain.replace(/'/g, "\\'")}')`);
+      pill.appendChild(right);
     }
+
+    span.appendChild(pill);
 
     // Ensure expandable row exists (crawlable subdomains have it; non-crawlable don't)
     let expandRow = document.getElementById(`crawled-row-${idx}`);
@@ -684,8 +718,29 @@ function applyJsResources(subdomain, urls) {
     }
   }
 
+  console.log(`[js-resources] Applied to ${subdomain} (${urls.length} urls)`);
   // Re-apply security pill (may have been shifted)
   applySecurityPill(subdomain);
+}
+
+function toggleJsPillFiles(idx) {
+  const listId = `url-list-${idx}`;
+  const list = document.getElementById(listId);
+  const expandRow = list ? list.closest('.crawled-urls-row') : null;
+  const left = document.querySelector(`#js-pill-${idx} .js-pill-left`);
+  if (!list) return;
+  if (list.classList.contains('collapsed')) {
+    list.classList.remove('collapsed');
+    if (left) left.classList.add('active');
+    if (expandRow) expandRow.classList.remove('hidden');
+  } else {
+    list.classList.add('collapsed');
+    if (left) left.classList.remove('active');
+    if (expandRow) {
+      const results = expandRow.querySelector('.even-deeper-results');
+      if (!results || !results.innerHTML.trim()) expandRow.classList.add('hidden');
+    }
+  }
 }
 
 /* Security Insights — pill + drawer */
@@ -717,6 +772,7 @@ function applySecurityPill(subdomain) {
 
   span.appendChild(document.createTextNode(' '));
   span.appendChild(pill);
+  console.log(`[security-pill] Applied to ${subdomain} (${findings.length} findings)`);
 }
 
 function getMaxSeverity(findings) {
@@ -817,10 +873,11 @@ const WEB_PORTS = new Set([80, 443, 8080, 8443]);
 
 function applyOpenPortsPill(subdomain) {
   const data = appState.openPorts[subdomain];
-  if (!data) return;
+  if (!data) { console.warn(`[open-ports] No data for ${subdomain}`); return; }
 
   const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
-  if (!span || span.querySelector('.open-ports-pill')) return;
+  if (!span) { console.warn(`[open-ports] No DOM element for subdomain: ${subdomain}`); return; }
+  if (span.querySelector('.open-ports-pill')) return;
 
   const ports = data.open_ports || [];
   if (ports.length === 0) return;
@@ -835,6 +892,7 @@ function applyOpenPortsPill(subdomain) {
 
   span.appendChild(document.createTextNode(' '));
   span.appendChild(pill);
+  console.log(`[open-ports] Applied to ${subdomain} (${ports.length} ports)`);
 }
 
 function openOpenPortsDrawer(subdomain) {
@@ -879,10 +937,11 @@ function closeOpenPortsDrawer() {
 
 function applyAgenticPill(subdomain) {
   const data = appState.agentic[subdomain];
-  if (!data) return;
+  if (!data) { console.warn(`[agentic] No data for ${subdomain}`); return; }
 
   const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
-  if (!span || span.querySelector('.agentic-pill')) return;
+  if (!span) { console.warn(`[agentic] No DOM element for subdomain: ${subdomain}`); return; }
+  if (span.querySelector('.agentic-pill')) return;
 
   const findings = data.findings || [];
   if (findings.length === 0) return;
@@ -894,6 +953,7 @@ function applyAgenticPill(subdomain) {
 
   span.appendChild(document.createTextNode(' '));
   span.appendChild(pill);
+  console.log(`[agentic] Applied to ${subdomain} (${findings.length} findings)`);
 }
 
 function openAgenticDrawer(subdomain) {
@@ -929,12 +989,113 @@ function openAgenticDrawer(subdomain) {
       </div>
       <div class="agentic-finding-path">${escHtml(f.path)}</div>
       ${f.description ? `<div class="agentic-finding-desc">${escHtml(f.description)}</div>` : ''}
+      ${f.body_preview ? `<pre class="agentic-body-preview">${escHtml(f.body_preview)}</pre>` : ''}
       <div class="agentic-finding-meta">
         ${f.status_code ? `<span class="agentic-status-badge ${statusCls}">${f.status_code}</span>` : ''}
         ${f.content_type ? `<span class="agentic-content-type">${escHtml(f.content_type)}</span>` : ''}
         ${linkHtml}
       </div>
     </div>`;
+  }
+
+  // MCP section — rendered when the scanner performed an MCP handshake
+  if (data.mcp) {
+    const mcp = data.mcp;
+    const conf = mcp.confidence || 0;
+    const confCls = conf >= 70 ? 'agentic-mcp-confidence-green'
+      : conf >= 30 ? 'agentic-mcp-confidence-yellow'
+      : 'agentic-mcp-confidence-red';
+
+    html += `<div class="agentic-mcp-section">`;
+    html += `<div class="agentic-mcp-header">
+      <span class="agentic-mcp-title">MCP Server</span>
+      <span class="agentic-mcp-confidence ${confCls}">${conf}% confidence</span>
+    </div>`;
+
+    // Server info row
+    const sName = mcp.server_info ? escHtml(mcp.server_info.name) : '—';
+    const sVer = mcp.server_info && mcp.server_info.version ? escHtml(mcp.server_info.version) : '';
+    const transport = escHtml(mcp.transport || 'unknown');
+    const proto = mcp.protocol_version ? escHtml(mcp.protocol_version) : '';
+    html += `<div class="agentic-mcp-server-row">
+      <span class="agentic-mcp-server-name">${sName}</span>
+      ${sVer ? `<span class="agentic-mcp-server-ver">${sVer}</span>` : ''}
+      <span class="agentic-mcp-transport">${transport}</span>
+      ${proto ? `<span class="agentic-mcp-proto">${proto}</span>` : ''}
+    </div>`;
+
+    // Tools
+    if (mcp.tools && mcp.tools.length > 0) {
+      html += `<details class="agentic-mcp-group"><summary>${mcp.tools.length} Tool${mcp.tools.length !== 1 ? 's' : ''}</summary>`;
+      for (const t of mcp.tools) {
+        html += `<div class="agentic-mcp-item">
+          <span class="agentic-mcp-item-name">${escHtml(t.name)}</span>
+          ${t.description ? `<span class="agentic-mcp-item-desc">${escHtml(t.description)}</span>` : ''}
+        </div>`;
+      }
+      html += `</details>`;
+    }
+
+    // Resources
+    if (mcp.resources && mcp.resources.length > 0) {
+      html += `<details class="agentic-mcp-group"><summary>${mcp.resources.length} Resource${mcp.resources.length !== 1 ? 's' : ''}</summary>`;
+      for (const r of mcp.resources) {
+        html += `<div class="agentic-mcp-item">
+          <span class="agentic-mcp-item-name">${escHtml(r.name)}</span>
+          <span class="agentic-mcp-item-uri">${escHtml(r.uri)}</span>
+          ${r.description ? `<span class="agentic-mcp-item-desc">${escHtml(r.description)}</span>` : ''}
+        </div>`;
+      }
+      html += `</details>`;
+    }
+
+    // Prompts
+    if (mcp.prompts && mcp.prompts.length > 0) {
+      html += `<details class="agentic-mcp-group"><summary>${mcp.prompts.length} Prompt${mcp.prompts.length !== 1 ? 's' : ''}</summary>`;
+      for (const p of mcp.prompts) {
+        html += `<div class="agentic-mcp-item">
+          <span class="agentic-mcp-item-name">${escHtml(p.name)}</span>
+          ${p.description ? `<span class="agentic-mcp-item-desc">${escHtml(p.description)}</span>` : ''}
+        </div>`;
+      }
+      html += `</details>`;
+    }
+
+    // Registry match
+    if (mcp.registry) {
+      const reg = mcp.registry;
+      html += `<details class="agentic-mcp-group" open><summary>Registry Match</summary>`;
+      html += `<div class="agentic-mcp-registry">`;
+      if (reg.server_name) html += `<div class="agentic-mcp-registry-row"><span class="agentic-mcp-registry-label">Server</span><span>${escHtml(reg.server_name)}</span></div>`;
+      if (reg.description) html += `<div class="agentic-mcp-registry-row"><span class="agentic-mcp-registry-label">Description</span><span>${escHtml(reg.description)}</span></div>`;
+      if (reg.version) html += `<div class="agentic-mcp-registry-row"><span class="agentic-mcp-registry-label">Version</span><span>${escHtml(reg.version)}</span></div>`;
+      if (reg.remote_url) html += `<div class="agentic-mcp-registry-row"><span class="agentic-mcp-registry-label">Endpoint</span><a href="${escHtml(reg.remote_url)}" target="_blank" rel="noopener">${escHtml(reg.remote_url)}</a></div>`;
+      if (reg.remote_type) html += `<div class="agentic-mcp-registry-row"><span class="agentic-mcp-registry-label">Transport</span><span class="agentic-mcp-transport">${escHtml(reg.remote_type)}</span></div>`;
+      if (reg.website_url) html += `<div class="agentic-mcp-registry-row"><span class="agentic-mcp-registry-label">Website</span><a href="${escHtml(reg.website_url)}" target="_blank" rel="noopener">${escHtml(reg.website_url)}</a></div>`;
+      if (reg.repo_url) html += `<div class="agentic-mcp-registry-row"><span class="agentic-mcp-registry-label">Repo</span><a href="${escHtml(reg.repo_url)}" target="_blank" rel="noopener">${escHtml(reg.repo_url)}</a></div>`;
+      html += `</div></details>`;
+    }
+
+    // Evidence trail
+    if (mcp.evidence && mcp.evidence.length > 0) {
+      html += `<details class="agentic-mcp-group"><summary>Evidence</summary>`;
+      html += `<ul class="agentic-mcp-evidence">`;
+      for (const e of mcp.evidence) {
+        html += `<li>${escHtml(e)}</li>`;
+      }
+      html += `</ul></details>`;
+    }
+
+    // Errors
+    if (mcp.errors && mcp.errors.length > 0) {
+      html += `<div class="agentic-mcp-errors">`;
+      for (const err of mcp.errors) {
+        html += `<div class="agentic-mcp-error-item">${escHtml(err)}</div>`;
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
   }
 
   content.innerHTML = html;

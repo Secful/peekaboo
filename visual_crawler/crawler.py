@@ -446,8 +446,21 @@ class APICrawler:
                     logger.info("✅ BrightData Scraping Browser available")
                     await self._emit("status", {"message": "✅ Remote browser ready (parallel sessions)"})
                 except Exception as e:
+                    err_str = str(e)
                     logger.error(f"❌ Failed to connect to remote browser: {e}")
-                    await self._emit("status", {"message": f"⚠️  Remote browser failed, using local browser"})
+                    # Provide actionable diagnostics for common BrightData errors
+                    if "403" in err_str and "wrong_customer_name" in err_str:
+                        detail = "BrightData rejected credentials: customer name not recognized. Check peekaboo/proxy secret username."
+                    elif "403" in err_str and "Auth Failed" in err_str:
+                        detail = "BrightData authentication failed. Verify username and password in peekaboo/proxy secret."
+                    elif "401" in err_str:
+                        detail = "BrightData returned 401 Unauthorized. Password may be expired."
+                    elif "timeout" in err_str.lower() or "ETIMEDOUT" in err_str:
+                        detail = "Connection timed out reaching brd.superproxy.io:9222. Check network/firewall."
+                    else:
+                        detail = f"Error: {err_str[:200]}"
+                    logger.error(f"❌ Remote browser diagnostic: {detail}")
+                    await self._emit("status", {"message": f"⚠️ Remote browser failed: {detail}"})
                     logger.info("🔄 Falling back to local browser...")
                     self.using_remote_browser = False
 

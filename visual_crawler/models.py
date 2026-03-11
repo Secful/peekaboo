@@ -97,6 +97,61 @@ class SecurityInsightsRequest(BaseModel):
     findings: list[SecurityFinding] = []
 
 
+class MCPServerInfo(BaseModel):
+    """MCP server identity returned by initialize."""
+    name: str
+    version: str = ""
+
+
+class MCPTool(BaseModel):
+    """A single tool advertised by an MCP server."""
+    name: str
+    description: str = ""
+    input_schema: dict = {}
+
+
+class MCPResource(BaseModel):
+    """A single resource advertised by an MCP server."""
+    uri: str
+    name: str
+    description: str = ""
+    mime_type: str = ""
+
+
+class MCPPrompt(BaseModel):
+    """A single prompt advertised by an MCP server."""
+    name: str
+    description: str = ""
+    arguments: list[dict] = []
+
+
+class MCPRegistryInfo(BaseModel):
+    """Match from the official MCP registry (registry.modelcontextprotocol.io)."""
+    found: bool = True
+    server_name: str = ""
+    description: str = ""
+    version: str = ""
+    remote_url: str = ""
+    remote_type: str = ""
+    website_url: str = ""
+    repo_url: str = ""
+
+
+class MCPResult(BaseModel):
+    """Full result of an MCP handshake performed by the external scanner."""
+    transport: str  # "streamable_http" | "sse" | "unknown"
+    confidence: int  # 0-120
+    evidence: list[str] = []
+    server_info: Optional[MCPServerInfo] = None
+    protocol_version: str = ""
+    capabilities: dict = {}
+    tools: list[MCPTool] = []
+    resources: list[MCPResource] = []
+    prompts: list[MCPPrompt] = []
+    registry: Optional[MCPRegistryInfo] = None
+    errors: list[str] = []
+
+
 class AgenticFinding(BaseModel):
     """A single agentic/AI discovery finding from an external scanner."""
     name: str
@@ -106,6 +161,7 @@ class AgenticFinding(BaseModel):
     status_code: int = 0
     content_type: str = ""
     is_sse: bool = False
+    body_preview: str = ""
 
 
 class AgenticRequest(BaseModel):
@@ -116,3 +172,4 @@ class AgenticRequest(BaseModel):
     scan_duration_secs: float = 0.0
     findings_count: int = 0
     findings: list[AgenticFinding] = []
+    mcp: Optional[MCPResult] = None

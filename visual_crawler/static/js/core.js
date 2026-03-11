@@ -61,8 +61,12 @@ function ensureWebSocket() {
     appState.ws.onopen = () => resolve();
 
     appState.ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      handleEvent(msg);
+      try {
+        const msg = JSON.parse(e.data);
+        handleEvent(msg);
+      } catch (err) {
+        console.error('WS message error:', err, e.data?.slice?.(0, 200));
+      }
     };
 
     appState.ws.onclose = () => {
@@ -218,6 +222,7 @@ function newScan() {
   appState.capturedScreenshots = [];
   appState.subdomainResults = null;
   appState.securityInsights = {};
+  appState.jsResources = {};
   appState.openPorts = {};
   appState.agentic = {};
 

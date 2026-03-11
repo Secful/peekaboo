@@ -15,6 +15,12 @@ IMAGE_TAG="latest"
 DESIRED_COUNT="${DESIRED_COUNT:-1}"
 CONTAINER_PORT=8187
 
+# Resource tags for cost tracking and ownership
+TAG_ENVIRONMENT="sandbox"
+TAG_TEAM="Avishay"
+TAG_SERVICE="peekaboo"
+TAG_EMAIL="avishayb@salt.security"
+
 # Auth credentials (override via env vars)
 BASIC_AUTH_USER="${BASIC_AUTH_USER:-Shufuni}"
 BASIC_AUTH_PASS="${BASIC_AUTH_PASS:-l6XmIx08G21A3z4+vCqSZ5Jx}"
@@ -57,7 +63,9 @@ echo "▸ Step 1: ECR Repository"
 if aws ecr describe-repositories --repository-names "${ECR_REPO}" --region "${REGION}" &>/dev/null; then
   echo "  ✔ Repository ${ECR_REPO} already exists"
 else
-  aws ecr create-repository --repository-name "${ECR_REPO}" --region "${REGION}" --output text > /dev/null
+  aws ecr create-repository --repository-name "${ECR_REPO}" --region "${REGION}" \
+    --tags Key=Environment,Value="${TAG_ENVIRONMENT}" Key=Team,Value="${TAG_TEAM}" Key=Service,Value="${TAG_SERVICE}" Key=Email,Value="${TAG_EMAIL}" \
+    --output text > /dev/null
   echo "  ✔ Created repository ${ECR_REPO}"
 fi
 
@@ -124,6 +132,9 @@ get_or_create_sg() {
     sg_id=$(aws ec2 create-security-group \
       --group-name "${name}" --description "${desc}" \
       --vpc-id "${VPC_ID}" --query "GroupId" --output text --region "${REGION}")
+    aws ec2 create-tags --resources "${sg_id}" \
+      --tags Key=Environment,Value="${TAG_ENVIRONMENT}" Key=Team,Value="${TAG_TEAM}" Key=Service,Value="${TAG_SERVICE}" Key=Email,Value="${TAG_EMAIL}" \
+      --region "${REGION}"
     echo "  ✔ Created SG ${name} (${sg_id})"
   else
     echo "  ✔ SG ${name} already exists (${sg_id})"
@@ -167,7 +178,9 @@ create_role_if_missing() {
     echo "  ✔ Role ${role_name} already exists"
   else
     aws iam create-role --role-name "${role_name}" \
-      --assume-role-policy-document "${trust_policy}" --output text > /dev/null
+      --assume-role-policy-document "${trust_policy}" \
+      --tags Key=Environment,Value="${TAG_ENVIRONMENT}" Key=Team,Value="${TAG_TEAM}" Key=Service,Value="${TAG_SERVICE}" Key=Email,Value="${TAG_EMAIL}" \
+      --output text > /dev/null
     echo "  ✔ Created role ${role_name}"
   fi
 }
@@ -242,6 +255,9 @@ else
   aws s3api create-bucket --bucket "${SCAN_LOG_BUCKET}" --region "${REGION}" \
     $(if [[ "${REGION}" != "us-east-1" ]]; then echo "--create-bucket-configuration LocationConstraint=${REGION}"; fi) \
     > /dev/null
+  aws s3api put-bucket-tagging --bucket "${SCAN_LOG_BUCKET}" --tagging \
+    '{"TagSet":[{"Key":"Environment","Value":"'"${TAG_ENVIRONMENT}"'"},{"Key":"Team","Value":"'"${TAG_TEAM}"'"},{"Key":"Service","Value":"'"${TAG_SERVICE}"'"},{"Key":"Email","Value":"'"${TAG_EMAIL}"'"}]}' \
+    --region "${REGION}"
   echo "  ✔ Created bucket ${SCAN_LOG_BUCKET}"
 fi
 
@@ -252,7 +268,8 @@ if aws logs describe-log-groups --log-group-name-prefix "${LOG_GROUP}" --region 
     --query "logGroups[?logGroupName=='${LOG_GROUP}']" --output text | grep -q "${LOG_GROUP}"; then
   echo "  ✔ Log group ${LOG_GROUP} already exists"
 else
-  aws logs create-log-group --log-group-name "${LOG_GROUP}" --region "${REGION}"
+  aws logs create-log-group --log-group-name "${LOG_GROUP}" --region "${REGION}" \
+    --tags Environment="${TAG_ENVIRONMENT}",Team="${TAG_TEAM}",Service="${TAG_SERVICE}",Email="${TAG_EMAIL}"
   echo "  ✔ Created log group ${LOG_GROUP}"
 fi
 aws logs put-retention-policy --log-group-name "${LOG_GROUP}" \
@@ -275,6 +292,7 @@ if [[ -z "${TG_ARN}" || "${TG_ARN}" == "None" ]]; then
     --health-check-interval-seconds 30 \
     --healthy-threshold-count 2 \
     --unhealthy-threshold-count 3 \
+    --tags Key=Environment,Value="${TAG_ENVIRONMENT}" Key=Team,Value="${TAG_TEAM}" Key=Service,Value="${TAG_SERVICE}" Key=Email,Value="${TAG_EMAIL}" \
     --query "TargetGroups[0].TargetGroupArn" --output text --region "${REGION}")
   echo "  ✔ Created target group ${TG_NAME}"
 else
@@ -300,6 +318,7 @@ if [[ -z "${ALB_ARN}" || "${ALB_ARN}" == "None" ]]; then
     --security-groups "${ALB_SG_ID}" \
     --scheme internet-facing \
     --type application \
+    --tags Key=Environment,Value="${TAG_ENVIRONMENT}" Key=Team,Value="${TAG_TEAM}" Key=Service,Value="${TAG_SERVICE}" Key=Email,Value="${TAG_EMAIL}" \
     --query "LoadBalancers[0].LoadBalancerArn" --output text --region "${REGION}")
   echo "  ✔ Created ALB ${ALB_NAME}"
 
@@ -340,7 +359,9 @@ if aws ecs describe-clusters --clusters "${CLUSTER_NAME}" --region "${REGION}" \
     --query "clusters[?status=='ACTIVE'].clusterName" --output text | grep -q "${CLUSTER_NAME}"; then
   echo "  ✔ Cluster ${CLUSTER_NAME} already exists"
 else
-  aws ecs create-cluster --cluster-name "${CLUSTER_NAME}" --region "${REGION}" --output text > /dev/null
+  aws ecs create-cluster --cluster-name "${CLUSTER_NAME}" --region "${REGION}" \
+    --tags key=Environment,value="${TAG_ENVIRONMENT}" key=Team,value="${TAG_TEAM}" key=Service,value="${TAG_SERVICE}" key=Email,value="${TAG_EMAIL}" \
+    --output text > /dev/null
   echo "  ✔ Created cluster ${CLUSTER_NAME}"
 fi
 
@@ -413,6 +434,7 @@ else
     --launch-type FARGATE \
     --network-configuration "awsvpcConfiguration={subnets=[${SUBNET_JSON}],securityGroups=[\"${ECS_SG_ID}\"],assignPublicIp=ENABLED}" \
     --load-balancers "targetGroupArn=${TG_ARN},containerName=${PREFIX},containerPort=${CONTAINER_PORT}" \
+    --tags key=Environment,value="${TAG_ENVIRONMENT}" key=Team,value="${TAG_TEAM}" key=Service,value="${TAG_SERVICE}" key=Email,value="${TAG_EMAIL}" \
     --region "${REGION}" > /dev/null
   echo "  ✔ Created service ${SERVICE_NAME}"
 fi

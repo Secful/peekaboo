@@ -282,6 +282,13 @@ async def security_insights(request: SecurityInsightsRequest):
             except Exception:
                 logger.warning(f"Failed to push security insights to scan {scan_id}")
 
+    logger.warning(
+        f"security_insights for {request.subdomain}: "
+        f"pushed_to={pushed_to}, "
+        f"request.domain={request.domain!r}, "
+        f"client_domains={dict(_client_domains)}, "
+        f"subdomains_ready={dict(_subdomains_ready)}"
+    )
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
 
 
@@ -317,6 +324,13 @@ async def js_resources(request: JsResourcesRequest):
             except Exception:
                 logger.warning(f"Failed to push JS resources to scan {scan_id}")
 
+    logger.warning(
+        f"js_resources for {request.subdomain}: "
+        f"pushed_to={pushed_to}, "
+        f"request.domain={request.domain!r}, "
+        f"client_domains={dict(_client_domains)}, "
+        f"subdomains_ready={dict(_subdomains_ready)}"
+    )
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
 
 
@@ -354,7 +368,13 @@ async def open_ports(request: OpenPortsRequest):
             except Exception:
                 logger.warning(f"Failed to push open ports to scan {scan_id}")
 
-    logger.warning(f"Open ports for {request.subdomain}: pushed_to={pushed_to}, subdomains_ready={dict(_subdomains_ready)}, client_domains={dict(_client_domains)}")
+    logger.warning(
+        f"open_ports for {request.subdomain}: "
+        f"pushed_to={pushed_to}, "
+        f"request.domain={request.domain!r}, "
+        f"client_domains={dict(_client_domains)}, "
+        f"subdomains_ready={dict(_subdomains_ready)}"
+    )
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
 
 
@@ -374,6 +394,7 @@ async def agentic(request: AgenticRequest):
         "scan_duration_secs": request.scan_duration_secs,
         "findings_count": request.findings_count,
         "findings": [f.model_dump() for f in request.findings],
+        "mcp": request.mcp.model_dump() if request.mcp else None,
     }
 
     scanner_store.store_agentic(request.domain, request.subdomain, payload)
@@ -392,4 +413,11 @@ async def agentic(request: AgenticRequest):
             except Exception:
                 logger.warning(f"Failed to push agentic findings to scan {scan_id}")
 
+    logger.warning(
+        f"agentic for {request.subdomain}: "
+        f"pushed_to={pushed_to}, "
+        f"request.domain={request.domain!r}, "
+        f"client_domains={dict(_client_domains)}, "
+        f"subdomains_ready={dict(_subdomains_ready)}"
+    )
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})

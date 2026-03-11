@@ -32,13 +32,23 @@ def _load_proxy_config() -> Optional[dict]:
         secret = _get_proxy_secret()
         if not secret:
             return None
+
+        port = secret['port']
+        # Warn if the port looks like a CDP/WebSocket port rather than HTTP proxy
+        if str(port) == '9222':
+            print(f"⚠️ Proxy port is 9222 (CDP/WebSocket port). HTTP proxy usually uses 22225. "
+                  f"Local proxy fallback may fail with ERR_EMPTY_RESPONSE.", flush=True)
+            logger.warning("Proxy secret has port=9222 (Scraping Browser CDP port). "
+                           "If remote browser fails, local proxy fallback will also fail. "
+                           "Set port to 22225 in peekaboo/proxy secret for HTTP proxy support.")
+
         proxy_config = {
-            "server": f"http://{secret['host']}:{secret['port']}",
+            "server": f"http://{secret['host']}:{port}",
             "username": secret['username'],
             "password": secret['password'],
         }
-        print(f"✅ Single proxy loaded from Secrets Manager: {secret['host']}:{secret['port']}", flush=True)
-        logger.info(f"Proxy loaded from Secrets Manager: {secret['host']}:{secret['port']}")
+        print(f"✅ Single proxy loaded from Secrets Manager: {secret['host']}:{port}", flush=True)
+        logger.info(f"Proxy loaded from Secrets Manager: {secret['host']}:{port}")
         return proxy_config
     except Exception as e:
         print(f"⚠️ No single proxy configured: {e}", flush=True)
@@ -154,8 +164,9 @@ def _load_scraping_browser_url() -> Optional[str]:
         # Construct WebSocket URL for Chrome DevTools Protocol
         url = f"wss://brd-customer-{customer_id}-zone-{zone}:{password}@brd.superproxy.io:9222"
 
-        print(f"🌐 BrightData Scraping Browser enabled (zone: {zone})", flush=True)
-        logger.info(f"BrightData Scraping Browser enabled with zone: {zone}")
+        print(f"🌐 BrightData Scraping Browser enabled (zone: {zone}, customer: {customer_id})", flush=True)
+        logger.info(f"BrightData Scraping Browser enabled — zone: {zone}, customer: {customer_id}")
+        logger.info(f"Scraping Browser WSS URL: wss://brd-customer-{customer_id}-zone-{zone}:***@brd.superproxy.io:9222")
         return url
 
     except Exception as e:

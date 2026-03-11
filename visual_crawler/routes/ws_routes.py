@@ -178,6 +178,7 @@ async def websocket_endpoint(ws: WebSocket):
             scan_started_at = datetime.now(timezone.utc)
 
             # Register this scan as active and notify all clients
+            _subdomains_ready[scan_id] = False
             _active_scans[scan_id] = domain
             _client_domains[scan_id] = domain
             await _broadcast_active_scans()
