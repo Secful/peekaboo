@@ -83,7 +83,7 @@ function ensureWebSocket() {
       // Check for incomplete scan and warn user
       const queueSize = parseInt(document.getElementById('statQueue').textContent) || 0;
       if (queueSize > 0) {
-        addLog('⚠️', `Scan incomplete - ${queueSize} URLs remaining in queue`, 'warning');
+        addLog('', `Scan incomplete - ${queueSize} URLs remaining in queue`, 'warning');
       }
 
       // Clear stale queue stats
@@ -95,7 +95,7 @@ function ensureWebSocket() {
 
     appState.ws.onerror = (err) => {
       console.error('WebSocket error:', err);
-      addLog('⚠️', 'Connection error', 'error');
+      addLog('', 'Connection error', 'error');
       reject(err);
     };
   });
@@ -149,7 +149,7 @@ async function startScan(event) {
   try {
     await ensureWebSocket();
     document.getElementById('statusText').textContent = 'Starting scan...';
-    addLog('ℹ️', `Scan started for ${params.domain}`, 'page');
+    addLog('', `Scan started for ${params.domain}`, 'page');
     appState.ws.send(JSON.stringify(params));
   } catch (err) {
     document.getElementById('statusText').textContent = 'Connection failed';
@@ -166,7 +166,7 @@ function togglePause() {
     btn.style.background = 'var(--green)';
     btn.style.color = 'var(--navy)';
     statusText.textContent = 'Paused (scan running in background)';
-    addLog('⏸', 'UI updates paused - scan continues in background', 'info');
+    addLog('', 'UI updates paused - scan continues in background', 'info');
   } else {
     btn.innerHTML = 'Pause';
     btn.style.background = '';
@@ -184,7 +184,7 @@ function togglePause() {
     updateMethodFilters();
     applyFilters();
 
-    addLog('▶️', `UI updates resumed - displaying ${appState.endpoints.length} endpoints`, 'info');
+    addLog('', `UI updates resumed - displaying ${appState.endpoints.length} endpoints`, 'info');
   }
 }
 
@@ -206,7 +206,7 @@ function stopScan() {
   document.getElementById('stopBtn').classList.add('hidden');
   document.getElementById('newScanBtn').classList.remove('hidden');
   document.getElementById('domainIndicator').classList.add('hidden');
-  addLog('⏹', 'Scan terminated by user', '');
+  addLog('', 'Scan terminated by user', '');
 }
 
 function newScan() {
@@ -311,12 +311,12 @@ function handleEvent(msg) {
   switch(msg.type) {
     case 'status':
       if (!appState.uiPaused) {
-        addLog('ℹ️', msg.message, '');
+        addLog('', msg.message, '');
       }
       break;
 
     case 'error':
-      addLog('⚠️', msg.message, 'error');
+      addLog('', msg.message, 'error');
       document.getElementById('statusText').textContent = 'Error';
       break;
 
@@ -326,7 +326,7 @@ function handleEvent(msg) {
         document.getElementById('statQueue').textContent = msg.pages_remaining;
         updateEndpointCounter();
         document.getElementById('currentUrl').textContent = msg.url;
-        addLog('📄', `Crawling: ${shortenUrl(msg.url)}`, 'page');
+        addLog('', `Crawling: ${shortenUrl(msg.url)}`, 'page');
       }
       break;
 
@@ -364,7 +364,7 @@ function handleEvent(msg) {
         document.getElementById('emptyState').style.display = 'none';
         addEndpointRow(msg, true);
         updateMethodFilters();
-        addLog('🎯', `${msg.method} ${msg.host}${msg.path}`, 'endpoint');
+        addLog('', `${msg.method} ${msg.host}${msg.path}`, 'endpoint');
       } else {
         appState.endpoints.push(msg);
         appState.hosts.add(msg.host);
@@ -387,7 +387,7 @@ function handleEvent(msg) {
           <div class="loading-text">Discovering subdomains...</div>
           <div class="loading-subtext">This may take up to 3 minutes</div>
         </div>`;
-      addLog('🌐', 'Subdomain discovery started...', '');
+      addLog('', 'Subdomain discovery started...', '');
       break;
 
     case 'subdomains':
@@ -396,7 +396,7 @@ function handleEvent(msg) {
       renderSubdomainTable(msg.data);
       {
         const subs = normalizeSubdomains(msg.data);
-        addLog('🌐', `Subdomain discovery complete: ${subs.length} found`, 'endpoint');
+        addLog('', `Subdomain discovery complete: ${subs.length} found`, 'endpoint');
       }
       break;
 
@@ -408,16 +408,16 @@ function handleEvent(msg) {
           ${escHtml(msg.message)}
           <button class="retry-subdomains-btn" onclick="retrySubdomains()">Retry</button>
         </div>`;
-      addLog('⚠️', msg.message, 'error');
+      addLog('', msg.message, 'error');
       break;
 
     case 'security_insights':
       appState.securityInsights[msg.subdomain] = msg;
       applySecurityPill(msg.subdomain);
       if (msg.findings_count > 0) {
-        addLog('🛡️', `Security findings for ${msg.subdomain}: ${msg.findings_count} findings`, 'error');
+        addLog('', `Security findings for ${msg.subdomain}: ${msg.findings_count} findings`, 'error');
       } else {
-        addLog('🛡️', `${msg.subdomain}: security scan clean`, '');
+        addLog('', `${msg.subdomain}: security scan clean`, '');
       }
       break;
 
@@ -425,9 +425,9 @@ function handleEvent(msg) {
       appState.jsResources[msg.subdomain] = msg;
       applyJsResources(msg.subdomain, msg.urls || []);
       if (msg.urls_count > 0) {
-        addLog('📦', `JS resources for ${msg.subdomain}: ${msg.urls_count} files`, '');
+        addLog('', `JS resources for ${msg.subdomain}: ${msg.urls_count} files`, '');
       } else {
-        addLog('📦', `${msg.subdomain}: no JS resources found`, '');
+        addLog('', `${msg.subdomain}: no JS resources found`, '');
       }
       break;
 
@@ -435,7 +435,7 @@ function handleEvent(msg) {
       appState.openPorts[msg.subdomain] = msg;
       applyOpenPortsPill(msg.subdomain);
       if (msg.open_ports_count > 0) {
-        addLog('🔌', `Open ports for ${msg.subdomain}: ${msg.open_ports_count} ports`, '');
+        addLog('', `Open ports for ${msg.subdomain}: ${msg.open_ports_count} ports`, '');
       }
       break;
 
@@ -443,7 +443,7 @@ function handleEvent(msg) {
       appState.agentic[msg.subdomain] = msg;
       applyAgenticPill(msg.subdomain);
       if (msg.findings_count > 0) {
-        addLog('🤖', `Agentic findings for ${msg.subdomain}: ${msg.findings_count} findings`, '');
+        addLog('', `Agentic findings for ${msg.subdomain}: ${msg.findings_count} findings`, '');
       }
       break;
 
@@ -451,12 +451,12 @@ function handleEvent(msg) {
       appState.extractedApis[msg.subdomain] = msg;
       applyExtractedApis(msg.subdomain);
       if (msg.findings_count > 0) {
-        addLog('🔬', `Extracted APIs for ${msg.subdomain}: ${msg.findings_count} endpoints`, '');
+        addLog('', `Extracted APIs for ${msg.subdomain}: ${msg.findings_count} endpoints`, '');
       }
       break;
 
     case 'crawl_error':
-      addLog('⚠️', `Error on ${shortenUrl(msg.url)}: ${msg.error}`, 'error');
+      addLog('', `Error on ${shortenUrl(msg.url)}: ${msg.error}`, 'error');
       break;
 
     case 'crawl_end':
@@ -479,7 +479,7 @@ function handleEvent(msg) {
       document.getElementById('newScanBtn').classList.remove('hidden');
       document.getElementById('statQueue').textContent = '0';
       const skippedMsg = msg.pages_skipped > 0 ? ` (${msg.pages_skipped} queued pages skipped)` : '';
-      addLog('✅', `Scan complete. ${msg.total_endpoints} endpoints across ${msg.pages_visited} pages.${skippedMsg}`, '');
+      addLog('', `Scan complete. ${msg.total_endpoints} endpoints across ${msg.pages_visited} pages.${skippedMsg}`, '');
 
       if (appState.uiPaused) {
         appState.uiPaused = false;
@@ -509,7 +509,7 @@ function handleEvent(msg) {
       showScanSummary(msg);
 
       if (!appState.subdomainResults) {
-        addLog('🌐', 'Subdomain discovery still in progress...', '');
+        addLog('', 'Subdomain discovery still in progress...', '');
       }
 
       const scanDuration = appState.scanStartTime ? (Date.now() - appState.scanStartTime) / 1000 : Infinity;

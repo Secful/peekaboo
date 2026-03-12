@@ -76,7 +76,7 @@ function addEndpointRow(ep, flash=false) {
     <td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem;"></td>
     <td><span class="badge ${badgeClass}" style="cursor:help;" title="${methodTitle}">${ep.method}</span></td>
     <td class="path-cell" title="${escHtml(ep.path)}">${typeBadge}${escHtml(trimPath(ep.path))}${pathSuffixBadges}</td>
-    <td class="host-cell">${escHtml(ep.host)}</td>
+    <td class="host-cell" title="${escHtml(ep.host)}">${escHtml(ep.host)}</td>
     <td class="${statusClass}" style="font-weight:600;font-size:0.8rem;cursor:help;" title="${statusTitle}">${statusDisplay}</td>
     <td class="reason-cell">${escHtml(ep.detection_reason)}</td>
   `;
