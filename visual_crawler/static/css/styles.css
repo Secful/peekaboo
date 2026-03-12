@@ -174,17 +174,18 @@
     display:flex; gap:0.5rem; align-items:center;
   }
   .control-btn {
-    padding:0.4rem 0.8rem; border-radius:6px; border:1px solid var(--border);
-    background:var(--surface2); color:var(--text); cursor:pointer;
-    font-size:0.8rem; font-weight:600; transition:all 0.2s;
+    padding:0.45rem 1.1rem; border-radius:20px; border:1px solid transparent;
+    background:rgba(0,0,0,0.05); color:#4b5563; cursor:pointer;
+    font-size:0.8rem; font-weight:500; transition:all 0.15s;
     display:flex; align-items:center; gap:0.35rem;
   }
   .control-btn:hover {
-    border-color:var(--purple); background:var(--purple); color:#fff;
-    box-shadow: 0 4px 12px var(--shadow);
+    background:rgba(0,0,0,0.1); color:#1f2937;
   }
-  .control-btn.stop { border-color:var(--delete); color:var(--delete); }
-  .control-btn.stop:hover { background:var(--delete); color:#fff; }
+  .control-btn-danger { color:#dc2626; }
+  .control-btn-danger:hover {
+    background:rgba(220,38,38,0.08); color:#b91c1c;
+  }
   .control-btn.hidden { display:none; }
 
   /* Left panel */
@@ -353,11 +354,11 @@
     flex:1; display:flex; flex-direction:column; justify-content:center; gap:0;
   }
   .create-report-btn {
-    margin-top:0.5rem; padding:0.4rem 1rem; border:none; border-radius:6px;
-    background:var(--green); color:#ffffff; font-weight:600; font-size:0.8rem;
-    cursor:pointer; transition:opacity 0.2s;
+    margin-top:0.5rem; padding:0.45rem 1.1rem; border:1px solid transparent; border-radius:20px;
+    background:rgba(0,0,0,0.05); color:#4b5563; font-weight:500; font-size:0.8rem;
+    cursor:pointer; transition:all 0.15s;
   }
-  .create-report-btn:hover { opacity:0.85; }
+  .create-report-btn:hover { background:rgba(0,0,0,0.1); color:#1f2937; }
   .preview-info-table {
     width:100%; border-collapse:collapse;
   }
@@ -406,32 +407,31 @@
     outline: none;
   }
   .filter-btn {
-    padding:0.3rem 0.6rem; border-radius:5px; border:1px solid var(--border);
-    background:var(--surface2); color:var(--text-muted); cursor:pointer;
-    font-size:0.72rem; font-weight:600; transition:all 0.2s;
+    padding:0.3rem 0.7rem; border-radius:14px; border:1px solid transparent;
+    background:rgba(0,0,0,0.05); color:#6b7280; cursor:pointer;
+    font-size:0.72rem; font-weight:500; transition:all 0.15s;
   }
   .filter-btn:hover {
-    border-color:var(--purple); color:var(--text);
-    background:rgba(74,29,150,0.1);
+    background:rgba(0,0,0,0.1); color:#374151;
   }
   .filter-btn.active {
-    background:var(--purple); color:#fff; border-color:var(--purple);
-    box-shadow: 0 2px 8px var(--shadow);
+    background:#374151; color:#fff; border-color:transparent;
+    box-shadow:none;
   }
   .filter-section {
     display:flex; align-items:center; gap:0.5rem; padding:0.25rem 0;
   }
   .filter-label {
     font-size:0.7rem;
-    color: var(--purple);
-    background: rgba(74, 29, 150, 0.08);
-    padding: 0.3rem 0.6rem;
-    border-radius: 4px;
+    color:#6b7280;
+    background:transparent;
+    padding:0.3rem 0;
+    border-radius:0;
     text-transform:uppercase;
     letter-spacing:0.05em;
-    font-weight:700;
+    font-weight:600;
     white-space:nowrap;
-    border: 1px solid rgba(74, 29, 150, 0.15);
+    border:none;
   }
   .filter-divider {
     width:1px; height:20px; background:var(--border); margin:0 0.25rem;
@@ -600,18 +600,17 @@
   .drawer-close:hover { color: var(--text); }
   .drawer-content { padding: 1.5rem; }
   .generate-description-btn {
-    width: 100%; padding: 0.75rem 1rem; margin-top: 1rem;
-    background: linear-gradient(135deg, var(--purple), var(--purple-light));
-    border: none; border-radius: 8px; color: #ffffff;
-    font-weight: 600; font-size: 0.9rem; cursor: pointer;
-    transition: all 0.2s; box-shadow: 0 4px 12px var(--shadow);
+    width: 100%; padding: 0.6rem 1rem; margin-top: 1rem;
+    background: rgba(0,0,0,0.05); border: 1px solid transparent;
+    border-radius: 20px; color: #4b5563;
+    font-weight: 500; font-size: 0.85rem; cursor: pointer;
+    transition: all 0.15s;
   }
   .generate-description-btn:hover {
-    transform: translateY(-1px); box-shadow: 0 6px 16px var(--shadow);
-    background: linear-gradient(135deg, var(--purple-light), var(--purple));
+    background: rgba(0,0,0,0.1); color: #1f2937;
   }
   .generate-description-btn:disabled {
-    opacity: 0.5; cursor: not-allowed; transform: none;
+    opacity: 0.5; cursor: not-allowed;
   }
   .api-description-section {
     margin-top: 1.5rem; padding: 1rem; background: var(--surface2);
@@ -752,21 +751,20 @@
     display: flex; gap: 1rem; justify-content: flex-end;
   }
   .summary-btn {
-    padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600;
-    font-size: 0.9rem; cursor: pointer; transition: all 0.2s;
+    padding: 0.5rem 1.2rem; border-radius: 20px; font-weight: 500;
+    font-size: 0.85rem; cursor: pointer; transition: all 0.15s;
+    border: 1px solid transparent; background: rgba(0,0,0,0.05); color: #4b5563;
+  }
+  .summary-btn:hover {
+    background: rgba(0,0,0,0.1); color: #1f2937;
   }
   .summary-btn-primary {
-    background: linear-gradient(135deg, var(--purple), var(--purple-light));
-    border: none; color: #ffffff;
   }
   .summary-btn-primary:hover {
-    transform: translateY(-1px); box-shadow: 0 6px 16px var(--shadow);
   }
   .summary-btn-secondary {
-    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
   }
   .summary-btn-secondary:hover {
-    background: var(--surface);
   }
 
   /* About Button and Modal */
@@ -794,19 +792,6 @@
   }
   .about-content p {
     margin-bottom: 0.75rem;
-  }
-  .about-emoji {
-    font-size: 2rem; text-align: center; margin: 1rem 0;
-  }
-  .header-eyes {
-    font-size: 2rem !important;
-    margin-left: 0.75rem;
-    -webkit-background-clip: border-box !important;
-    -webkit-text-fill-color: currentColor !important;
-    background-clip: border-box !important;
-    background: transparent !important;
-    letter-spacing: 0 !important;
-    color: inherit !important;
   }
   .detail-section {
     margin-bottom: 1.5rem; padding-bottom: 1.5rem;
@@ -1560,6 +1545,11 @@
   .security-pill-clean {
     background: rgba(5, 150, 105, 0.08); color: var(--green);
     border: 1px solid rgba(5, 150, 105, 0.25);
+    cursor: default;
+  }
+  .security-pill-loading {
+    background: rgba(107, 114, 128, 0.08); color: var(--text-muted);
+    border: 1px solid rgba(107, 114, 128, 0.25);
     cursor: default;
   }
 

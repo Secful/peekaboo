@@ -29,7 +29,7 @@ function exportSummaryToHTML() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Peekaboo API Discovery Report - ${appState.targetDomain}</title>
+  <title>Salt Security — API Discovery Report - ${appState.targetDomain}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
 
@@ -56,7 +56,7 @@ function exportSummaryToHTML() {
       text-align: center;
       margin-bottom: 3rem;
       padding: 2.5rem 2rem;
-      background: linear-gradient(135deg, rgba(74, 29, 150, 0.06), rgba(5, 150, 105, 0.04));
+      background: #f9fafb;
       border-radius: 12px;
       border: 1px solid #e5e7eb;
     }
@@ -83,17 +83,10 @@ function exportSummaryToHTML() {
       letter-spacing: -0.02em;
     }
 
-    .header .report-subtitle {
-      font-size: 0.95rem;
-      color: #6b7280;
-      margin-bottom: 2rem;
-      font-weight: 500;
-    }
-
     .header .target-info {
       display: inline-block;
-      background: rgba(74, 29, 150, 0.06);
-      border: 1px solid rgba(74, 29, 150, 0.2);
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
       border-radius: 8px;
       padding: 1rem 2rem;
       margin: 1rem 0;
@@ -195,13 +188,13 @@ function exportSummaryToHTML() {
     }
 
     .domain-tag.subdomain {
-      border-color: #4a1d96;
-      background: linear-gradient(135deg, rgba(74, 29, 150, 0.1), rgba(74, 29, 150, 0.05));
+      border-color: #d1d5db;
+      background: #f3f4f6;
     }
 
     .domain-tag.external {
-      border-color: #d97706;
-      background: linear-gradient(135deg, rgba(217, 119, 6, 0.06), rgba(217, 119, 6, 0.03));
+      border-color: #d1d5db;
+      background: #f3f4f6;
     }
 
     .table-container {
@@ -239,7 +232,7 @@ function exportSummaryToHTML() {
     }
 
     tbody tr:hover {
-      background: rgba(74, 29, 150, 0.04);
+      background: #f9fafb;
     }
 
     td {
@@ -309,20 +302,20 @@ function exportSummaryToHTML() {
     .contact-btn {
       display: inline-block;
       margin-top: 1.5rem;
-      padding: 0.75rem 2rem;
-      background: linear-gradient(135deg, #4a1d96, #6b2fc7);
-      color: #ffffff;
+      padding: 0.6rem 1.8rem;
+      background: rgba(0,0,0,0.05);
+      color: #4b5563;
       text-decoration: none;
-      border-radius: 8px;
-      font-weight: 700;
-      font-size: 0.95rem;
-      transition: transform 0.2s, box-shadow 0.2s;
-      box-shadow: 0 4px 12px rgba(74, 29, 150, 0.2);
+      border-radius: 20px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      transition: all 0.15s;
+      border: 1px solid transparent;
     }
 
     .contact-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(74, 29, 150, 0.3);
+      background: rgba(0,0,0,0.1);
+      color: #1f2937;
     }
 
     .filter-controls {
@@ -375,38 +368,38 @@ function exportSummaryToHTML() {
     }
 
     .filter-btn {
-      padding: 0.5rem 1rem;
-      background: #ffffff;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
-      color: #1f2937;
+      padding: 0.4rem 0.9rem;
+      background: rgba(0,0,0,0.05);
+      border: 1px solid transparent;
+      border-radius: 14px;
+      color: #6b7280;
       font-size: 0.8rem;
-      font-weight: 600;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.15s;
       text-transform: uppercase;
     }
 
     .filter-btn:hover {
-      border-color: #4a1d96;
-      background: rgba(74, 29, 150, 0.05);
+      background: rgba(0,0,0,0.1);
+      color: #1f2937;
     }
 
     .filter-btn.active {
-      background: #4a1d96;
+      background: #374151;
       color: #ffffff;
-      border-color: #4a1d96;
+      border-color: transparent;
     }
 
     .filter-btn.clear {
-      background: #dc2626;
-      border-color: #dc2626;
-      color: #ffffff;
+      background: rgba(0,0,0,0.05);
+      border-color: transparent;
+      color: #dc2626;
     }
 
     .filter-btn.clear:hover {
-      background: #b91c1c;
-      border-color: #b91c1c;
+      background: rgba(220,38,38,0.08);
+      color: #b91c1c;
     }
 
     .results-count {
@@ -523,14 +516,14 @@ function exportSummaryToHTML() {
       word-break: break-all;
       font-weight: 500;
       text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-      border-top: 2px solid rgba(74, 29, 150, 0.3);
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
     }
 
     .carousel-nav {
       position: absolute;
       top: 50%;
       transform: translateY(-50%);
-      background: rgba(74, 29, 150, 0.8);
+      background: rgba(0, 0, 0, 0.5);
       border: none;
       color: #ffffff;
       font-size: 1.5rem;
@@ -538,7 +531,7 @@ function exportSummaryToHTML() {
       height: 3rem;
       border-radius: 50%;
       cursor: pointer;
-      transition: all 0.3s;
+      transition: all 0.2s;
       z-index: 10;
       display: flex;
       align-items: center;
@@ -546,9 +539,9 @@ function exportSummaryToHTML() {
     }
 
     .carousel-nav:hover {
-      background: rgba(74, 29, 150, 0.95);
+      background: rgba(0, 0, 0, 0.7);
       color: #ffffff;
-      transform: translateY(-50%) scale(1.1);
+      transform: translateY(-50%) scale(1.05);
     }
 
     .carousel-nav.prev {
@@ -567,23 +560,22 @@ function exportSummaryToHTML() {
     }
 
     .carousel-dot {
-      width: 0.75rem;
-      height: 0.75rem;
+      width: 0.6rem;
+      height: 0.6rem;
       border-radius: 50%;
-      background: #e5e7eb;
-      border: 2px solid #4a1d96;
+      background: #d1d5db;
+      border: none;
       cursor: pointer;
-      transition: all 0.3s;
+      transition: all 0.2s;
     }
 
     .carousel-dot.active {
-      background: #4a1d96;
-      transform: scale(1.3);
+      background: #4b5563;
+      transform: scale(1.2);
     }
 
     .carousel-dot:hover {
-      background: #6b2fc7;
-      transform: scale(1.2);
+      background: #6b7280;
     }
 
     .carousel-counter {
@@ -595,44 +587,42 @@ function exportSummaryToHTML() {
 
     .cta-section {
       margin: 3rem 0;
-      padding: 3rem 2rem;
-      background: linear-gradient(135deg, rgba(74, 29, 150, 0.06), rgba(5, 150, 105, 0.04));
-      border-radius: 16px;
-      border: 2px solid #4a1d96;
+      padding: 2.5rem 2rem;
+      background: #f9fafb;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
       text-align: center;
     }
 
     .cta-title {
-      font-size: 2rem;
+      font-size: 1.5rem;
       font-weight: 700;
       margin-bottom: 1rem;
-      background: linear-gradient(135deg, #059669, #4a1d96);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: #1f2937;
     }
 
     .cta-subtitle {
-      font-size: 1.1rem;
+      font-size: 1rem;
       color: #6b7280;
       margin-bottom: 2rem;
     }
 
     .cta-button {
       display: inline-block;
-      padding: 1rem 2.5rem;
-      background: linear-gradient(135deg, #4a1d96, #6b2fc7);
-      color: #ffffff;
+      padding: 0.6rem 1.8rem;
+      background: rgba(0,0,0,0.05);
+      color: #4b5563;
       text-decoration: none;
-      border-radius: 12px;
-      font-weight: 700;
-      font-size: 1.1rem;
-      transition: transform 0.2s, box-shadow 0.2s;
-      box-shadow: 0 4px 16px rgba(74, 29, 150, 0.2);
+      border-radius: 20px;
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: all 0.15s;
+      border: 1px solid transparent;
     }
 
     .cta-button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(74, 29, 150, 0.3);
+      background: rgba(0,0,0,0.1);
+      color: #1f2937;
     }
 
     .hidden {
@@ -683,8 +673,7 @@ function exportSummaryToHTML() {
         </svg>
       </div>
 
-      <div class="report-title">\u{1F440} Peekaboo API Discovery Report</div>
-      <div class="report-subtitle">Revealing Hidden APIs in Plain Sight</div>
+      <div class="report-title">API Discovery Report</div>
 
       <div class="target-info">
         <div class="target-label">Target Domain</div>
@@ -697,7 +686,7 @@ function exportSummaryToHTML() {
     ${appState.capturedScreenshots.length > 0 ? `
     <div class="screenshot-section">
       <div class="screenshot-header" style="cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center;" onclick="toggleScreenshots()">
-        <span>\u{1F4F8} Application Screenshots (${appState.capturedScreenshots.length})</span>
+        <span>Application Screenshots (${appState.capturedScreenshots.length})</span>
         <span id="screenshotToggleIcon" style="font-size:1.2rem;transition:transform 0.3s ease;">\u25BC</span>
       </div>
       <div id="screenshotCarouselContent">
@@ -735,7 +724,7 @@ function exportSummaryToHTML() {
     ` : ''}
 
     <div class="section">
-      <div class="section-title">\u{1F4CA} Scan Summary</div>
+      <div class="section-title">Scan Summary</div>
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-label">Total Endpoints</div>
@@ -763,7 +752,7 @@ function exportSummaryToHTML() {
     </div>
 
     <div class="section">
-      <div class="section-title">\u{1F3E0} Target & Subdomains (<span id="subdomainCount">${subdomains.length}</span>)</div>
+      <div class="section-title">Target & Subdomains (<span id="subdomainCount">${subdomains.length}</span>)</div>
       ${subdomains.length > 0 ? `
         <div class="domain-search">
           <input type="text" class="search-box" id="subdomainSearch" placeholder="Search subdomains..." onkeyup="filterDomains('subdomain')">
@@ -775,7 +764,7 @@ function exportSummaryToHTML() {
     </div>
 
     <div class="section">
-      <div class="section-title">\u{1F310} External Domains (<span id="externalCount">${externals.length}</span>)</div>
+      <div class="section-title">External Domains (<span id="externalCount">${externals.length}</span>)</div>
       ${externals.length > 0 ? `
         <div class="domain-search">
           <input type="text" class="search-box" id="externalSearch" placeholder="Search external domains..." onkeyup="filterDomains('external')">
@@ -795,7 +784,7 @@ function exportSummaryToHTML() {
 
     ${appState.detectedTechnologies ? `
     <div class="section">
-      <div class="section-title">\u{1F527} Detected Technologies</div>
+      <div class="section-title">Detected Technologies</div>
 
       ${(() => {
         const tech = appState.detectedTechnologies;
@@ -816,7 +805,7 @@ function exportSummaryToHTML() {
           html += `
           <div style="margin-bottom:2rem;">
             <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
-              <span>\u{1F4BB}</span> Server-Side Languages
+              Server-Side Languages
             </h3>
             <div class="stats-grid">
               ${Object.entries(tech.server_technologies).map(([name, data]) => `
@@ -838,7 +827,7 @@ function exportSummaryToHTML() {
           html += `
           <div style="margin-bottom:2rem;">
             <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
-              <span>\u{1F310}</span> Web Servers
+              Web Servers
             </h3>
             <div class="stats-grid">
               ${Object.entries(tech.web_servers).map(([name, data]) => `
@@ -860,7 +849,7 @@ function exportSummaryToHTML() {
           html += `
           <div style="margin-bottom:2rem;">
             <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
-              <span>\u26A1</span> Content Delivery Networks
+              Content Delivery Networks
             </h3>
             <div class="stats-grid">
               ${Object.entries(tech.cdns).map(([name, data]) => `
@@ -879,7 +868,7 @@ function exportSummaryToHTML() {
           html += `
           <div style="margin-bottom:2rem;">
             <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
-              <span>\u{1F3D7}\uFE0F</span> Frameworks & Libraries
+              Frameworks & Libraries
             </h3>
             <div class="stats-grid">
               ${Object.entries(tech.frameworks).map(([name, data]) => `
@@ -898,7 +887,7 @@ function exportSummaryToHTML() {
           html += `
           <div style="margin-bottom:1rem;">
             <h3 style="font-size:1.1rem;color:#4a1d96;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
-              <span>\u2699\uFE0F</span> Other Technologies
+              Other Technologies
             </h3>
             <div class="stats-grid">
               ${Object.entries(tech.other_technologies).map(([name, data]) => `
@@ -933,7 +922,7 @@ function exportSummaryToHTML() {
 
       return previewEndpoints.length > 0 ? `
     <div class="section">
-      <div class="section-title">\u2705 Confirmed API Endpoints (Showing ${previewEndpoints.length} of ${domainEndpoints.length})</div>
+      <div class="section-title">Confirmed API Endpoints (Showing ${previewEndpoints.length} of ${domainEndpoints.length})</div>
 
       <div class="table-container">
         <table>
@@ -969,13 +958,13 @@ function exportSummaryToHTML() {
 
       ${hasMore ? `
       <div class="cta-section">
-        <div class="cta-title">\u{1F50D} Wanna See More?</div>
+        <div class="cta-title">Discover More Endpoints</div>
         <div class="cta-subtitle">
           This report shows a preview of ${previewEndpoints.length} API endpoints.<br>
           ${domainEndpoints.length - previewEndpoints.length} more endpoints discovered for ${appState.targetDomain}
         </div>
         <a href="https://salt.security/contact-us" target="_blank" class="cta-button">
-          \u{1F4E7} Contact Salt Security
+          Contact Salt Security
         </a>
       </div>
       ` : ''}
@@ -985,7 +974,7 @@ function exportSummaryToHTML() {
 
     ${maybeApiEndpoints.length > 0 ? `
     <div class="section">
-      <div class="section-title">\u26A0\uFE0F Potential API Endpoints (<span id="maybeCount">${maybeApiEndpoints.length}</span>)</div>
+      <div class="section-title">Potential API Endpoints (<span id="maybeCount">${maybeApiEndpoints.length}</span>)</div>
 
       <div class="filter-controls">
         <div class="filter-row">
@@ -1056,7 +1045,7 @@ function exportSummaryToHTML() {
       const liveCount = subs.filter(s => s.status_code && s.status_code >= 200 && s.status_code < 400).length;
       return `
     <div class="section">
-      <div class="section-title">\u{1F310} Subdomain Discovery (${subs.length} found, ${liveCount} live)</div>
+      <div class="section-title">Subdomain Discovery (${subs.length} found, ${liveCount} live)</div>
       <div class="table-container">
         <table>
           <thead>
@@ -1110,11 +1099,11 @@ function exportSummaryToHTML() {
     })()}
 
     <div class="footer">
-      <p>Generated by <strong>Peekaboo</strong> - Visual API Discovery Scanner</p>
-      <p>\u{1F510} <strong>Salt Security</strong> \u2022 ${scanDate}</p>
+      <p>Generated by <strong>Salt Security</strong> API Discovery</p>
+      <p><strong>Salt Security</strong> &bull; ${scanDate}</p>
       <p style="margin-top: 0.5rem; font-size: 0.85rem;">Protecting Modern Applications from API Attacks</p>
       <a href="https://salt.security/contact-us" target="_blank" class="contact-btn">
-        \u{1F4E7} Contact Salt Security
+        Contact Salt Security
       </a>
       <p style="margin-top: 1rem; font-size: 0.8rem;">
         Learn how Salt Security can help protect your digital assets
@@ -1342,7 +1331,7 @@ function exportSummaryToHTML() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `peekaboo-report-${appState.targetDomain}-${new Date().toISOString().split('T')[0]}.html`;
+  a.download = `salt-api-discovery-${appState.targetDomain}-${new Date().toISOString().split('T')[0]}.html`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

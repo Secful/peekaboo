@@ -143,13 +143,13 @@ async function startScan(event) {
 
   // Show domain indicator
   const domainIndicator = document.getElementById('domainIndicator');
-  domainIndicator.textContent = `🎯 ${appState.targetDomain}`;
+  domainIndicator.textContent = appState.targetDomain;
   domainIndicator.classList.remove('hidden');
 
   try {
     await ensureWebSocket();
     document.getElementById('statusText').textContent = 'Starting scan...';
-    addLog('🚀', `Starting scan of ${params.domain}...`, 'page');
+    addLog('ℹ️', `Scan started for ${params.domain}`, 'page');
     appState.ws.send(JSON.stringify(params));
   } catch (err) {
     document.getElementById('statusText').textContent = 'Connection failed';
@@ -162,13 +162,13 @@ function togglePause() {
   const statusText = document.getElementById('statusText');
 
   if (appState.uiPaused) {
-    btn.innerHTML = '▶️ Resume Scan';
+    btn.innerHTML = 'Resume';
     btn.style.background = 'var(--green)';
     btn.style.color = 'var(--navy)';
     statusText.textContent = 'Paused (scan running in background)';
     addLog('⏸', 'UI updates paused - scan continues in background', 'info');
   } else {
-    btn.innerHTML = '⏸ Pause Scan';
+    btn.innerHTML = 'Pause';
     btn.style.background = '';
     btn.style.color = '';
     statusText.textContent = 'Scanning...';
@@ -238,7 +238,7 @@ function newScan() {
 
   // Reset pause button
   const pauseBtn = document.getElementById('pauseBtn');
-  pauseBtn.innerHTML = '⏸ Pause Scan';
+  pauseBtn.innerHTML = 'Pause';
   pauseBtn.style.background = '';
   pauseBtn.style.color = '';
 
@@ -516,6 +516,9 @@ function handleEvent(msg) {
       if (scanDuration < 60) {
         switchView('subdomains');
       }
+
+      // Resolve any remaining security spinners after a grace period
+      setTimeout(resolveStaleSecuritySpinners, 90000);
       break;
   }
 }

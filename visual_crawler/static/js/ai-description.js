@@ -83,7 +83,7 @@ async function generateDescription(method, path, host, responseStatus) {
       </div>
     `;
     btn.disabled = false;
-    btn.textContent = '📋 Generate API Description';
+    btn.textContent = 'Generate API Description';
   }
 }
 

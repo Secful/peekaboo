@@ -17,22 +17,13 @@ function updateEndpointCounter() {
 
   // Update friendly message based on domain count (the more important metric)
   if (domainCount === 0) {
-    friendlyMsgElement.textContent = '🔍 Nothing so far... keep watching!';
+    friendlyMsgElement.textContent = 'No domain endpoints discovered yet';
     friendlyMsgElement.style.display = 'block';
   } else if (domainCount === 1) {
-    friendlyMsgElement.textContent = '🎉 First domain API found!';
-    friendlyMsgElement.style.display = 'block';
-  } else if (domainCount < 5) {
-    friendlyMsgElement.textContent = `🚀 ${domainCount} domain APIs discovered!`;
-    friendlyMsgElement.style.display = 'block';
-  } else if (domainCount < 20) {
-    friendlyMsgElement.textContent = `⚡ ${domainCount} domain endpoints and counting...`;
-    friendlyMsgElement.style.display = 'block';
-  } else if (domainCount < 50) {
-    friendlyMsgElement.textContent = `💪 ${domainCount} domain APIs - great progress!`;
+    friendlyMsgElement.textContent = '1 domain endpoint discovered';
     friendlyMsgElement.style.display = 'block';
   } else {
-    friendlyMsgElement.textContent = `🔥 Excellent! ${domainCount} domain endpoints found!`;
+    friendlyMsgElement.textContent = `${domainCount} domain endpoints discovered`;
     friendlyMsgElement.style.display = 'block';
   }
 }

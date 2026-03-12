@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>👀 Peekaboo – API Discovery</title>
+<title>Salt Security — API Discovery</title>
 <link rel="stylesheet" href="/static/css/styles.css?v=8">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
@@ -42,7 +42,6 @@
         <path d="m127.96 5.52v2.95h24.67v-2.95z" fill="#4a1d96"></path>
         <path d="m142.14 34.86v-22.78c0-2-1.62-3.61-3.61-3.61v26.39z" fill="#4a1d96"></path>
       </svg>
-      <span>Peekaboo</span>
     </h2>
     <p class="subtitle">Configure your scan parameters and start discovering APIs</p>
     <form id="startForm" onsubmit="startScan(event)">
@@ -135,7 +134,7 @@
 
 
       <button type="submit" class="start-btn" id="startBtn">
-        🚀 Start Scan
+        Start Scan
       </button>
     </form>
   </div>
@@ -174,26 +173,24 @@
         <path d="m127.96 5.52v2.95h24.67v-2.95z" fill="#4a1d96"></path>
         <path d="m142.14 34.86v-22.78c0-2-1.62-3.61-3.61-3.61v26.39z" fill="#4a1d96"></path>
       </svg>
-      <span>Peekaboo</span>
-      <span class="header-eyes">👁️ 👁️</span>
       <span id="domainIndicator" class="domain-indicator hidden"></span>
     </h1>
     <div style="display:flex;align-items:center;gap:1rem;">
       <div class="scan-controls">
         <button class="control-btn hidden" id="pauseBtn" onclick="togglePause()">
-          ⏸ Pause Scan
+          Pause
         </button>
         <button class="control-btn hidden" id="findingsBtn" onclick="showCurrentFindings()">
-          📊 Current Findings
+          Current Findings
         </button>
-        <button class="control-btn hidden" id="stopBtn" onclick="stopScan()">
-          ⏹ Terminate Scan
+        <button class="control-btn control-btn-danger hidden" id="stopBtn" onclick="stopScan()">
+          Terminate
         </button>
         <button class="control-btn hidden" id="newScanBtn" onclick="newScan()">
-          🔄 New Scan
+          New Scan
         </button>
         <button class="control-btn" id="historyTopBtn" onclick="openHistoryModal()">
-          📋 History
+          History
         </button>
       </div>
       <span id="otherScans" class="other-scans-badge hidden"></span>
@@ -242,7 +239,7 @@
             <tr><td class="pi-label">Status</td><td class="pi-value" id="piStatus">Complete</td></tr>
             <tr><td class="pi-label">Domain</td><td class="pi-value" id="piTarget">—</td></tr>
           </table>
-          <button class="create-report-btn" onclick="exportSummaryToHTML()">📄 Create Report</button>
+          <button class="create-report-btn" onclick="exportSummaryToHTML()">Create Report</button>
         </div>
       </div>
       <div class="current-url" id="currentUrl">&nbsp;</div>
@@ -407,15 +404,14 @@
 <div class="summary-overlay" id="aboutOverlay">
   <div class="summary-modal about-modal">
     <div class="summary-header">
-      <h2>👀 About Peekaboo</h2>
+      <h2>About API Discovery</h2>
       <button class="summary-close" onclick="closeAbout()">×</button>
     </div>
     <div class="about-content">
-      <div class="about-emoji">👁️ 👁️</div>
       <h3>Visual API Discovery Scanner</h3>
       <p><em>Revealing hidden APIs in plain sight</em></p>
 
-      <p><strong>Peekaboo</strong> is a real-time visual API discovery tool that crawls web applications and automatically identifies REST API endpoints by monitoring network traffic and analyzing application behavior.</p>
+      <p>A real-time API discovery tool that monitors web applications and automatically identifies REST API endpoints by analyzing network traffic and application behavior.</p>
 
       <div style="margin-top: 1.5rem; padding: 1rem; background: var(--surface2); border-radius: 8px; font-size: 0.9rem;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
@@ -428,12 +424,9 @@
         </div>
       </div>
 
-      <p style="text-align: center; margin-top: 2rem; color: var(--text-muted); font-size: 0.85rem;">
-        🔐 A Salt Security Project
-      </p>
     </div>
     <div class="summary-actions" style="margin-top: 1.5rem;">
-      <button class="summary-btn summary-btn-primary" onclick="closeAbout()">Got it!</button>
+      <button class="summary-btn summary-btn-primary" onclick="closeAbout()">Close</button>
     </div>
   </div>
 </div>
@@ -468,20 +461,20 @@
       </div>
     </div>
     <div class="summary-domains" id="summaryDomainsSection">
-      <div class="summary-domains-title">🏠 Target & Subdomains</div>
+      <div class="summary-domains-title">Target & Subdomains</div>
       <div class="summary-domain-list" id="summarySubdomainList">
         <!-- Populated by JavaScript -->
       </div>
     </div>
     <div class="summary-domains" id="summaryExternalSection" style="margin-top: 1rem;">
-      <div class="summary-domains-title">🌐 External Domains</div>
+      <div class="summary-domains-title">External Domains</div>
       <div class="summary-domain-list" id="summaryExternalList">
         <!-- Populated by JavaScript -->
       </div>
     </div>
     <div class="summary-actions">
       <button class="summary-btn summary-btn-secondary" onclick="closeSummary()">Close</button>
-      <button class="summary-btn summary-btn-primary" onclick="exportSummaryToHTML()" style="background: var(--green); color: #ffffff;">📄 Export HTML Report</button>
+      <button class="summary-btn summary-btn-primary" onclick="exportSummaryToHTML()">Export HTML Report</button>
       <button class="summary-btn summary-btn-primary" onclick="startNewScan()">New Scan</button>
     </div>
   </div>
@@ -491,7 +484,7 @@
 <div class="summary-overlay" id="historyOverlay">
   <div class="summary-modal history-modal">
     <div class="summary-header">
-      <h2>📋 Scan History</h2>
+      <h2>Scan History</h2>
       <button class="summary-close" onclick="closeHistoryModal()">×</button>
     </div>
     <div class="history-search">
@@ -501,7 +494,6 @@
     </div>
     <div class="history-results" id="historyResults">
       <div class="history-empty">
-        <div class="icon">📋</div>
         <div>Enter a domain to view past scans</div>
       </div>
     </div>

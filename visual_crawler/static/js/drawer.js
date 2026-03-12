@@ -25,7 +25,7 @@ function openDrawer(ep) {
         </div>
       ` : `
         <button class="generate-description-btn" onclick="generateDescription('${escHtml(ep.method)}', '${escHtml(ep.path)}', '${escHtml(ep.host)}', ${ep.response_status || 'null'})">
-          📋 Generate API Description
+          Generate API Description
         </button>
         <div id="apiDescriptionResult"></div>
       `}

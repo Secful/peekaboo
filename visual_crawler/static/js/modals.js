@@ -70,7 +70,7 @@ function showCurrentFindings() {
     skippedText: queueSize > 0 ? `${queueSize} in queue` : '',
     durationText: `${minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`} (ongoing)`,
     pagesPerMin,
-    title: '📊 Current Findings',
+    title: 'Current Findings',
   });
 
   document.getElementById('summaryOverlay').classList.add('show');

@@ -69,11 +69,12 @@ function renderSubdomainTable(data) {
 
     const crawlBtnHtml = '';
     const aiBadgeHtml = isAiRelated(name) ? ' <span class="ai-badge">AI</span>' : '';
+    const securityLoadingHtml = crawlable ? ' <span class="security-pill security-pill-loading" title="Security analysis in progress..."><span class="js-pill-spin">⟳</span></span>' : '';
 
     html += `
       <tr id="sub-row-${idx}">
         <td style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${idx + 1}</td>
-        <td class="subdomain-name"><span id="crawl-td-${idx}" data-subdomain="${escHtml(name)}" title="${escHtml(title)}">${escHtml(name)}${aiBadgeHtml}${crawlBtnHtml}</span></td>
+        <td class="subdomain-name"><span id="crawl-td-${idx}" data-subdomain="${escHtml(name)}" title="${escHtml(title)}">${escHtml(name)}${aiBadgeHtml}${crawlBtnHtml}${securityLoadingHtml}</span></td>
         <td><span class="subdomain-status ${statusCls}">${status || '—'}</span></td>
         <td class="subdomain-techs">${techHtml}</td>
         <td>${thumbHtml}</td>
@@ -722,12 +723,32 @@ function toggleJsPillFiles(idx) {
 /* Security Insights — pill + drawer */
 
 function applySecurityPill(subdomain) {
-  const data = appState.securityInsights[subdomain];
-  if (!data) { console.warn(`[security-pill] No data for ${subdomain}`); return; }
-
-  // Find the subdomain row by data attribute
   const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
   if (!span) { console.warn(`[security-pill] No DOM element for subdomain: ${subdomain}`); return; }
+
+  const data = appState.securityInsights[subdomain];
+
+  if (!data) {
+    // No data yet — show loading spinner if no pill exists
+    if (!span.querySelector('.security-pill')) {
+      const spinner = document.createElement('span');
+      spinner.className = 'security-pill security-pill-loading';
+      spinner.innerHTML = '<span class="js-pill-spin">⟳</span>';
+      spinner.title = 'Security analysis in progress...';
+      span.appendChild(document.createTextNode(' '));
+      span.appendChild(spinner);
+    }
+    return;
+  }
+
+  // Data arrived — remove loading spinner if present
+  const loading = span.querySelector('.security-pill-loading');
+  if (loading) {
+    if (loading.previousSibling && loading.previousSibling.nodeType === 3 && loading.previousSibling.textContent.trim() === '') loading.previousSibling.remove();
+    loading.remove();
+  }
+
+  // Real pill already exists — skip
   if (span.querySelector('.security-pill')) return;
 
   const findings = data.findings || [];
@@ -749,6 +770,17 @@ function applySecurityPill(subdomain) {
   span.appendChild(document.createTextNode(' '));
   span.appendChild(pill);
   console.log(`[security-pill] Applied to ${subdomain} (${findings.length} findings)`);
+}
+
+function resolveStaleSecuritySpinners() {
+  const spinners = document.querySelectorAll('.security-pill-loading');
+  for (const spinner of spinners) {
+    if (spinner.previousSibling && spinner.previousSibling.nodeType === 3 && spinner.previousSibling.textContent.trim() === '') spinner.previousSibling.remove();
+    spinner.remove();
+  }
+  if (spinners.length > 0) {
+    console.log(`[security-pill] Resolved ${spinners.length} stale spinner(s)`);
+  }
 }
 
 function getMaxSeverity(findings) {
