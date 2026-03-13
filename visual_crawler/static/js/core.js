@@ -226,6 +226,7 @@ function newScan() {
   appState.openPorts = {};
   appState.agentic = {};
   appState.extractedApis = {};
+  appState.apiSpecs = {};
 
   // Reset map state
   Object.keys(appState.geoCache).forEach(k => delete appState.geoCache[k]);
@@ -452,6 +453,14 @@ function handleEvent(msg) {
       applyExtractedApis(msg.subdomain);
       if (msg.findings_count > 0) {
         addLog('', `Extracted APIs for ${msg.subdomain}: ${msg.findings_count} endpoints`, '');
+      }
+      break;
+
+    case 'api_specs':
+      appState.apiSpecs[msg.subdomain] = msg;
+      applyApiSpecPill(msg.subdomain);
+      if (msg.findings_count > 0) {
+        addLog('', `API specs for ${msg.subdomain}: ${msg.findings_count} spec(s) found`, 'api_specs');
       }
       break;
 

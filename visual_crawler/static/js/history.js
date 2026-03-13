@@ -1,4 +1,4 @@
-/* Scan History UI — fetch past scans from DuckDB via REST API */
+/* Scan History UI — fetch past scans via REST API */
 
 function openHistoryModal() {
   document.getElementById('historyOverlay').classList.add('show');
@@ -81,7 +81,7 @@ function renderScanHistory(scans, domain) {
   let html = `<div class="history-count">${label}</div>`;
   html += '<table class="history-table"><thead><tr>';
   html += '<th>Domain</th><th>Date</th><th>Duration</th><th>Pages</th><th>Endpoints</th><th>APIs</th>';
-  html += '<th>Sec</th><th>Ports</th><th>JS APIs</th>';
+  html += '<th>Sec</th><th>Ports</th><th>JS APIs</th><th>Specs</th>';
   html += '</tr></thead><tbody>';
 
   scans.forEach(scan => {
@@ -98,6 +98,7 @@ function renderScanHistory(scans, domain) {
     const secVal = scan.security_count ?? null;
     const portsVal = scan.ports_count ?? null;
     const jsApisVal = scan.extracted_apis_count ?? null;
+    const apiSpecsVal = scan.api_specs_count ?? null;
 
     html += `<tr class="history-row" onclick="viewScanDetail('${escHtml(scanDomain)}','${scan.scan_id}')">`;
     html += `<td class="history-domain-cell">${escHtml(scanDomain)}</td>`;
@@ -109,6 +110,7 @@ function renderScanHistory(scans, domain) {
     html += `<td>${secVal ? `<span style="color:#ef4444;font-weight:600">${secVal}</span>` : '<span style="color:var(--text-muted)">\u2014</span>'}</td>`;
     html += `<td>${portsVal ? `<span style="color:#3b82f6;font-weight:600">${portsVal}</span>` : '<span style="color:var(--text-muted)">\u2014</span>'}</td>`;
     html += `<td>${jsApisVal ? `<span style="color:var(--patch);font-weight:600">${jsApisVal}</span>` : '<span style="color:var(--text-muted)">\u2014</span>'}</td>`;
+    html += `<td>${apiSpecsVal ? `<span style="color:#7c3aed;font-weight:600">${apiSpecsVal}</span>` : '<span style="color:var(--text-muted)">\u2014</span>'}</td>`;
     html += '</tr>';
   });
 
@@ -205,6 +207,8 @@ function renderScanDetail(scan, prevHtml) {
     else html += _hdStatCard('Security', '0');
     html += _hdStatCard('Ports', portsCount || '0');
     html += _hdStatCard('JS APIs', jsApiCount || '0');
+    const apiSpecCount = _countApiSpecs(scanner);
+    if (apiSpecCount > 0) html += _hdStatCard('API Specs', apiSpecCount, '#7c3aed');
   }
   html += '</div>';
 
@@ -213,6 +217,7 @@ function renderScanDetail(scan, prevHtml) {
   if (_hasData(scanner.security_insights)) tabs.push({ id: 'security', label: 'Security' });
   if (_hasData(scanner.extracted_apis)) tabs.push({ id: 'extracted_apis', label: 'JS APIs' });
   if (_hasData(scanner.open_ports)) tabs.push({ id: 'open_ports', label: 'Open Ports' });
+  if (_hasData(scanner.api_specs)) tabs.push({ id: 'api_specs_tab', label: 'API Spec' });
   if (_hasData(scan.subdomain_results)) tabs.push({ id: 'subdomains', label: 'Subdomains' });
 
   html += '<div class="history-tabs">';
@@ -255,6 +260,7 @@ function _renderHistoryTabContent() {
     case 'security': container.innerHTML = _renderSecurityTab(); break;
     case 'extracted_apis': container.innerHTML = _renderExtractedApisTab(); break;
     case 'open_ports': container.innerHTML = _renderOpenPortsTab(); break;
+    case 'api_specs_tab': container.innerHTML = _renderApiSpecsTab(); break;
     case 'subdomains': container.innerHTML = _renderSubdomainsTab(); break;
     default: container.innerHTML = '';
   }
@@ -283,6 +289,10 @@ function _countOpenPorts(scanner) {
 function _countExtractedApis(scanner) {
   if (!scanner.extracted_apis) return 0;
   return Object.values(scanner.extracted_apis).reduce((sum, v) => sum + (v.findings_count || 0), 0);
+}
+function _countApiSpecs(scanner) {
+  if (!scanner.api_specs) return 0;
+  return Object.values(scanner.api_specs).reduce((sum, v) => sum + (v.findings_count || 0), 0);
 }
 
 /* ────────────────────────────────────────────────────────
@@ -491,6 +501,90 @@ function _renderOpenPortsTab() {
   });
 
   return html || '<div class="history-empty" style="padding:2rem"><div>No open ports found</div></div>';
+}
+
+/* ────────────────────────────────────────────────────────
+   API SPECS TAB
+   ──────────────────────────────────────────────────────── */
+function _renderApiSpecsTab() {
+  const specs = _historyDetailScan.scanner?.api_specs || {};
+  const subdomains = Object.keys(specs);
+  if (subdomains.length === 0) {
+    return '<div class="history-empty" style="padding:2rem"><div>No API spec findings</div></div>';
+  }
+
+  const categoryColors = {
+    openapi_spec: '#059669', api_docs_ui: '#3b82f6', graphql: '#ec4899',
+    wsdl: '#f97316', api_root: '#6b7280', api_catalog: '#14b8a6',
+  };
+
+  let html = '';
+  subdomains.forEach(sub => {
+    const data = specs[sub];
+    const findings = data.findings || [];
+    const robotsPaths = data.robots_api_paths || [];
+    const sitemapUrls = data.sitemap_api_urls || [];
+    const hasContent = findings.length > 0 || robotsPaths.length > 0 || sitemapUrls.length > 0 || data.graphql;
+    if (!hasContent) return;
+
+    html += `<div style="font-weight:600;font-size:0.85rem;margin-top:1rem;margin-bottom:0.5rem;color:var(--text)">${escHtml(sub)}</div>`;
+
+    // Grouped findings
+    const groups = {};
+    for (const f of findings) {
+      const cat = f.category || 'other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(f);
+    }
+
+    for (const [cat, items] of Object.entries(groups)) {
+      const borderColor = categoryColors[cat] || '#6b7280';
+      const catLabel = cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      html += `<div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin:0.5rem 0 0.25rem;padding-left:0.5rem;border-left:3px solid ${borderColor}">${escHtml(catLabel)}</div>`;
+
+      for (const f of items) {
+        html += `<div class="history-scanner-card" style="border-left-color:${borderColor}">`;
+        html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">`;
+        html += `<span style="font-weight:600;font-size:0.82rem">${escHtml(f.name)}</span>`;
+        if (f.spec_version) html += `<span style="font-size:0.65rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:4px;background:rgba(124,58,237,0.1);color:#7c3aed;border:1px solid rgba(124,58,237,0.25)">${escHtml(f.spec_version)}</span>`;
+        html += `</div>`;
+        if (f.description) html += `<div style="font-size:0.78rem;color:var(--text-muted);line-height:1.4">${escHtml(f.description)}</div>`;
+        html += `<div style="font-family:'JetBrains Mono',monospace;font-size:0.73rem;color:var(--text-muted);word-break:break-all;margin-top:0.15rem">${escHtml(f.path)}</div>`;
+        if (f.file_url) html += `<div style="margin-top:0.15rem"><a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" style="font-size:0.72rem;color:#3b82f6;word-break:break-all">${escHtml(f.file_url)}</a></div>`;
+        html += `</div>`;
+      }
+    }
+
+    // Robots paths (full URLs)
+    if (robotsPaths.length > 0) {
+      html += `<div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin:0.5rem 0 0.25rem;padding-left:0.5rem;border-left:3px solid #6b7280">Robots.txt API Paths (${robotsPaths.length})</div>`;
+      for (const p of robotsPaths) {
+        html += `<div style="font-family:'JetBrains Mono',monospace;font-size:0.73rem;padding:0.1rem 0 0.1rem 0.5rem"><a href="${escHtml(p)}" target="_blank" rel="noopener" style="color:#3b82f6;word-break:break-all">${escHtml(p)}</a></div>`;
+      }
+    }
+
+    // Sitemap URLs
+    if (sitemapUrls.length > 0) {
+      html += `<div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin:0.5rem 0 0.25rem;padding-left:0.5rem;border-left:3px solid #14b8a6">Sitemap API URLs (${sitemapUrls.length})</div>`;
+      for (const u of sitemapUrls) {
+        html += `<div style="font-family:'JetBrains Mono',monospace;font-size:0.73rem;padding:0.1rem 0 0.1rem 0.5rem"><a href="${escHtml(u)}" target="_blank" rel="noopener" style="color:#3b82f6;word-break:break-all">${escHtml(u)}</a></div>`;
+      }
+    }
+
+    // GraphQL
+    if (data.graphql) {
+      const gql = data.graphql;
+      html += `<div class="history-scanner-card" style="border-left-color:#ec4899">`;
+      html += `<div style="font-weight:600;font-size:0.82rem;margin-bottom:0.35rem;color:#ec4899">GraphQL</div>`;
+      const gqlUrl = data.url ? `${data.url.replace(/\/$/, '')}${gql.endpoint}` : gql.endpoint;
+      html += `<div style="font-size:0.78rem">Endpoint: <a href="${escHtml(gqlUrl)}" target="_blank" rel="noopener" style="color:#3b82f6">${escHtml(gql.endpoint)}</a></div>`;
+      html += `<div style="font-size:0.78rem">Introspection: <span style="font-weight:600;color:${gql.introspection_enabled ? '#059669' : '#6b7280'}">${gql.introspection_enabled ? 'Enabled' : 'Disabled'}</span></div>`;
+      if (gql.type_count > 0) html += `<div style="font-size:0.78rem">Types: ${gql.type_count}</div>`;
+      html += `</div>`;
+    }
+  });
+
+  return html || '<div class="history-empty" style="padding:2rem"><div>No API spec findings</div></div>';
 }
 
 /* ────────────────────────────────────────────────────────

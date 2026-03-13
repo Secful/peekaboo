@@ -1933,3 +1933,109 @@
     background: rgba(220, 38, 38, 0.06); border-radius: 4px;
     margin-bottom: 0.2rem; border-left: 2px solid rgba(220, 38, 38, 0.3);
   }
+
+  /* ── API Spec Discovery — pill + drawer ── */
+  .apispec-pill {
+    display: inline-block; padding: 0.15rem 0.55rem; border-radius: 10px;
+    font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    user-select: none; margin-left: 0.35rem; vertical-align: middle;
+    background: rgba(124, 58, 237, 0.12); color: #7c3aed;
+    border: 1px solid rgba(124, 58, 237, 0.3);
+  }
+  .apispec-pill:hover { background: rgba(124, 58, 237, 0.22); }
+
+  .apispec-drawer {
+    position: fixed; top: 0; right: -520px; bottom: 0; width: 520px;
+    background: var(--surface); border-left: 1px solid var(--border);
+    box-shadow: -5px 0 20px rgba(0,0,0,0.1); z-index: 2000;
+    transition: right 0.3s ease; overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+  .apispec-drawer.open { right: 0; }
+  .apispec-drawer-header {
+    padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: flex-start;
+    background: var(--surface2); flex-shrink: 0;
+  }
+  .apispec-drawer-header h3 {
+    font-size: 1rem; margin: 0; font-weight: 700; letter-spacing: -0.02em;
+    color: #7c3aed; font-family: 'JetBrains Mono', monospace;
+  }
+  .apispec-drawer-subtitle {
+    font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; font-weight: 500;
+  }
+  .apispec-drawer-content {
+    padding: 1rem 1.5rem; flex: 1; overflow-y: auto;
+  }
+
+  .apispec-category-header {
+    font-size: 0.82rem; font-weight: 700; margin-top: 1rem; margin-bottom: 0.5rem;
+    padding-left: 0.6rem; border-left: 3px solid #6b7280; color: var(--text);
+  }
+  .apispec-category-header:first-child { margin-top: 0; }
+
+  .apispec-finding-card {
+    background: var(--surface2); border-radius: 8px; padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem; border-left: 3px solid #6b7280;
+  }
+  .apispec-finding-top {
+    display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;
+  }
+  .apispec-finding-name {
+    font-weight: 600; font-size: 0.85rem; color: var(--text);
+  }
+  .apispec-version-badge {
+    font-size: 0.65rem; font-weight: 600; padding: 0.1rem 0.4rem;
+    border-radius: 4px; background: rgba(124, 58, 237, 0.1);
+    color: #7c3aed; border: 1px solid rgba(124, 58, 237, 0.25);
+  }
+  .apispec-finding-desc {
+    font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 0.25rem;
+  }
+  .apispec-finding-path {
+    font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted); word-break: break-all;
+  }
+  .apispec-finding-link {
+    display: block; font-size: 0.72rem; color: #3b82f6;
+    word-break: break-all; margin-top: 0.2rem;
+  }
+
+  .apispec-url-list {
+    padding-left: 0.6rem; margin-bottom: 0.5rem;
+  }
+  .apispec-url-item {
+    font-size: 0.75rem; padding: 0.15rem 0;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .apispec-url-item a { color: #3b82f6; word-break: break-all; }
+
+  .apispec-graphql-section {
+    background: var(--surface2); border-radius: 8px; padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem; border-left: 3px solid #ec4899;
+  }
+  .apispec-graphql-row {
+    display: flex; align-items: center; gap: 0.5rem;
+    font-size: 0.8rem; padding: 0.2rem 0;
+  }
+  .apispec-graphql-label {
+    font-weight: 600; color: var(--text-muted); min-width: 100px; font-size: 0.75rem;
+  }
+  .apispec-graphql-enabled { color: #059669; font-weight: 600; }
+  .apispec-graphql-disabled { color: #6b7280; }
+  .apispec-graphql-row a { color: #3b82f6; word-break: break-all; font-size: 0.78rem; }
+  .apispec-graphql-types {
+    margin-top: 0.35rem; font-size: 0.78rem;
+  }
+  .apispec-graphql-types summary {
+    cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: 0.75rem;
+  }
+  .apispec-graphql-type-list {
+    display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.35rem;
+  }
+  .apispec-graphql-type {
+    font-size: 0.68rem; font-family: 'JetBrains Mono', monospace;
+    padding: 0.1rem 0.4rem; border-radius: 4px;
+    background: rgba(236, 72, 153, 0.08); color: #ec4899;
+    border: 1px solid rgba(236, 72, 153, 0.2);
+  }

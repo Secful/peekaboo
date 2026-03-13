@@ -139,6 +139,11 @@ function renderSubdomainTable(data) {
     applyExtractedApis(subdomain);
   }
 
+  // Apply API spec pills for any already-received data
+  for (const subdomain of Object.keys(appState.apiSpecs)) {
+    applyApiSpecPill(subdomain);
+  }
+
   // Restore map view if user was viewing the map
   if (appState.subdomainViewMode === 'map') {
     setSubdomainViewMode('map');
@@ -1112,6 +1117,131 @@ function openAgenticDrawer(subdomain) {
 
 function closeAgenticDrawer() {
   document.getElementById('agenticDrawer').classList.remove('open');
+}
+
+/* API Spec Discovery — pill + drawer */
+
+function applyApiSpecPill(subdomain) {
+  const data = appState.apiSpecs[subdomain];
+  if (!data) return;
+
+  const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
+  if (!span) { console.warn(`[api-spec] No DOM element for subdomain: ${subdomain}`); return; }
+  if (span.querySelector('.apispec-pill')) return;
+
+  const count = data.findings_count || data.findings?.length || 0;
+  if (count === 0) return;
+
+  const pill = document.createElement('span');
+  pill.className = 'apispec-pill';
+  const label = count === 1 ? '1 Spec' : `${count} Specs`;
+  pill.textContent = label;
+  pill.setAttribute('onclick', `event.stopPropagation(); openApiSpecDrawer('${subdomain.replace(/'/g, "\\'")}')`);
+
+  span.appendChild(document.createTextNode(' '));
+  span.appendChild(pill);
+  console.log(`[api-spec] Applied to ${subdomain} (${findings.length} findings)`);
+}
+
+function openApiSpecDrawer(subdomain) {
+  const data = appState.apiSpecs[subdomain];
+  if (!data) return;
+
+  const drawer = document.getElementById('apiSpecDrawer');
+  const title = document.getElementById('apiSpecDrawerTitle');
+  const subtitle = document.getElementById('apiSpecDrawerSubtitle');
+  const content = document.getElementById('apiSpecDrawerContent');
+
+  title.textContent = subdomain;
+  const duration = data.scan_duration_secs ? `${data.scan_duration_secs.toFixed(1)}s` : '\u2014';
+  const count = data.findings_count || data.findings?.length || 0;
+  subtitle.textContent = `${count} spec${count !== 1 ? 's' : ''} found \u2014 scan duration: ${duration}`;
+
+  const findings = data.findings || [];
+  const categoryColors = {
+    openapi_spec: '#059669',
+    api_docs_ui: '#3b82f6',
+    graphql: '#ec4899',
+    wsdl: '#f97316',
+    api_root: '#6b7280',
+    api_catalog: '#14b8a6',
+  };
+
+  // Group findings by category
+  const groups = {};
+  for (const f of findings) {
+    const cat = f.category || 'other';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(f);
+  }
+
+  let html = '';
+
+  // Render grouped findings
+  for (const [cat, items] of Object.entries(groups)) {
+    const borderColor = categoryColors[cat] || '#6b7280';
+    const catLabel = cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    html += `<div class="apispec-category-header" style="border-left-color:${borderColor}">${escHtml(catLabel)} (${items.length})</div>`;
+    for (const f of items) {
+      html += `<div class="apispec-finding-card" style="border-left-color:${borderColor}">
+        <div class="apispec-finding-top">
+          <span class="apispec-finding-name">${escHtml(f.name)}</span>
+          ${f.spec_version ? `<span class="apispec-version-badge">${escHtml(f.spec_version)}</span>` : ''}
+        </div>
+        ${f.description ? `<div class="apispec-finding-desc">${escHtml(f.description)}</div>` : ''}
+        <div class="apispec-finding-path">${escHtml(f.path)}</div>
+        ${f.file_url ? `<a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" class="apispec-finding-link">${escHtml(f.file_url)}</a>` : ''}
+      </div>`;
+    }
+  }
+
+  // Robots API paths
+  const robotsPaths = data.robots_api_paths || [];
+  if (robotsPaths.length > 0) {
+    html += `<div class="apispec-category-header" style="border-left-color:#6b7280">Robots.txt API Paths (${robotsPaths.length})</div>`;
+    html += '<div class="apispec-url-list">';
+    for (const p of robotsPaths) {
+      html += `<div class="apispec-url-item"><a href="${escHtml(p)}" target="_blank" rel="noopener">${escHtml(p)}</a></div>`;
+    }
+    html += '</div>';
+  }
+
+  // Sitemap API URLs
+  const sitemapUrls = data.sitemap_api_urls || [];
+  if (sitemapUrls.length > 0) {
+    html += `<div class="apispec-category-header" style="border-left-color:#14b8a6">Sitemap API URLs (${sitemapUrls.length})</div>`;
+    html += '<div class="apispec-url-list">';
+    for (const u of sitemapUrls) {
+      html += `<div class="apispec-url-item"><a href="${escHtml(u)}" target="_blank" rel="noopener">${escHtml(u)}</a></div>`;
+    }
+    html += '</div>';
+  }
+
+  // GraphQL section
+  if (data.graphql) {
+    const gql = data.graphql;
+    html += `<div class="apispec-category-header" style="border-left-color:#ec4899">GraphQL</div>`;
+    html += `<div class="apispec-graphql-section">`;
+    const gqlUrl = data.url ? `${data.url.replace(/\/$/, '')}${gql.endpoint}` : gql.endpoint;
+    html += `<div class="apispec-graphql-row"><span class="apispec-graphql-label">Endpoint</span><a href="${escHtml(gqlUrl)}" target="_blank" rel="noopener">${escHtml(gql.endpoint)}</a></div>`;
+    html += `<div class="apispec-graphql-row"><span class="apispec-graphql-label">Introspection</span><span class="${gql.introspection_enabled ? 'apispec-graphql-enabled' : 'apispec-graphql-disabled'}">${gql.introspection_enabled ? 'Enabled' : 'Disabled'}</span></div>`;
+    if (gql.type_count > 0) {
+      html += `<div class="apispec-graphql-row"><span class="apispec-graphql-label">Types</span><span>${gql.type_count}</span></div>`;
+    }
+    if (gql.type_names && gql.type_names.length > 0) {
+      html += `<details class="apispec-graphql-types"><summary>${gql.type_names.length} type names</summary>`;
+      html += `<div class="apispec-graphql-type-list">${gql.type_names.map(t => `<span class="apispec-graphql-type">${escHtml(t)}</span>`).join('')}</div>`;
+      html += `</details>`;
+    }
+    html += `</div>`;
+  }
+
+  content.innerHTML = html;
+  drawer.classList.add('open');
+}
+
+function closeApiSpecDrawer() {
+  document.getElementById('apiSpecDrawer').classList.remove('open');
 }
 
 /* Fixed-position thumbnail preview on hover — escapes overflow:auto clipping */

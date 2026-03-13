@@ -25,6 +25,7 @@ const appState = {
   openPorts: {},
   agentic: {},
   extractedApis: {},
+  apiSpecs: {},
   geoCache: {},
   subdomainMapInstance: null,
   subdomainMapMarkers: [],

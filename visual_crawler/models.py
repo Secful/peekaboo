@@ -191,3 +191,34 @@ class ExtractedApiRequest(BaseModel):
     scan_duration_secs: float = 0.0
     findings_count: int = 0
     findings: list[ExtractedApiFinding] = []
+
+
+class ApiSpecFinding(BaseModel):
+    """A single API specification finding from the api_discovery_lambda."""
+    name: str
+    category: str
+    path: str
+    file_url: str
+    description: str
+    spec_version: str = ""
+
+
+class GraphQLResult(BaseModel):
+    """GraphQL introspection result from the api_discovery_lambda."""
+    endpoint: str
+    introspection_enabled: bool
+    type_count: int = 0
+    type_names: list[str] = []
+
+
+class ApiSpecRequest(BaseModel):
+    """Request body for API spec discovery findings from the api_discovery_lambda."""
+    domain: str
+    subdomain: str
+    url: str
+    scan_duration_secs: float = 0.0
+    findings_count: int = 0
+    findings: list[ApiSpecFinding] = []
+    robots_api_paths: list[str] = []
+    sitemap_api_urls: list[str] = []
+    graphql: Optional[GraphQLResult] = None

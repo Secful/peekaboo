@@ -19,6 +19,7 @@ class _DomainData:
     js_resources: dict[str, dict] = field(default_factory=dict)
     agentic: dict[str, dict] = field(default_factory=dict)
     extracted_apis: dict[str, dict] = field(default_factory=dict)
+    api_specs: dict[str, dict] = field(default_factory=dict)
 
 
 class ScannerStore:
@@ -54,6 +55,10 @@ class ScannerStore:
         with self._lock:
             self._get_or_create(domain).extracted_apis[subdomain] = payload
 
+    def store_api_specs(self, domain: str, subdomain: str, payload: dict) -> None:
+        with self._lock:
+            self._get_or_create(domain).api_specs[subdomain] = payload
+
     def get_security_insights(self, domain: str) -> dict[str, dict]:
         with self._lock:
             data = self._data.get(domain)
@@ -79,6 +84,11 @@ class ScannerStore:
             data = self._data.get(domain)
             return dict(data.extracted_apis) if data else {}
 
+    def get_api_specs(self, domain: str) -> dict[str, dict]:
+        with self._lock:
+            data = self._data.get(domain)
+            return dict(data.api_specs) if data else {}
+
     def get_all_for_domain(self, domain: str) -> list[dict]:
         """Return all stored payloads for a domain as a flat list."""
         with self._lock:
@@ -91,6 +101,7 @@ class ScannerStore:
             payloads.extend(data.js_resources.values())
             payloads.extend(data.agentic.values())
             payloads.extend(data.extracted_apis.values())
+            payloads.extend(data.api_specs.values())
             return list(payloads)
 
     def cleanup_expired(self) -> int:

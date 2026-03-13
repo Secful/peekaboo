@@ -68,6 +68,10 @@ def save_scan(scan_data: dict) -> None:
             v.get("findings_count", 0)
             for v in scanner.get("extracted_apis", {}).values()
         )
+        api_specs_count = sum(
+            v.get("findings_count", 0)
+            for v in scanner.get("api_specs", {}).values()
+        )
 
         # Upload full payload to S3 (gzipped)
         s3_key = f"{domain}/{scan_id}.json.gz"
@@ -96,6 +100,7 @@ def save_scan(scan_data: dict) -> None:
                 "security_count": security_count,
                 "ports_count": ports_count,
                 "extracted_apis_count": extracted_apis_count,
+                "api_specs_count": api_specs_count,
                 "gsi_pk": "ALL",
                 "s3_key": s3_key,
             }
@@ -110,7 +115,8 @@ def list_scans(domain: str) -> list[dict]:
     """List scan summaries for a domain, newest first."""
     try:
         resp = _dynamodb_table().query(
-            KeyConditionExpression="domain = :d",
+            KeyConditionExpression="#d = :d",
+            ExpressionAttributeNames={"#d": "domain"},
             ExpressionAttributeValues={":d": domain},
             ScanIndexForward=False,
         )
@@ -162,6 +168,7 @@ def _item_to_summary(item: dict) -> dict:
         "security_count": _to_int(item.get("security_count")),
         "ports_count": _to_int(item.get("ports_count")),
         "extracted_apis_count": _to_int(item.get("extracted_apis_count")),
+        "api_specs_count": _to_int(item.get("api_specs_count")),
     }
 
 

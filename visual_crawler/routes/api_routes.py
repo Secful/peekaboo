@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest
+from ..models import GenerateDescriptionRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -83,13 +83,13 @@ async def geolocate_ips(request: GeolocateIpsRequest):
 
 @router.get("/api/scan-history")
 async def scan_history(domain: str = ""):
-    """List past scan summaries. Without domain: returns 10 most recent across all domains."""
+    """List past scan summaries. Without domain: returns 25 most recent across all domains."""
     domain = domain.strip().lower()
     try:
         if domain:
             scans = await asyncio.to_thread(list_scans, domain)
         else:
-            scans = await asyncio.to_thread(list_recent_scans, 10)
+            scans = await asyncio.to_thread(list_recent_scans, 25)
         return JSONResponse(content={"scans": scans})
     except Exception as e:
         logger.error(f"Failed to list scan history: {e}")
@@ -324,6 +324,53 @@ async def extracted_api(request: ExtractedApiRequest):
 
     logger.warning(
         f"extracted_apis for {request.subdomain}: "
+        f"pushed_to={pushed_to}, "
+        f"request.domain={request.domain!r}, "
+        f"client_domains={dict(_client_domains)}, "
+        f"subdomains_ready={dict(_subdomains_ready)}"
+    )
+    return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+
+@router.post("/api/apispec")
+async def api_spec(request: ApiSpecRequest):
+    """Receive API spec discovery findings from the api_discovery_lambda and push to connected UI clients."""
+    from .ws_routes import _client_domains, _connected_clients, _subdomains_ready
+    from ..scanner_store import scanner_store
+
+    logger.warning(f"Got {request.findings_count} API spec findings for subdomain {request.subdomain}")
+
+    payload = {
+        "type": "api_specs",
+        "domain": request.domain,
+        "subdomain": request.subdomain,
+        "url": request.url,
+        "scan_duration_secs": request.scan_duration_secs,
+        "findings_count": request.findings_count,
+        "findings": [f.model_dump() for f in request.findings],
+        "robots_api_paths": request.robots_api_paths,
+        "sitemap_api_urls": request.sitemap_api_urls,
+        "graphql": request.graphql.model_dump() if request.graphql else None,
+    }
+
+    scanner_store.store_api_specs(request.domain, request.subdomain, payload)
+
+    pushed_to = 0
+    for scan_id, domain in list(_client_domains.items()):
+        if domain != request.domain:
+            continue
+        ws = _connected_clients.get(scan_id)
+        if ws is None:
+            continue
+        if _subdomains_ready.get(scan_id):
+            try:
+                await ws.send_json(payload)
+                pushed_to += 1
+            except Exception:
+                logger.warning(f"Failed to push API spec findings to scan {scan_id}")
+
+    logger.warning(
+        f"api_specs for {request.subdomain}: "
         f"pushed_to={pushed_to}, "
         f"request.domain={request.domain!r}, "
         f"client_domains={dict(_client_domains)}, "

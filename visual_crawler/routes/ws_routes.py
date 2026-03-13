@@ -294,6 +294,7 @@ async def websocket_endpoint(ws: WebSocket):
                         "extracted_apis": _ss.get_extracted_apis(domain),
                         "agentic": _ss.get_agentic(domain),
                         "js_resources": _ss.get_js_resources(domain),
+                        "api_specs": _ss.get_api_specs(domain),
                     }
                     scan_data["subdomain_results"] = getattr(crawler, 'subdomain_results', {})
                     asyncio.create_task(
