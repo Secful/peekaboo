@@ -1,11 +1,11 @@
 """WebSocket route for real-time crawler communication."""
 
 import asyncio
-import itertools
 import json
 import logging
 import os
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import httpx
 from dataclasses import asdict
@@ -25,11 +25,10 @@ SUBDOMAIN_LAMBDA_URL = os.getenv(
 router = APIRouter()
 
 # Shared state for tracking active scans across WebSocket clients
-_scan_id_counter = itertools.count(1)
-_active_scans: dict[int, str] = {}          # scan_id -> domain
-_connected_clients: dict[int, WebSocket] = {}  # scan_id -> ws
-_subdomains_ready: dict[int, bool] = {}     # scan_id -> True once subdomains sent
-_client_domains: dict[int, str] = {}        # scan_id -> domain (persists until WS disconnect)
+_active_scans: dict[str, str] = {}          # scan_id -> domain
+_connected_clients: dict[str, WebSocket] = {}  # scan_id -> ws
+_subdomains_ready: dict[str, bool] = {}     # scan_id -> True once subdomains sent
+_client_domains: dict[str, str] = {}        # scan_id -> domain (persists until WS disconnect)
 
 
 async def _broadcast_active_scans() -> None:
@@ -46,7 +45,7 @@ async def _broadcast_active_scans() -> None:
             pass
 
 
-async def _fetch_subdomains(domain: str, send_event, scan_id: int = 0) -> None:
+async def _fetch_subdomains(domain: str, send_event, scan_id: str = "") -> None:
     """Call the subdomain-discovery Lambda and push results via WebSocket."""
     await send_event({"type": "subdomains_loading"})
     try:
@@ -93,7 +92,7 @@ async def websocket_endpoint(ws: WebSocket):
     A new scan can be started on the same connection.
     """
     await ws.accept()
-    scan_id = next(_scan_id_counter)
+    scan_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_{uuid4().hex[:8]}"
     _connected_clients[scan_id] = ws
 
     # Let this client know about currently active scans
@@ -250,13 +249,9 @@ async def websocket_endpoint(ws: WebSocket):
                     await listen_task
                 except (asyncio.CancelledError, WebSocketDisconnect):
                     pass
-                # Let subdomain discovery finish even after crawl ends
-                if not subdomain_task.done():
-                    try:
-                        await subdomain_task
-                    except Exception:
-                        pass
-                # Save scan results to S3 (fire-and-forget)
+
+                # Save scan results to DynamoDB BEFORE waiting for subdomain task
+                # so a browser-close / stop doesn't skip the save.
                 try:
                     finished_at = datetime.now(timezone.utc)
                     duration = (finished_at - scan_started_at).total_seconds()
@@ -291,11 +286,28 @@ async def websocket_endpoint(ws: WebSocket):
                         },
                         "endpoints": endpoints_for_log,
                     }
+                    # Persist scanner data alongside endpoints
+                    from ..scanner_store import scanner_store as _ss
+                    scan_data["scanner"] = {
+                        "security_insights": _ss.get_security_insights(domain),
+                        "open_ports": _ss.get_open_ports(domain),
+                        "extracted_apis": _ss.get_extracted_apis(domain),
+                        "agentic": _ss.get_agentic(domain),
+                        "js_resources": _ss.get_js_resources(domain),
+                    }
+                    scan_data["subdomain_results"] = getattr(crawler, 'subdomain_results', {})
                     asyncio.create_task(
                         asyncio.to_thread(save_scan, scan_data)
                     )
                 except Exception as log_exc:
                     logger.warning("Failed to prepare scan log: %s", log_exc)
+
+                # Let subdomain discovery finish even after crawl ends
+                if not subdomain_task.done():
+                    try:
+                        await subdomain_task
+                    except Exception:
+                        pass
 
                 # Scan finished — remove from active, but keep client connected
                 _active_scans.pop(scan_id, None)

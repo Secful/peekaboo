@@ -96,11 +96,11 @@ async def scan_history(domain: str = ""):
         raise HTTPException(status_code=500, detail=f"Failed to list scan history: {str(e)}")
 
 
-@router.get("/api/scan-history/{domain}/{scan_key}")
-async def scan_history_detail(domain: str, scan_key: str):
+@router.get("/api/scan-history/{domain}/{scan_id}")
+async def scan_history_detail(domain: str, scan_id: str):
     """Fetch full scan JSON for a specific past scan."""
     try:
-        data = await asyncio.to_thread(get_scan, domain, scan_key)
+        data = await asyncio.to_thread(get_scan, domain, scan_id)
         if data is None:
             raise HTTPException(status_code=404, detail="Scan not found")
         return JSONResponse(content=data)

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Salt Security — API Discovery</title>
-<link rel="stylesheet" href="/static/css/styles.css?v=8">
+<link rel="stylesheet" href="/static/css/styles.css?v=9">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
@@ -245,7 +245,7 @@
       <div class="current-url" id="currentUrl">&nbsp;</div>
     </div>
 
-    <div class="activity-header">Activity Log</div>
+    <div class="activity-header">Activity Log <span id="activityVersion" style="font-size:0.7rem;color:var(--text-muted);font-weight:400;margin-left:0.25rem"></span></div>
     <div class="activity-log" id="activityLog"></div>
   </div>
 
@@ -397,39 +397,6 @@
   <div class="agentic-drawer-content" id="agenticDrawerContent"></div>
 </div>
 
-<!-- About Button -->
-<button class="about-link" onclick="showAbout()">ℹ️ About</button>
-
-<!-- About Modal -->
-<div class="summary-overlay" id="aboutOverlay">
-  <div class="summary-modal about-modal">
-    <div class="summary-header">
-      <h2>About API Discovery</h2>
-      <button class="summary-close" onclick="closeAbout()">×</button>
-    </div>
-    <div class="about-content">
-      <h3>Visual API Discovery Scanner</h3>
-      <p><em>Revealing hidden APIs in plain sight</em></p>
-
-      <p>A real-time API discovery tool that monitors web applications and automatically identifies REST API endpoints by analyzing network traffic and application behavior.</p>
-
-      <div style="margin-top: 1.5rem; padding: 1rem; background: var(--surface2); border-radius: 8px; font-size: 0.9rem;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-          <span style="color: var(--text-muted);">Version:</span>
-          <span id="appVersion" style="font-family: monospace;">Loading...</span>
-        </div>
-        <div style="display: flex; justify-content: space-between;">
-          <span style="color: var(--text-muted);">Deployed:</span>
-          <span id="deployTime" style="font-family: monospace;">Loading...</span>
-        </div>
-      </div>
-
-    </div>
-    <div class="summary-actions" style="margin-top: 1.5rem;">
-      <button class="summary-btn summary-btn-primary" onclick="closeAbout()">Close</button>
-    </div>
-  </div>
-</div>
 
 <!-- Scan Summary Modal -->
 <div class="summary-overlay" id="summaryOverlay">
@@ -512,6 +479,6 @@
 <script src="/static/js/modals.js?v=7"></script>
 <script src="/static/js/report.js?v=7"></script>
 <script src="/static/js/ai-description.js?v=7"></script>
-<script src="/static/js/history.js?v=7"></script>
+<script src="/static/js/history.js?v=8"></script>
 <script src="/static/js/core.js?v=7"></script>
 </html>

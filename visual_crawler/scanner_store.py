@@ -54,6 +54,31 @@ class ScannerStore:
         with self._lock:
             self._get_or_create(domain).extracted_apis[subdomain] = payload
 
+    def get_security_insights(self, domain: str) -> dict[str, dict]:
+        with self._lock:
+            data = self._data.get(domain)
+            return dict(data.security_insights) if data else {}
+
+    def get_open_ports(self, domain: str) -> dict[str, dict]:
+        with self._lock:
+            data = self._data.get(domain)
+            return dict(data.open_ports) if data else {}
+
+    def get_js_resources(self, domain: str) -> dict[str, dict]:
+        with self._lock:
+            data = self._data.get(domain)
+            return dict(data.js_resources) if data else {}
+
+    def get_agentic(self, domain: str) -> dict[str, dict]:
+        with self._lock:
+            data = self._data.get(domain)
+            return dict(data.agentic) if data else {}
+
+    def get_extracted_apis(self, domain: str) -> dict[str, dict]:
+        with self._lock:
+            data = self._data.get(domain)
+            return dict(data.extracted_apis) if data else {}
+
     def get_all_for_domain(self, domain: str) -> list[dict]:
         """Return all stored payloads for a domain as a flat list."""
         with self._lock:

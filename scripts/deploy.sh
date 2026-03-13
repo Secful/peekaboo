@@ -221,44 +221,99 @@ BEDROCK_POLICY='{
     {
       "Effect": "Allow",
       "Action": [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:ListBucket"
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:Query"
       ],
       "Resource": [
-        "arn:aws:s3:::'${PREFIX}'-scan-logs-'${ACCOUNT_ID}'",
-        "arn:aws:s3:::'${PREFIX}'-scan-logs-'${ACCOUNT_ID}'/*"
+        "arn:aws:dynamodb:*:'${ACCOUNT_ID}':table/'${PREFIX}'-scans",
+        "arn:aws:dynamodb:*:'${ACCOUNT_ID}':table/'${PREFIX}'-scans/index/*"
       ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::'${PREFIX}'-scan-payloads-'${ACCOUNT_ID}'/*"
     }
   ]
 }'
 
-BEDROCK_POLICY_NAME="${PREFIX}-bedrock-policy"
+BEDROCK_POLICY_NAME="${PREFIX}-task-policy"
 BEDROCK_POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${BEDROCK_POLICY_NAME}"
-if ! aws iam get-policy --policy-arn "${BEDROCK_POLICY_ARN}" &>/dev/null; then
+if aws iam get-policy --policy-arn "${BEDROCK_POLICY_ARN}" &>/dev/null; then
+  # Update existing policy with a new version
+  # Delete oldest non-default version if at limit (max 5 versions)
+  OLD_VERSION=$(aws iam list-policy-versions --policy-arn "${BEDROCK_POLICY_ARN}" \
+    --query "Versions[?IsDefaultVersion==\`false\`]|sort_by(@,&CreateDate)[0].VersionId" --output text 2>/dev/null || true)
+  if [[ -n "${OLD_VERSION}" && "${OLD_VERSION}" != "None" ]]; then
+    aws iam delete-policy-version --policy-arn "${BEDROCK_POLICY_ARN}" \
+      --version-id "${OLD_VERSION}" 2>/dev/null || true
+  fi
+  aws iam create-policy-version \
+    --policy-arn "${BEDROCK_POLICY_ARN}" \
+    --policy-document "${BEDROCK_POLICY}" \
+    --set-as-default > /dev/null
+  echo "  ✔ Updated task policy"
+else
+  # Try the old policy name first and clean it up
+  OLD_POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${PREFIX}-bedrock-policy"
+  if aws iam get-policy --policy-arn "${OLD_POLICY_ARN}" &>/dev/null; then
+    aws iam detach-role-policy --role-name "${TASK_ROLE_NAME}" \
+      --policy-arn "${OLD_POLICY_ARN}" 2>/dev/null || true
+  fi
   BEDROCK_POLICY_ARN=$(aws iam create-policy \
     --policy-name "${BEDROCK_POLICY_NAME}" \
     --policy-document "${BEDROCK_POLICY}" \
     --query "Policy.Arn" --output text)
-  echo "  ✔ Created Bedrock policy"
+  echo "  ✔ Created task policy"
 fi
 aws iam attach-role-policy --role-name "${TASK_ROLE_NAME}" \
   --policy-arn "${BEDROCK_POLICY_ARN}" 2>/dev/null || true
 
-# ── 5b. S3 Bucket for Scan Logs ────────────────────────────────────────────
+# ── 5b. DynamoDB Table for scan history ──────────────────────────────────────
 echo ""
-echo "▸ Step 5b: S3 Scan Log Bucket"
-SCAN_LOG_BUCKET="${PREFIX}-scan-logs-${ACCOUNT_ID}"
-if aws s3api head-bucket --bucket "${SCAN_LOG_BUCKET}" --region "${REGION}" 2>/dev/null; then
-  echo "  ✔ Bucket ${SCAN_LOG_BUCKET} already exists"
+echo "▸ Step 5b: DynamoDB Table + S3 Payload Bucket"
+SCAN_TABLE="${PREFIX}-scans"
+if aws dynamodb describe-table --table-name "${SCAN_TABLE}" --region "${REGION}" &>/dev/null; then
+  echo "  ✔ DynamoDB table ${SCAN_TABLE} already exists"
 else
-  aws s3api create-bucket --bucket "${SCAN_LOG_BUCKET}" --region "${REGION}" \
-    $(if [[ "${REGION}" != "us-east-1" ]]; then echo "--create-bucket-configuration LocationConstraint=${REGION}"; fi) \
-    > /dev/null
-  aws s3api put-bucket-tagging --bucket "${SCAN_LOG_BUCKET}" --tagging \
-    '{"TagSet":[{"Key":"Environment","Value":"'"${TAG_ENVIRONMENT}"'"},{"Key":"Team","Value":"'"${TAG_TEAM}"'"},{"Key":"Service","Value":"'"${TAG_SERVICE}"'"},{"Key":"Email","Value":"'"${TAG_EMAIL}"'"}]}' \
-    --region "${REGION}"
-  echo "  ✔ Created bucket ${SCAN_LOG_BUCKET}"
+  aws dynamodb create-table \
+    --table-name "${SCAN_TABLE}" \
+    --attribute-definitions \
+      AttributeName=domain,AttributeType=S \
+      AttributeName=started_at,AttributeType=S \
+      AttributeName=gsi_pk,AttributeType=S \
+    --key-schema \
+      AttributeName=domain,KeyType=HASH \
+      AttributeName=started_at,KeyType=RANGE \
+    --global-secondary-indexes '[{
+      "IndexName": "all-scans-by-date",
+      "KeySchema": [
+        {"AttributeName": "gsi_pk", "KeyType": "HASH"},
+        {"AttributeName": "started_at", "KeyType": "RANGE"}
+      ],
+      "Projection": {"ProjectionType": "ALL"}
+    }]' \
+    --billing-mode PAY_PER_REQUEST \
+    --tags Key=Environment,Value="${TAG_ENVIRONMENT}" Key=Team,Value="${TAG_TEAM}" Key=Service,Value="${TAG_SERVICE}" Key=Email,Value="${TAG_EMAIL}" \
+    --region "${REGION}" > /dev/null
+  echo "  ✔ Created DynamoDB table ${SCAN_TABLE}"
+  echo "  ⏳ Waiting for table to become active..."
+  aws dynamodb wait table-exists --table-name "${SCAN_TABLE}" --region "${REGION}"
+  echo "  ✔ Table is active"
+fi
+
+# S3 bucket for full scan payloads
+SCAN_PAYLOAD_BUCKET="${PREFIX}-scan-payloads-${ACCOUNT_ID}"
+if aws s3api head-bucket --bucket "${SCAN_PAYLOAD_BUCKET}" --region "${REGION}" 2>/dev/null; then
+  echo "  ✔ S3 bucket ${SCAN_PAYLOAD_BUCKET} already exists"
+else
+  aws s3api create-bucket --bucket "${SCAN_PAYLOAD_BUCKET}" --region "${REGION}" > /dev/null
+  aws s3api put-bucket-tagging --bucket "${SCAN_PAYLOAD_BUCKET}" --tagging "TagSet=[{Key=Environment,Value=${TAG_ENVIRONMENT}},{Key=Team,Value=${TAG_TEAM}},{Key=Service,Value=${TAG_SERVICE}},{Key=Email,Value=${TAG_EMAIL}}]"
+  echo "  ✔ Created S3 bucket ${SCAN_PAYLOAD_BUCKET}"
 fi
 
 # ── 6. CloudWatch Log Group ─────────────────────────────────────────────────
@@ -386,7 +441,8 @@ TASK_DEF=$(cat <<TASKDEF
       {"name": "BASIC_AUTH_USER", "value": "${BASIC_AUTH_USER}"},
       {"name": "BASIC_AUTH_PASS", "value": "${BASIC_AUTH_PASS}"},
       {"name": "AWS_DEFAULT_REGION", "value": "${REGION}"},
-      {"name": "SCAN_LOG_BUCKET", "value": "${SCAN_LOG_BUCKET}"}
+      {"name": "SCAN_TABLE_NAME", "value": "${SCAN_TABLE}"},
+      {"name": "SCAN_PAYLOAD_BUCKET", "value": "${SCAN_PAYLOAD_BUCKET}"}
     ],
     "logConfiguration": {
       "logDriver": "awslogs",

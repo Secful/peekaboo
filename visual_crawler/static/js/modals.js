@@ -76,25 +76,15 @@ function showCurrentFindings() {
   document.getElementById('summaryOverlay').classList.add('show');
 }
 
-async function showAbout() {
-  document.getElementById('aboutOverlay').classList.add('show');
-
-  // Fetch version info
+// Fetch version and display in activity log header
+(async function _loadVersion() {
   try {
-    const response = await fetch('/api/version');
-    const data = await response.json();
-    document.getElementById('appVersion').textContent = `v${data.version}`;
-    document.getElementById('deployTime').textContent = data.deploy_time;
-  } catch (err) {
-    console.error('Failed to fetch version info:', err);
-    document.getElementById('appVersion').textContent = 'Unknown';
-    document.getElementById('deployTime').textContent = 'Unknown';
-  }
-}
-
-function closeAbout() {
-  document.getElementById('aboutOverlay').classList.remove('show');
-}
+    const resp = await fetch('/api/version');
+    const data = await resp.json();
+    const el = document.getElementById('activityVersion');
+    if (el) el.textContent = `(v${data.version})`;
+  } catch (_) {}
+})();
 
 function startNewScan() {
   closeSummary();

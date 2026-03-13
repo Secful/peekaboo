@@ -38,6 +38,8 @@ async def _lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s - %(message)s")
+
     app = FastAPI(lifespan=_lifespan)
 
     auth_user = os.getenv('BASIC_AUTH_USER')
