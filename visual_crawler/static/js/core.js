@@ -457,9 +457,9 @@ function handleEvent(msg) {
       break;
 
     case 'api_specs':
-      appState.apiSpecs[msg.subdomain] = msg;
-      applyApiSpecPill(msg.subdomain);
       if (msg.findings_count > 0) {
+        appState.apiSpecs[msg.subdomain] = msg;
+        applyApiSpecPill(msg.subdomain);
         addLog('', `API specs for ${msg.subdomain}: ${msg.findings_count} spec(s) found`, 'api_specs');
       }
       break;
