@@ -1008,8 +1008,8 @@
   .js-pill-right.analyzing:hover { background: transparent; }
   .js-pill-right.has-apis { color: var(--green); }
   .js-pill-right.has-apis:hover { background: rgba(5,150,105,0.1); }
-  .js-pill-right.no-apis { color: var(--text-muted); cursor: default; font-style: italic; }
-  .js-pill-right.no-apis:hover { background: transparent; }
+  .js-pill-right.no-apis { color: var(--text-muted); cursor: default; font-style: italic; background: rgba(0,0,0,0.04); }
+  .js-pill-right.no-apis:hover { background: rgba(0,0,0,0.04); }
   .js-pill-spin { display: inline-block; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
