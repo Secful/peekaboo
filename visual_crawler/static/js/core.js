@@ -745,7 +745,7 @@ function handleMobileEndpoints(msg) {
     row.innerHTML =
       `<td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${startIdx + i + 1}</td>` +
       `<td><span class="badge ${badgeClass}">${escHtml(method)}</span></td>` +
-      `<td class="path-cell" title="${escHtml(f.evidence || url)}">${escHtml(trimPath(url))}</td>` +
+      `<td class="path-cell" title="${escHtml(url)}">${escHtml(trimPath(url))}</td>` +
       `<td class="reason-cell" title="${escHtml(f.context || '')}">${escHtml(f.context ? f.context.charAt(0).toUpperCase() + f.context.slice(1) : '')}</td>` +
       `<td>${f.category ? `<span class="mobile-category">${escHtml(f.category)}</span>` : ''}</td>` +
       `<td>${domainBadge}</td>`;
