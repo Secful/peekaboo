@@ -227,6 +227,15 @@ function newScan() {
   appState.agentic = {};
   appState.extractedApis = {};
   appState.apiSpecs = {};
+  appState.mobileEndpoints = {};
+  appState._mobileCards = {};
+  _mobileDomainFilter = 'all';
+
+  // Remove dynamically created mobile tab + view
+  const mobileTab = document.getElementById('tabMobile');
+  if (mobileTab) mobileTab.remove();
+  const mobileView = document.getElementById('mobileEndpointsView');
+  if (mobileView) mobileView.remove();
 
   // Reset map state
   Object.keys(appState.geoCache).forEach(k => delete appState.geoCache[k]);
@@ -288,22 +297,33 @@ function newScan() {
 function switchView(view) {
   const endpointsView = document.getElementById('endpointsView');
   const subdomainsView = document.getElementById('subdomainsView');
+  const mobileView = document.getElementById('mobileEndpointsView');
   const tabEndpoints = document.getElementById('tabEndpoints');
   const tabSubdomains = document.getElementById('tabSubdomains');
+  const tabMobile = document.getElementById('tabMobile');
+
+  // Hide all views
+  endpointsView.style.display = 'none';
+  subdomainsView.style.display = 'none';
+  if (mobileView) mobileView.style.display = 'none';
+
+  // Deactivate all tabs
+  tabEndpoints.classList.remove('active');
+  tabSubdomains.classList.remove('active');
+  if (tabMobile) tabMobile.classList.remove('active');
 
   if (view === 'subdomains') {
-    endpointsView.style.display = 'none';
-    subdomainsView.classList.remove('hidden');
-    tabEndpoints.classList.remove('active');
+    subdomainsView.style.display = '';
     tabSubdomains.classList.add('active');
     if (appState.subdomainViewMode === 'map' && appState.subdomainMapInstance) {
       setTimeout(() => appState.subdomainMapInstance.invalidateSize(), 100);
     }
+  } else if (view === 'mobile' && mobileView) {
+    mobileView.style.display = '';
+    if (tabMobile) tabMobile.classList.add('active');
   } else {
     endpointsView.style.display = '';
-    subdomainsView.classList.add('hidden');
     tabEndpoints.classList.add('active');
-    tabSubdomains.classList.remove('active');
   }
 }
 
@@ -464,6 +484,14 @@ function handleEvent(msg) {
       }
       break;
 
+    case 'mobile_endpoints':
+      handleMobileEndpoints(msg);
+      break;
+
+    case 'android_apps':
+      showAndroidToast(msg.apps);
+      break;
+
     case 'crawl_error':
       addLog('', `Error on ${shortenUrl(msg.url)}: ${msg.error}`, 'error');
       break;
@@ -530,6 +558,244 @@ function handleEvent(msg) {
       setTimeout(resolveStaleSecuritySpinners, 90000);
       break;
   }
+}
+
+// Mobile Endpoints helpers
+function classifyMobileUrl(url, baseUrl, targetDomain) {
+  if (!targetDomain) return false;
+  const td = targetDomain.toLowerCase();
+
+  // Relative paths (starting with / and no scheme) → domain
+  if (url && url.startsWith('/') && !url.startsWith('//')) return true;
+
+  // Check the URL itself for the target domain
+  const urlsToCheck = [url, baseUrl].filter(Boolean);
+  for (const u of urlsToCheck) {
+    try {
+      const host = new URL(u).hostname.toLowerCase();
+      if (host === td || host.endsWith('.' + td)) return true;
+    } catch(e) {
+      // Not a valid absolute URL — if it looks like a relative path, it's domain
+      if (u && !u.includes('://') && !u.match(/^\d+\.\d+\.\d+\.\d+/)) return true;
+    }
+  }
+  return false;
+}
+
+let _mobileDomainFilter = 'all';
+
+function setMobileDomainFilter(filter) {
+  _mobileDomainFilter = filter;
+  ['All', 'Domain', 'External'].forEach(f => {
+    const btn = document.getElementById('mobileFilter' + f);
+    if (btn) btn.classList.toggle('active', f.toLowerCase() === filter);
+  });
+  applyMobileDomainFilter();
+}
+
+function applyMobileDomainFilter() {
+  const tbody = document.getElementById('mobileEndpointsTbody');
+  if (!tbody) return;
+  let visibleIdx = 0;
+  for (const row of tbody.rows) {
+    const domTag = row.dataset.mobileDomain;
+    const show = _mobileDomainFilter === 'all' || domTag === _mobileDomainFilter;
+    row.style.display = show ? '' : 'none';
+    if (show) {
+      visibleIdx++;
+      row.cells[0].textContent = visibleIdx;
+    }
+  }
+}
+
+function updateMobileFilterCounts() {
+  const tbody = document.getElementById('mobileEndpointsTbody');
+  const countsEl = document.getElementById('mobileFilterCounts');
+  if (!tbody || !countsEl) return;
+  let domainCount = 0, externalCount = 0;
+  for (const row of tbody.rows) {
+    if (row.dataset.mobileDomain === 'domain') domainCount++;
+    else externalCount++;
+  }
+  countsEl.textContent = `${domainCount} domain · ${externalCount} external · ${domainCount + externalCount} total`;
+}
+
+// Mobile Endpoints handler
+function handleMobileEndpoints(msg) {
+  const pkg = msg.package_name || 'unknown';
+  const appName = msg.app_name || pkg;
+  const findings = msg.findings || [];
+
+  // Decode HTML entities that may arrive pre-encoded from upstream
+  const cleanAppName = (() => { const t = document.createElement('textarea'); t.innerHTML = appName; return t.value; })();
+
+  // Only show the tab when we have actual findings
+  if (findings.length === 0) {
+    addLog('', `📱 Mobile: 0 endpoints from ${pkg} (${cleanAppName})`, '');
+    return;
+  }
+
+  // Store in appState
+  appState.mobileEndpoints[pkg] = msg;
+
+  // Sanitized id for DOM (dots are not valid in getElementById selectors)
+  const cardId = 'mobile-app-' + pkg.replace(/\./g, '-');
+
+  // Create tab + view on first call
+  if (!document.getElementById('tabMobile')) {
+    const tabContainer = document.querySelector('.view-tabs');
+    const tabBtn = document.createElement('button');
+    tabBtn.className = 'view-tab';
+    tabBtn.id = 'tabMobile';
+    tabBtn.onclick = () => switchView('mobile');
+    tabBtn.textContent = 'Mobile Endpoints';
+    tabContainer.appendChild(tabBtn);
+
+    const rightPanel = document.querySelector('.right-panel');
+    const viewDiv = document.createElement('div');
+    viewDiv.id = 'mobileEndpointsView';
+    viewDiv.style.display = 'none';
+    viewDiv.innerHTML = `
+      <div id="mobileAppsHeader" class="mobile-apps-header"></div>
+      <div class="mobile-filter-bar" id="mobileFilterBar">
+        <div class="filter-section">
+          <span class="filter-label">Domain:</span>
+          <span class="filter-btn active" id="mobileFilterAll" onclick="setMobileDomainFilter('all')">All</span>
+          <span class="filter-btn" id="mobileFilterDomain" onclick="setMobileDomainFilter('domain')">Domain</span>
+          <span class="filter-btn" id="mobileFilterExternal" onclick="setMobileDomainFilter('external')">External</span>
+        </div>
+        <span class="mobile-filter-counts" id="mobileFilterCounts"></span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:35px">#</th>
+              <th style="width:70px">Method</th>
+              <th style="width:35%">Path</th>
+              <th style="width:25%">Description</th>
+              <th style="width:80px">Category</th>
+              <th style="width:70px">Domain</th>
+            </tr>
+          </thead>
+          <tbody id="mobileEndpointsTbody"></tbody>
+        </table>
+        <div class="empty-state" id="mobileEmptyState" style="display:none">
+          <div class="icon">📱</div>
+          <div>Waiting for mobile endpoint data...</div>
+        </div>
+      </div>`;
+    rightPanel.appendChild(viewDiv);
+  }
+
+  // Update app header — single card per package, accumulate endpoint count
+  const headerDiv = document.getElementById('mobileAppsHeader');
+  if (!appState._mobileCards) appState._mobileCards = {};
+  let card = appState._mobileCards[pkg];
+  if (!card) {
+    card = document.createElement('div');
+    card.id = cardId;
+    card.className = 'mobile-app-card';
+    card.dataset.endpointCount = '0';
+    headerDiv.appendChild(card);
+    appState._mobileCards[pkg] = card;
+  }
+  const prevCount = parseInt(card.dataset.endpointCount) || 0;
+  const totalCount = prevCount + findings.length;
+  card.dataset.endpointCount = String(totalCount);
+
+  const playLink = msg.play_url
+    ? `<a href="${escHtml(msg.play_url)}" target="_blank" rel="noopener" class="mobile-play-link">Google Play ↗</a>`
+    : '';
+  card.innerHTML =
+    `<div class="mobile-app-info">` +
+      `<strong>${escHtml(cleanAppName)}</strong>` +
+      `<span class="mobile-app-pkg">${escHtml(pkg)}</span>` +
+      (msg.app_version && msg.app_version !== 'unknown' ? `<span class="mobile-app-version">v${escHtml(msg.app_version)}</span>` : '') +
+      playLink +
+    `</div>` +
+    `<div class="mobile-app-stats">` +
+      `<span>${totalCount} endpoint${totalCount !== 1 ? 's' : ''}</span>` +
+      (msg.analyzed_classes ? `<span>${msg.analyzed_classes} classes analyzed</span>` : '') +
+      (msg.scan_duration_secs ? `<span>${msg.scan_duration_secs.toFixed(1)}s</span>` : '') +
+    `</div>`;
+
+  // Append rows
+  const tbody = document.getElementById('mobileEndpointsTbody');
+  const startIdx = tbody.rows.length;
+
+  const targetDomain = appState.targetDomain;
+
+  findings.forEach((f, i) => {
+    const row = tbody.insertRow();
+    row.classList.add('flash');
+
+    const method = f.method || 'GET';
+    const badgeClass = `badge-${method}`;
+    const url = f.url || '';
+
+    // Domain relevance: relative paths or URLs containing the target domain = "domain", else "external"
+    const isDomain = classifyMobileUrl(url, f.base_url || '', targetDomain);
+    row.dataset.mobileDomain = isDomain ? 'domain' : 'external';
+
+    const domainBadge = isDomain
+      ? '<span class="mobile-domain-badge mobile-domain-yes">Domain</span>'
+      : '<span class="mobile-domain-badge mobile-domain-no">External</span>';
+
+    row.innerHTML =
+      `<td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${startIdx + i + 1}</td>` +
+      `<td><span class="badge ${badgeClass}">${escHtml(method)}</span></td>` +
+      `<td class="path-cell" title="${escHtml(f.evidence || url)}">${escHtml(trimPath(url))}</td>` +
+      `<td class="reason-cell" title="${escHtml(f.context || '')}">${escHtml(f.context ? f.context.charAt(0).toUpperCase() + f.context.slice(1) : '')}</td>` +
+      `<td>${f.category ? `<span class="mobile-category">${escHtml(f.category)}</span>` : ''}</td>` +
+      `<td>${domainBadge}</td>`;
+  });
+
+  updateMobileFilterCounts();
+  document.getElementById('mobileEmptyState').style.display = findings.length === 0 ? 'block' : 'none';
+
+  // Log
+  addLog('', `📱 Mobile: ${findings.length} endpoints from ${pkg} (${cleanAppName})`, '');
+}
+
+// Android App Toast
+let _androidToastApps = [];
+
+function showAndroidToast(apps) {
+  _androidToastApps = apps;
+  const toast = document.getElementById('androidToast');
+  const body = document.getElementById('androidToastBody');
+  // Reverse domain parts: example.com → com.example
+  const domainPrefix = (appState.targetDomain || '').split('.').reverse().join('.').toLowerCase();
+  // Sort: checked (relevant) entries first
+  const sorted = apps.map((a, i) => ({ app: a, idx: i, relevant: domainPrefix && (a.package_name || '').toLowerCase().includes(domainPrefix) }));
+  sorted.sort((a, b) => (b.relevant ? 1 : 0) - (a.relevant ? 1 : 0));
+  body.innerHTML = sorted.map(({ app: a, idx, relevant }) => {
+    return `<label class="android-toast-app">` +
+      `<input type="checkbox" ${relevant ? 'checked' : ''} data-idx="${idx}">` +
+      `<div class="app-info"><span class="app-name">${escHtml(a.app_name)}</span>` +
+      `<span class="app-pkg">${escHtml(a.package_name)}</span></div>` +
+      `<a class="app-play-link" href="${escHtml(a.play_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Google Play ↗</a>` +
+    `</label>`;
+  }).join('');
+  toast.classList.add('show');
+}
+
+function confirmAndroidApps() {
+  const checkboxes = document.querySelectorAll('#androidToastBody input[type="checkbox"]');
+  const selected = [];
+  checkboxes.forEach(cb => {
+    if (cb.checked) selected.push(_androidToastApps[parseInt(cb.dataset.idx)]);
+  });
+  if (selected.length > 0 && appState.ws && appState.ws.readyState === WebSocket.OPEN) {
+    appState.ws.send(JSON.stringify({ action: 'publish_apk', apps: selected }));
+    addLog('', `📱 Queued ${selected.length} app(s) for APK analysis`, '');
+  }
+  document.getElementById('androidToast').classList.remove('show');
+}
+
+function dismissAndroidToast() {
+  document.getElementById('androidToast').classList.remove('show');
 }
 
 // Live Preview hover: toggle class on .app so enlarged image floats above the endpoint table

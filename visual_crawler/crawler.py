@@ -3,7 +3,9 @@
 # Standard library
 import asyncio
 import base64
+import json
 import logging
+import os
 import random
 import re
 from dataclasses import asdict
@@ -15,6 +17,7 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 # Third-party
+import httpx
 from playwright.async_api import async_playwright, Page, Response
 
 # Local imports
@@ -23,7 +26,7 @@ from .sitemap_parser import fetch_sitemap_urls
 from .technology_detector import analyze_technologies
 from .proxy_pool import ProxyPool
 from .crawler_utils import (
-    _templatize, _is_static, _auto_scroll, _interact,
+    _templatize, _is_static, _auto_scroll, _interact, _deep_interact,
     _dismiss_floating_dialogs, _classify, _looks_like_js_payload,
 )
 from .constants import (
@@ -104,6 +107,9 @@ class APICrawler:
 
         # Screenshot synchronization lock (prevent page close during screenshot)
         self._screenshot_lock = asyncio.Lock()
+
+        # Android app detection (populated by background task)
+        self.android_apps: list[dict] = []
 
     def on_event(self, callback: Callable[[dict], Awaitable[None]]) -> None:
         """Register a callback for crawler events."""
@@ -490,6 +496,9 @@ class APICrawler:
             self._start_url = start_url
             self.queue.append((start_url, 0))
 
+            # Fire-and-forget: detect Android app in background (never blocks the scan)
+            android_task = asyncio.create_task(self._detect_android_app())
+
             # Process pages with controlled concurrency
             # Always process full queue, but only discover new pages during first max_pages
             while self.queue and not self._stopped:
@@ -529,6 +538,10 @@ class APICrawler:
             # Close local browser (remote browser sessions are closed per-page)
             if self.browser:
                 await self.browser.close()
+
+            # Ensure background android detection finishes before we leave
+            if not android_task.done():
+                await asyncio.wait([android_task], timeout=15)
 
         # Clear queue if stopped early
         remaining_in_queue = len(self.queue)
@@ -765,8 +778,11 @@ class APICrawler:
 
             # Skip auto-scroll and interactions in fast mode
             if not self.fast_mode:
-                await _auto_scroll(page)
-                await _interact(page)
+                if self.using_remote_browser:
+                    await _deep_interact(page)
+                else:
+                    await _auto_scroll(page)
+                    await _interact(page)
 
             await self._extract_api_hints_from_source(page, page_url)
 
@@ -1061,3 +1077,182 @@ class APICrawler:
                 "message": "⚠️ All sitemap URLs already visited - scan will end"
             })
             return False
+
+    async def _detect_android_app(self) -> None:
+        """Detect Android apps via assetlinks.json, falling back to Play Store search.
+
+        Runs as a background task — never raises; failures are logged and ignored.
+        """
+        _PLAY_HEADERS = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        try:
+            logger.info(f"📱 Android app detection started for {self.domain}")
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                # ── Strategy 1: assetlinks.json ──────────────────────────
+                packages = await self._packages_from_assetlinks(client)
+
+                # ── Strategy 2: Play Store search (fallback) ─────────────
+                if not packages:
+                    await self._emit("status", {
+                        "message": f"📱 No assetlinks.json — searching Play Store for {self.domain}"
+                    })
+                    packages = await self._packages_from_play_search(client, _PLAY_HEADERS)
+
+                if not packages:
+                    await self._emit("status", {
+                        "message": f"📱 No Android app found for {self.domain}"
+                    })
+                    return
+
+                # ── Verify each package on Google Play ───────────────────
+                verified: list[dict] = []
+                for pkg in packages:
+                    try:
+                        play_url = f"https://play.google.com/store/apps/details?id={pkg}&hl=en"
+                        play_resp = await client.get(play_url, headers=_PLAY_HEADERS)
+                        if play_resp.status_code == 200:
+                            app_name = pkg  # fallback
+                            # og:title is server-rendered (unlike <title> which needs JS)
+                            og_match = re.search(
+                                r'<meta\s+property="og:title"\s+content="([^"]+)"', play_resp.text
+                            )
+                            if og_match:
+                                app_name = og_match.group(1).split(" - Apps on")[0].strip() or pkg
+                            else:
+                                title_match = re.search(r"<title>([^<]+)</title>", play_resp.text)
+                                if title_match:
+                                    app_name = title_match.group(1).split(" - ")[0].strip() or pkg
+                            verified.append({
+                                "package_name": pkg,
+                                "app_name": app_name,
+                                "play_url": f"https://play.google.com/store/apps/details?id={pkg}",
+                            })
+                    except Exception:
+                        pass
+
+                # ── Emit results and store (SQS publish is user-triggered) ─
+                if verified:
+                    self.android_apps = verified
+                    for app in verified:
+                        await self._emit("status", {
+                            "message": f"📱 Android app: {app['app_name']} ({app['package_name']})"
+                        })
+                    await self._emit("android_apps", {"apps": verified})
+                else:
+                    await self._emit("status", {
+                        "message": f"📱 No downloadable Android app found for {self.domain}"
+                    })
+
+        except Exception as e:
+            logger.warning(f"Android app detection failed: {e}")
+            await self._emit("status", {
+                "message": f"📱 Android app detection failed for {self.domain}"
+            })
+
+    # ── helpers for _detect_android_app ──────────────────────────────────────
+
+    async def _packages_from_assetlinks(self, client: httpx.AsyncClient) -> set[str]:
+        """Try to extract Android package names from assetlinks.json."""
+        candidates = [self.domain]
+        if not self.domain.startswith("www."):
+            candidates.append(f"www.{self.domain}")
+        else:
+            candidates.append(self.domain.removeprefix("www."))
+
+        allowed = {self.domain, f"www.{self.domain}",
+                   self.domain.removeprefix("www.")}
+
+        for candidate in candidates:
+            url = f"https://{candidate}/.well-known/assetlinks.json"
+            try:
+                resp = await client.get(url)
+            except Exception:
+                continue
+            final_host = resp.url.host.lower() if resp.url else ""
+            if final_host and final_host.rstrip(".") not in allowed:
+                continue
+            if resp.status_code != 200:
+                continue
+            try:
+                data = resp.json()
+            except Exception:
+                continue
+
+            packages: set[str] = set()
+            if isinstance(data, list):
+                for entry in data:
+                    target = entry.get("target", {}) if isinstance(entry, dict) else {}
+                    if target.get("namespace") == "android_app":
+                        pkg = target.get("package_name")
+                        if pkg:
+                            packages.add(pkg)
+            if packages:
+                return packages
+        return set()
+
+    async def _packages_from_play_search(
+        self, client: httpx.AsyncClient, headers: dict
+    ) -> set[str]:
+        """Search Google Play for apps matching the domain brand and filter by relevance."""
+        # Use the first segment of the domain as the search term
+        brand = self.domain.removeprefix("www.").split(".")[0].lower()
+        if len(brand) < 3:
+            return set()
+
+        search_url = f"https://play.google.com/store/search?q={brand}&c=apps&hl=en"
+        try:
+            resp = await client.get(search_url, headers=headers)
+        except Exception:
+            return set()
+        if resp.status_code != 200:
+            return set()
+
+        # Extract unique package names from search results
+        raw = re.findall(r"/store/apps/details\?id=([a-zA-Z0-9_.]+)", resp.text)
+        candidates = list(dict.fromkeys(raw))[:10]  # dedupe, cap at 10
+
+        # Filter: only keep apps whose Play Store page mentions the brand
+        verified: set[str] = set()
+        for pkg in candidates:
+            try:
+                app_url = f"https://play.google.com/store/apps/details?id={pkg}&hl=en"
+                app_resp = await client.get(app_url, headers=headers)
+                if app_resp.status_code == 200 and brand in app_resp.text.lower():
+                    verified.add(pkg)
+            except Exception:
+                continue
+        return verified
+
+    async def _publish_apk_jobs(self, apps: list[dict]) -> None:
+        """Publish one SQS message per Android app for APK download processing."""
+        queue_name = "peekaboo-apk-analyzer"
+        try:
+            import boto3
+            sqs = boto3.client("sqs", region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+            queue_url = sqs.get_queue_url(QueueName=queue_name)["QueueUrl"]
+            logger.info(f"📱 SQS: resolved queue {queue_name} -> {queue_url}")
+            sent = 0
+            for app in apps:
+                message = {
+                    "package_name": app["package_name"],
+                    "app_name": app["app_name"],
+                    "play_url": app["play_url"],
+                    "domain": self.domain,
+                    "scan_id": self.scan_id,
+                }
+                body = json.dumps(message)
+                sqs.send_message(QueueUrl=queue_url, MessageBody=body)
+                sent += 1
+                logger.info(f"📱 SQS: sent to {queue_name}: {body}")
+            logger.info(f"📱 SQS: success — {sent}/{len(apps)} messages sent to {queue_name}")
+            await self._emit("status", {
+                "message": f"📱 Published {sent} APK download job(s) to SQS"
+            })
+        except Exception as e:
+            logger.error(f"📱 SQS: FAILED to publish to {queue_name}: {e}")
+            await self._emit("status", {
+                "message": f"📱 Failed to publish APK jobs to SQS: {e}"
+            })

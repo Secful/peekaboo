@@ -237,6 +237,14 @@ BEDROCK_POLICY='{
         "s3:GetObject"
       ],
       "Resource": "arn:aws:s3:::'${PREFIX}'-scan-payloads-'${ACCOUNT_ID}'/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sqs:GetQueueUrl",
+        "sqs:SendMessage"
+      ],
+      "Resource": "arn:aws:sqs:*:'${ACCOUNT_ID}':'${PREFIX}'-apk-analyzer"
     }
   ]
 }'
@@ -314,6 +322,18 @@ else
   aws s3api create-bucket --bucket "${SCAN_PAYLOAD_BUCKET}" --region "${REGION}" > /dev/null
   aws s3api put-bucket-tagging --bucket "${SCAN_PAYLOAD_BUCKET}" --tagging "TagSet=[{Key=Environment,Value=${TAG_ENVIRONMENT}},{Key=Team,Value=${TAG_TEAM}},{Key=Service,Value=${TAG_SERVICE}},{Key=Email,Value=${TAG_EMAIL}}]"
   echo "  ✔ Created S3 bucket ${SCAN_PAYLOAD_BUCKET}"
+fi
+
+# SQS queue for APK download jobs
+APK_QUEUE="${PREFIX}-apk-analyzer"
+if aws sqs get-queue-url --queue-name "${APK_QUEUE}" --region "${REGION}" &>/dev/null; then
+  echo "  ✔ SQS queue ${APK_QUEUE} already exists"
+else
+  aws sqs create-queue \
+    --queue-name "${APK_QUEUE}" \
+    --tags Environment="${TAG_ENVIRONMENT}",Team="${TAG_TEAM}",Service="${TAG_SERVICE}",Email="${TAG_EMAIL}" \
+    --region "${REGION}" > /dev/null
+  echo "  ✔ Created SQS queue ${APK_QUEUE}"
 fi
 
 # ── 6. CloudWatch Log Group ─────────────────────────────────────────────────

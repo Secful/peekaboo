@@ -1,6 +1,8 @@
 """Helper functions for the API crawler."""
 
+import asyncio
 import logging
+import re
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -73,6 +75,152 @@ async def _interact(page: Page):
                     pass
         except Exception:
             pass
+
+
+async def _deep_interact(page: Page):
+    """Perform deep page interaction to discover more API calls.
+
+    Used only for remote browser sessions. Scrolls the full page, clicks
+    buttons/tabs/accordions/load-more links, submits one search form,
+    and follows pagination — all to trigger lazy-loaded XHR/fetch calls.
+    Each action is individually wrapped in try/except for fault tolerance.
+    Total execution is capped at 30 seconds.
+    """
+
+    async def _run():
+        page_origin = urlparse(page.url).netloc
+
+        # -- 1a. Full-page scroll (capped at 20,000px) -----------------------
+        try:
+            await page.evaluate("""async () => {
+                await new Promise(r => {
+                    let t = 0; const s = 500;
+                    const maxH = Math.min(document.body.scrollHeight, 20000);
+                    const i = setInterval(() => {
+                        window.scrollBy(0, s); t += s;
+                        if (t >= maxH) { clearInterval(i); r(); }
+                    }, 200);
+                });
+                window.scrollTo(0, 0);
+            }""")
+            await page.wait_for_timeout(500)
+        except Exception:
+            pass
+
+        # -- helper: safe click that skips cross-origin links -----------------
+        async def _safe_click(el):
+            try:
+                href = await el.get_attribute("href")
+                if href and href.startswith("http"):
+                    link_origin = urlparse(href).netloc
+                    if link_origin and link_origin != page_origin:
+                        return
+                await el.click(timeout=2000)
+                await page.wait_for_timeout(800)
+            except Exception:
+                pass
+
+        # -- 1b. Click buttons & tabs (up to 8) ------------------------------
+        for sel in ["button:visible", "[role='tab']:visible"]:
+            try:
+                elements = await page.query_selector_all(sel)
+                for el in elements[:8]:
+                    await _safe_click(el)
+            except Exception:
+                pass
+
+        # -- 1b cont. Accordions / collapsibles (up to 5) --------------------
+        accordion_sels = [
+            "details > summary",
+            "[aria-expanded='false']",
+            ".accordion-header",
+            ".collapse-toggle",
+        ]
+        clicked_accordion = 0
+        for sel in accordion_sels:
+            if clicked_accordion >= 5:
+                break
+            try:
+                elements = await page.query_selector_all(sel)
+                for el in elements:
+                    if clicked_accordion >= 5:
+                        break
+                    await _safe_click(el)
+                    clicked_accordion += 1
+            except Exception:
+                pass
+
+        # -- 1b cont. "Load more" / "Show more" links (up to 3) --------------
+        try:
+            candidates = await page.query_selector_all("a:visible, button:visible")
+            load_more_count = 0
+            for el in candidates:
+                if load_more_count >= 3:
+                    break
+                try:
+                    text = (await el.inner_text()).strip()
+                    if re.search(r"load\s*more|show\s*more|view\s*all|see\s*all|next\s*page", text, re.IGNORECASE):
+                        await _safe_click(el)
+                        load_more_count += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # -- 1c. Fill and submit one search/filter form -----------------------
+        try:
+            forms = await page.query_selector_all("form:visible")
+            for form in forms:
+                text_input = await form.query_selector("input[type='search'], input[type='text']")
+                if text_input:
+                    try:
+                        await text_input.fill("test")
+                        await text_input.press("Enter")
+                        await page.wait_for_timeout(1500)
+                    except Exception:
+                        pass
+                    break  # only one form
+        except Exception:
+            pass
+
+        # -- 1d. Pagination (up to 2 clicks) ----------------------------------
+        pagination_sels = [
+            ".pagination a",
+            "nav[aria-label*='pag'] a",
+            "[role='navigation'] a",
+        ]
+        pagination_clicks = 0
+        for sel in pagination_sels:
+            if pagination_clicks >= 2:
+                break
+            try:
+                links = await page.query_selector_all(sel)
+                for link in links:
+                    if pagination_clicks >= 2:
+                        break
+                    try:
+                        text = (await link.inner_text()).strip().lower()
+                        if text in ("next", "2", "»", "›", ">"):
+                            await _safe_click(link)
+                            pagination_clicks += 1
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # -- 1e. Wait for network settle --------------------------------------
+        try:
+            await page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
+
+    # Cap total execution at 30 seconds
+    try:
+        await asyncio.wait_for(_run(), timeout=30)
+    except asyncio.TimeoutError:
+        logger.debug("_deep_interact timed out after 30s")
+    except Exception as exc:
+        logger.debug("_deep_interact error: %s", exc)
 
 
 async def _try_click_in_frames(page: Page, js_script: str, description: str) -> bool:

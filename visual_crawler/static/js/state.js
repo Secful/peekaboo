@@ -26,6 +26,7 @@ const appState = {
   agentic: {},
   extractedApis: {},
   apiSpecs: {},
+  mobileEndpoints: {},
   geoCache: {},
   subdomainMapInstance: null,
   subdomainMapMarkers: [],

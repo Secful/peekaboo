@@ -519,6 +519,8 @@ function _renderApiSpecsTab() {
   };
 
   let html = '';
+  const _histSpecToFetch = [];
+  let _histSpecIdx = 0;
   subdomains.forEach(sub => {
     const data = specs[sub];
     const findings = data.findings || [];
@@ -543,6 +545,7 @@ function _renderApiSpecsTab() {
       html += `<div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin:0.5rem 0 0.25rem;padding-left:0.5rem;border-left:3px solid ${borderColor}">${escHtml(catLabel)}</div>`;
 
       for (const f of items) {
+        const epId = `hist-spec-ep-${_histSpecIdx++}`;
         html += `<div class="history-scanner-card" style="border-left-color:${borderColor}">`;
         html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">`;
         html += `<span style="font-weight:600;font-size:0.82rem">${escHtml(f.name)}</span>`;
@@ -551,6 +554,10 @@ function _renderApiSpecsTab() {
         if (f.description) html += `<div style="font-size:0.78rem;color:var(--text-muted);line-height:1.4">${escHtml(f.description)}</div>`;
         html += `<div style="font-family:'JetBrains Mono',monospace;font-size:0.73rem;color:var(--text-muted);word-break:break-all;margin-top:0.15rem">${escHtml(f.path)}</div>`;
         if (f.file_url) html += `<div style="margin-top:0.15rem"><a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" style="font-size:0.72rem;color:#3b82f6;word-break:break-all">${escHtml(f.file_url)}</a></div>`;
+        if (f.category === 'openapi_spec' && f.file_url) {
+          html += `<div id="${epId}"></div>`;
+          _histSpecToFetch.push({ url: f.file_url, containerId: epId });
+        }
         html += `</div>`;
       }
     }
@@ -583,6 +590,15 @@ function _renderApiSpecsTab() {
       html += `</div>`;
     }
   });
+
+  // After rendering, kick off async endpoint fetches
+  if (_histSpecToFetch.length > 0) {
+    setTimeout(() => {
+      for (const job of _histSpecToFetch) {
+        fetchSpecEndpoints(job.url, job.containerId);
+      }
+    }, 0);
+  }
 
   return html || '<div class="history-empty" style="padding:2rem"><div>No API spec findings</div></div>';
 }

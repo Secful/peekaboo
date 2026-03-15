@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest
+from ..models import GenerateDescriptionRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -332,6 +332,66 @@ async def extracted_api(request: ExtractedApiRequest):
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
 
 
+@router.get("/api/fetch-spec")
+async def fetch_spec(url: str):
+    """Proxy-fetch an OpenAPI/Swagger JSON or YAML spec and extract endpoints."""
+    import yaml
+
+    if not url.startswith(("http://", "https://")):
+        return JSONResponse(content={"error": "Invalid URL", "endpoints": []}, status_code=400)
+
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            body = resp.text
+            # Pick parser based on URL extension; fall back to trying both
+            path_lower = url.split("?")[0].lower()
+            if path_lower.endswith((".yaml", ".yml")):
+                spec = yaml.safe_load(body)
+            else:
+                try:
+                    spec = __import__("json").loads(body)
+                except Exception:
+                    spec = yaml.safe_load(body)
+            if not isinstance(spec, dict):
+                return JSONResponse(content={"error": "Spec is not a valid JSON/YAML object", "endpoints": []})
+    except httpx.HTTPStatusError as e:
+        return JSONResponse(content={"error": f"HTTP {e.response.status_code}", "endpoints": []})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e), "endpoints": []})
+
+    try:
+        endpoints = []
+        http_methods = {"get", "post", "put", "delete", "patch", "options", "head"}
+        for path, methods in (spec.get("paths") or {}).items():
+            if not isinstance(methods, dict):
+                continue
+            for method, detail in methods.items():
+                if method.lower() not in http_methods:
+                    continue
+                if not isinstance(detail, dict):
+                    continue
+                desc = detail.get("summary") or detail.get("description") or ""
+                if len(desc) > 120:
+                    desc = desc[:117] + "..."
+                endpoints.append({"method": method.upper(), "path": path, "description": desc})
+        endpoints.sort(key=lambda e: (e["path"], e["method"]))
+
+        title = ""
+        spec_version = ""
+        info = spec.get("info") or {}
+        title = info.get("title", "")
+        if spec.get("openapi"):
+            spec_version = f"OpenAPI {spec['openapi']}"
+        elif spec.get("swagger"):
+            spec_version = f"Swagger {spec['swagger']}"
+
+        return JSONResponse(content={"endpoints": endpoints, "spec_version": spec_version, "title": title})
+    except Exception as e:
+        return JSONResponse(content={"error": f"Parse error: {e}", "endpoints": []})
+
+
 @router.post("/api/apispec")
 async def api_spec(request: ApiSpecRequest):
     """Receive API spec discovery findings from the api_discovery_lambda and push to connected UI clients."""
@@ -375,5 +435,52 @@ async def api_spec(request: ApiSpecRequest):
         f"request.domain={request.domain!r}, "
         f"client_domains={dict(_client_domains)}, "
         f"subdomains_ready={dict(_subdomains_ready)}"
+    )
+    return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+
+@router.post("/api/mobileendpoints")
+async def mobile_endpoints(request: MobileEndpointsRequest):
+    """Receive mobile endpoint findings from peekaboo-apk-analyzer and push to connected UI clients."""
+    from .ws_routes import _client_domains, _connected_clients
+    from ..scanner_store import scanner_store
+
+    logger.warning(f"Got {request.findings_count} mobile endpoints from {request.package_name} for domain {request.domain}")
+
+    payload = {
+        "type": "mobile_endpoints",
+        "domain": request.domain,
+        "package_name": request.package_name,
+        "app_name": request.app_name,
+        "play_url": request.play_url,
+        "scan_id": request.scan_id,
+        "app_version": request.app_version,
+        "scan_duration_secs": request.scan_duration_secs,
+        "decompiled_classes": request.decompiled_classes,
+        "analyzed_classes": request.analyzed_classes,
+        "findings_count": request.findings_count,
+        "findings": [f.model_dump() for f in request.findings],
+    }
+
+    scanner_store.store_mobile_endpoints(request.domain, request.package_name, payload)
+
+    pushed_to = 0
+    for scan_id, domain in list(_client_domains.items()):
+        if domain != request.domain:
+            continue
+        ws = _connected_clients.get(scan_id)
+        if ws is None:
+            continue
+        try:
+            await ws.send_json(payload)
+            pushed_to += 1
+        except Exception:
+            logger.warning(f"Failed to push mobile endpoints to scan {scan_id}")
+
+    logger.warning(
+        f"mobile_endpoints for {request.package_name}: "
+        f"pushed_to={pushed_to}, "
+        f"request.domain={request.domain!r}, "
+        f"client_domains={dict(_client_domains)}"
     )
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})

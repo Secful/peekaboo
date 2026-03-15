@@ -1176,13 +1176,16 @@ function openApiSpecDrawer(subdomain) {
   }
 
   let html = '';
+  const _specEndpointsToFetch = [];
 
   // Render grouped findings
   for (const [cat, items] of Object.entries(groups)) {
     const borderColor = categoryColors[cat] || '#6b7280';
     const catLabel = cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     html += `<div class="apispec-category-header" style="border-left-color:${borderColor}">${escHtml(catLabel)} (${items.length})</div>`;
-    for (const f of items) {
+    for (let fi = 0; fi < items.length; fi++) {
+      const f = items[fi];
+      const epContainerId = `spec-ep-${cat}-${fi}`;
       html += `<div class="apispec-finding-card" style="border-left-color:${borderColor}">
         <div class="apispec-finding-top">
           <span class="apispec-finding-name">${escHtml(f.name)}</span>
@@ -1191,7 +1194,11 @@ function openApiSpecDrawer(subdomain) {
         ${f.description ? `<div class="apispec-finding-desc">${escHtml(f.description)}</div>` : ''}
         <div class="apispec-finding-path">${escHtml(f.path)}</div>
         ${f.file_url ? `<a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" class="apispec-finding-link">${escHtml(f.file_url)}</a>` : ''}
+        ${(f.category === 'openapi_spec' && f.file_url) ? `<div id="${epContainerId}"></div>` : ''}
       </div>`;
+      if (f.category === 'openapi_spec' && f.file_url) {
+        _specEndpointsToFetch.push({ url: f.file_url, containerId: epContainerId });
+      }
     }
   }
 
@@ -1238,10 +1245,54 @@ function openApiSpecDrawer(subdomain) {
 
   content.innerHTML = html;
   drawer.classList.add('open');
+
+  // Kick off async endpoint fetches after DOM is ready
+  for (const job of _specEndpointsToFetch) {
+    fetchSpecEndpoints(job.url, job.containerId);
+  }
 }
 
 function closeApiSpecDrawer() {
   document.getElementById('apiSpecDrawer').classList.remove('open');
+}
+
+/* Fetch + render parsed endpoints from an OpenAPI/Swagger JSON spec */
+async function fetchSpecEndpoints(specUrl, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '<div class="spec-endpoints-loading"><span class="js-pill-spin">⟳</span> Loading endpoints...</div>';
+  try {
+    const resp = await fetch(`/api/fetch-spec?url=${encodeURIComponent(specUrl)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (data.error) {
+      container.innerHTML = `<div class="spec-endpoints-error">${escHtml(data.error)}</div>`;
+      return;
+    }
+    const eps = data.endpoints || [];
+    if (eps.length === 0) {
+      container.innerHTML = '<div class="spec-endpoints-error">No endpoints found in spec</div>';
+      return;
+    }
+    const titlePart = data.title ? ` — ${escHtml(data.title)}` : '';
+    const verPart = data.spec_version ? ` (${escHtml(data.spec_version)})` : '';
+    let html = `<details class="spec-endpoints-section" open>`;
+    html += `<summary>${eps.length} endpoint${eps.length !== 1 ? 's' : ''}${titlePart}${verPart}</summary>`;
+    html += '<div class="spec-endpoints-table-wrap"><table class="spec-endpoints-table">';
+    html += '<thead><tr><th>Method</th><th>Path</th></tr></thead><tbody>';
+    for (const ep of eps) {
+      const mCls = 'm-' + ep.method.toLowerCase();
+      const tipAttr = ep.description ? ` title="${escHtml(ep.description)}"` : '';
+      html += `<tr${tipAttr}>
+        <td><span class="spec-ep-method ${mCls}">${escHtml(ep.method)}</span></td>
+        <td class="spec-ep-path">${escHtml(ep.path)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div></details>';
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = `<div class="spec-endpoints-error">Failed to load: ${escHtml(err.message)}</div>`;
+  }
 }
 
 /* Fixed-position thumbnail preview on hover — escapes overflow:auto clipping */

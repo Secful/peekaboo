@@ -193,6 +193,32 @@ class ExtractedApiRequest(BaseModel):
     findings: list[ExtractedApiFinding] = []
 
 
+class MobileEndpointFinding(BaseModel):
+    """A single API endpoint extracted from an Android APK."""
+    method: str
+    url: str
+    base_url: str = ""
+    context: str = ""
+    source_class: str = ""
+    evidence: str = ""
+    category: str = ""
+
+
+class MobileEndpointsRequest(BaseModel):
+    """Request body for mobile endpoint findings from the peekaboo-apk-analyzer."""
+    domain: str
+    package_name: str
+    app_name: str = ""
+    play_url: str = ""
+    scan_id: str = ""
+    app_version: str = ""
+    scan_duration_secs: float = 0.0
+    decompiled_classes: int = 0
+    analyzed_classes: int = 0
+    findings_count: int = 0
+    findings: list[MobileEndpointFinding] = []
+
+
 class ApiSpecFinding(BaseModel):
     """A single API specification finding from the api_discovery_lambda."""
     name: str

@@ -223,6 +223,12 @@ async def websocket_endpoint(ws: WebSocket):
                             asyncio.create_task(
                                 _fetch_subdomains(domain, send_event, scan_id)
                             )
+                        elif data.get('action') == 'publish_apk':
+                            selected = data.get('apps', [])
+                            if selected:
+                                asyncio.create_task(
+                                    crawler._publish_apk_jobs(selected)
+                                )
                 except WebSocketDisconnect:
                     crawler.stop()
                     raise
