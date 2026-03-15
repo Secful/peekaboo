@@ -704,9 +704,8 @@ function handleMobileEndpoints(msg) {
   const totalCount = prevCount + findings.length;
   card.dataset.endpointCount = String(totalCount);
 
-  const playLink = msg.play_url
-    ? `<a href="${escHtml(msg.play_url)}" target="_blank" rel="noopener" class="mobile-play-link">Google Play ↗</a>`
-    : '';
+  const playUrl = msg.play_url || `https://play.google.com/store/apps/details?id=${encodeURIComponent(pkg)}`;
+  const playLink = `<a href="${escHtml(playUrl)}" target="_blank" rel="noopener" class="mobile-play-link">Google Play ↗</a>`;
   card.innerHTML =
     `<div class="mobile-app-info">` +
       `<strong>${escHtml(cleanAppName)}</strong>` +
@@ -744,7 +743,7 @@ function handleMobileEndpoints(msg) {
 
     row.innerHTML =
       `<td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${startIdx + i + 1}</td>` +
-      `<td><span class="badge ${badgeClass}">${escHtml(method)}</span></td>` +
+      `<td><span class="badge ${badgeClass}" title="${escHtml(f.evidence || '')}">${escHtml(method)}</span></td>` +
       `<td class="path-cell" title="${escHtml(url)}">${escHtml(trimPath(url))}</td>` +
       `<td class="reason-cell" title="${escHtml(f.context || '')}">${escHtml(f.context ? f.context.charAt(0).toUpperCase() + f.context.slice(1) : '')}</td>` +
       `<td>${f.category ? `<span class="mobile-category">${escHtml(f.category)}</span>` : ''}</td>` +
