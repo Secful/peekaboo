@@ -276,6 +276,10 @@ function newScan() {
   appState.mobileEndpoints = {};
   appState._mobileCards = {};
   _mobileDomainFilter = 'all';
+  _mobileCategoryFilter = 'all';
+  _mobileAppFilter = 'all';
+  _mobileKnownCategories.clear();
+  _mobileKnownApps.clear();
   _mobileSeenEndpoints.clear();
 
   // Remove dynamically created mobile tab + view
@@ -636,7 +640,11 @@ function classifyMobileUrl(url, baseUrl, targetDomain) {
 }
 
 let _mobileDomainFilter = 'all';
+let _mobileCategoryFilter = 'all';
+let _mobileAppFilter = 'all';
+const _mobileKnownCategories = new Set();
 const _mobileSeenEndpoints = new Set();
+const _mobileKnownApps = new Map(); // pkg → appName
 
 function setMobileDomainFilter(filter) {
   _mobileDomainFilter = filter;
@@ -647,31 +655,157 @@ function setMobileDomainFilter(filter) {
   applyMobileDomainFilter();
 }
 
+function setMobileCategoryFilter(cat) {
+  _mobileCategoryFilter = cat;
+  const sel = document.getElementById('mobileCategorySelect');
+  if (sel && sel.value !== cat) sel.value = cat;
+  applyMobileDomainFilter();
+}
+
+function setMobileAppFilter(pkg) {
+  _mobileAppFilter = pkg;
+  const sel = document.getElementById('mobileAppSelect');
+  if (sel && sel.value !== pkg) sel.value = pkg;
+  applyMobileDomainFilter();
+}
+
 function applyMobileDomainFilter() {
   const tbody = document.getElementById('mobileEndpointsTbody');
   if (!tbody) return;
+  const searchEl = document.getElementById('mobileSearchInput');
+  const query = searchEl ? searchEl.value.toLowerCase() : '';
   let visibleIdx = 0;
   for (const row of tbody.rows) {
     const domTag = row.dataset.mobileDomain;
-    const show = _mobileDomainFilter === 'all' || domTag === _mobileDomainFilter;
+    const domainOk = _mobileDomainFilter === 'all' || domTag === _mobileDomainFilter;
+    const catText = (row.cells[4] && row.cells[4].textContent || '').trim().toLowerCase();
+    const categoryOk = _mobileCategoryFilter === 'all' || catText === _mobileCategoryFilter.toLowerCase();
+    const appOk = _mobileAppFilter === 'all' || row.dataset.mobilePkg === _mobileAppFilter;
+    let searchOk = true;
+    if (query) {
+      const method = (row.cells[1] && row.cells[1].textContent || '').toLowerCase();
+      const path = (row.cells[2] && row.cells[2].textContent || '').toLowerCase();
+      const desc = (row.cells[3] && row.cells[3].textContent || '').toLowerCase();
+      searchOk = method.includes(query) || path.includes(query) || desc.includes(query);
+    }
+    const show = domainOk && categoryOk && appOk && searchOk;
     row.style.display = show ? '' : 'none';
     if (show) {
       visibleIdx++;
       row.cells[0].textContent = visibleIdx;
     }
   }
+  updateMobileFilterCounts();
 }
 
 function updateMobileFilterCounts() {
   const tbody = document.getElementById('mobileEndpointsTbody');
   const countsEl = document.getElementById('mobileFilterCounts');
   if (!tbody || !countsEl) return;
-  let domainCount = 0, externalCount = 0;
+  let domainCount = 0, externalCount = 0, visibleCount = 0;
   for (const row of tbody.rows) {
     if (row.dataset.mobileDomain === 'domain') domainCount++;
     else externalCount++;
+    if (row.style.display !== 'none') visibleCount++;
   }
-  countsEl.textContent = `${domainCount} domain · ${externalCount} external · ${domainCount + externalCount} total`;
+  const total = domainCount + externalCount;
+  const filtered = visibleCount < total ? `${visibleCount} shown · ` : '';
+  countsEl.textContent = `${filtered}${domainCount} domain · ${externalCount} external · ${total} total`;
+}
+
+// Mobile Endpoint Detail Drawer
+function openMobileDrawer(finding, pkg) {
+  const drawer = document.getElementById('detailDrawer');
+  const content = document.getElementById('drawerContent');
+  const appData = appState.mobileEndpoints[pkg] || {};
+
+  const method = finding.method || 'GET';
+  const url = finding.url || '';
+  const badgeClass = 'badge-' + method;
+
+  const isDomain = classifyMobileUrl(url, finding.base_url || '', appState.targetDomain);
+  const domainBadge = isDomain
+    ? '<span class="mobile-domain-badge mobile-domain-yes">Domain</span>'
+    : '<span class="mobile-domain-badge mobile-domain-no">External</span>';
+
+  let html = '';
+
+  // 1 — HTTP Method
+  html += `<div class="detail-section"><div class="detail-label">HTTP Method</div><div class="detail-value"><span class="badge ${badgeClass}">${escHtml(method)}</span></div></div>`;
+
+  // 2 — Full URL
+  html += `<div class="detail-section"><div class="detail-label">Full URL</div><div class="detail-value" style="word-break:break-all">${escHtml(url)}</div></div>`;
+
+  // 3 — Base URL (conditional)
+  if (finding.base_url) {
+    html += `<div class="detail-section"><div class="detail-label">Base URL</div><div class="detail-value" style="word-break:break-all">${escHtml(finding.base_url)}</div></div>`;
+  }
+
+  // 4 — Domain Classification
+  html += `<div class="detail-section"><div class="detail-label">Domain Classification</div><div class="detail-value">${domainBadge}</div></div>`;
+
+  // 5 — Description (conditional)
+  if (finding.context) {
+    html += `<div class="detail-section"><div class="detail-label">Description</div><div class="detail-value">${escHtml(finding.context)}</div></div>`;
+  }
+
+  // 6 — Category (conditional)
+  if (finding.category) {
+    html += `<div class="detail-section"><div class="detail-label">Category</div><div class="detail-value"><span class="mobile-category">${escHtml(finding.category)}</span></div></div>`;
+  }
+
+  // 7 — Source Class (conditional)
+  if (finding.source_class) {
+    html += `<div class="detail-section"><div class="detail-label">Source Class</div><div class="detail-value" style="word-break:break-all;font-family:monospace;font-size:0.85rem">${escHtml(finding.source_class)}</div></div>`;
+  }
+
+  // 8 — Code Evidence (conditional, collapsible)
+  if (finding.evidence) {
+    html += `<div class="detail-section"><div class="detail-label" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed')">Code Evidence ▾</div><pre class="drawer-body-pre">${escHtml(finding.evidence)}</pre></div>`;
+  }
+
+  // — App Information separator
+  html += `<div class="detail-section" style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.75rem"><div class="detail-label" style="font-weight:700;font-size:0.9rem">App Information</div></div>`;
+
+  // 9 — App Name
+  const cleanAppName = (() => { const t = document.createElement('textarea'); t.innerHTML = appData.app_name || pkg; return t.value; })();
+  html += `<div class="detail-section"><div class="detail-label">App Name</div><div class="detail-value">${escHtml(cleanAppName)}</div></div>`;
+
+  // 10 — Package Name
+  html += `<div class="detail-section"><div class="detail-label">Package Name</div><div class="detail-value" style="font-family:monospace;font-size:0.85rem">${escHtml(pkg)}</div></div>`;
+
+  // 11 — Target Domain
+  const domain = appData.domain || appState.targetDomain || '';
+  html += `<div class="detail-section"><div class="detail-label">Target Domain</div><div class="detail-value">${escHtml(domain)}</div></div>`;
+
+  // 12 — App Version (conditional, skip if 'unknown')
+  if (appData.app_version && appData.app_version !== 'unknown') {
+    html += `<div class="detail-section"><div class="detail-label">App Version</div><div class="detail-value">${escHtml(appData.app_version)}</div></div>`;
+  }
+
+  // 13 — Google Play (conditional)
+  if (appData.play_url) {
+    html += `<div class="detail-section"><div class="detail-label">Google Play</div><div class="detail-value"><a href="${escHtml(appData.play_url)}" target="_blank" rel="noopener" style="color:var(--link)">${escHtml(appData.play_url)} ↗</a></div></div>`;
+  }
+
+  // 14 — Decompiled Classes (conditional)
+  if (appData.decompiled_classes) {
+    html += `<div class="detail-section"><div class="detail-label">Decompiled Classes</div><div class="detail-value">${appData.decompiled_classes.toLocaleString()}</div></div>`;
+  }
+
+  // 15 — Analyzed Classes (conditional)
+  if (appData.analyzed_classes) {
+    html += `<div class="detail-section"><div class="detail-label">Analyzed Classes</div><div class="detail-value">${appData.analyzed_classes.toLocaleString()}</div></div>`;
+  }
+
+  // 16 — Scan Duration (conditional)
+  if (appData.scan_duration_secs) {
+    html += `<div class="detail-section"><div class="detail-label">Scan Duration</div><div class="detail-value">${appData.scan_duration_secs.toFixed(1)}s</div></div>`;
+  }
+
+  content.innerHTML = html;
+  document.querySelector('#detailDrawer .drawer-header h3').textContent = 'Mobile Endpoint Details';
+  drawer.classList.add('open');
 }
 
 // Mobile Endpoints handler
@@ -712,11 +846,24 @@ function handleMobileEndpoints(msg) {
     viewDiv.innerHTML = `
       <div id="mobileAppsHeader" class="mobile-apps-header"></div>
       <div class="mobile-filter-bar" id="mobileFilterBar">
+        <input class="search-input" id="mobileSearchInput" placeholder="Filter mobile APIs..." oninput="applyMobileDomainFilter()">
         <div class="filter-section">
           <span class="filter-label">Domain:</span>
           <span class="filter-btn active" id="mobileFilterAll" onclick="setMobileDomainFilter('all')">All</span>
           <span class="filter-btn" id="mobileFilterDomain" onclick="setMobileDomainFilter('domain')">Domain</span>
           <span class="filter-btn" id="mobileFilterExternal" onclick="setMobileDomainFilter('external')">External</span>
+        </div>
+        <div class="filter-section">
+          <span class="filter-label">App:</span>
+          <select id="mobileAppSelect" onchange="setMobileAppFilter(this.value)" style="padding:0.3rem 0.5rem;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:0.8rem;">
+            <option value="all">All</option>
+          </select>
+        </div>
+        <div class="filter-section">
+          <span class="filter-label">Category:</span>
+          <select id="mobileCategorySelect" onchange="setMobileCategoryFilter(this.value)" style="padding:0.3rem 0.5rem;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:0.8rem;">
+            <option value="all">All</option>
+          </select>
         </div>
         <span class="mobile-filter-counts" id="mobileFilterCounts"></span>
       </div>
@@ -754,6 +901,19 @@ function handleMobileEndpoints(msg) {
     headerDiv.appendChild(card);
     appState._mobileCards[pkg] = card;
   }
+
+  // Populate App filter dropdown on first encounter of this package
+  if (!_mobileKnownApps.has(pkg)) {
+    _mobileKnownApps.set(pkg, cleanAppName);
+    const sel = document.getElementById('mobileAppSelect');
+    if (sel) {
+      const opt = document.createElement('option');
+      opt.value = pkg;
+      opt.textContent = cleanAppName;
+      sel.appendChild(opt);
+    }
+  }
+
   const prevCount = parseInt(card.dataset.endpointCount) || 0;
   const totalCount = prevCount + findings.length;
   card.dataset.endpointCount = String(totalCount);
@@ -782,7 +942,8 @@ function handleMobileEndpoints(msg) {
   findings.forEach((f, i) => {
     const method = f.method || 'GET';
     const url = f.url || '';
-    const dedupKey = `${pkg}|${method}|${url}`;
+    const normUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+    const dedupKey = `${pkg}|${method}|${normUrl}`;
     if (_mobileSeenEndpoints.has(dedupKey)) return;
     _mobileSeenEndpoints.add(dedupKey);
 
@@ -794,6 +955,7 @@ function handleMobileEndpoints(msg) {
     // Domain relevance: relative paths or URLs containing the target domain = "domain", else "external"
     const isDomain = classifyMobileUrl(url, f.base_url || '', targetDomain);
     row.dataset.mobileDomain = isDomain ? 'domain' : 'external';
+    row.dataset.mobilePkg = pkg;
 
     const domainBadge = isDomain
       ? '<span class="mobile-domain-badge mobile-domain-yes">Domain</span>'
@@ -806,9 +968,23 @@ function handleMobileEndpoints(msg) {
       `<td class="reason-cell" title="${escHtml(f.context || '')}">${escHtml(f.context ? f.context.charAt(0).toUpperCase() + f.context.slice(1) : '')}</td>` +
       `<td>${f.category ? `<span class="mobile-category">${escHtml(f.category)}</span>` : ''}</td>` +
       `<td>${domainBadge}</td>`;
+
+    row.style.cursor = 'pointer';
+    row.onclick = () => openMobileDrawer(f, pkg);
+
+    if (f.category && !_mobileKnownCategories.has(f.category)) {
+      _mobileKnownCategories.add(f.category);
+      const sel = document.getElementById('mobileCategorySelect');
+      if (sel) {
+        const opt = document.createElement('option');
+        opt.value = f.category;
+        opt.textContent = f.category;
+        sel.appendChild(opt);
+      }
+    }
   });
 
-  updateMobileFilterCounts();
+  applyMobileDomainFilter();
   document.getElementById('mobileEmptyState').style.display = findings.length === 0 ? 'block' : 'none';
 
   // Log
@@ -866,3 +1042,22 @@ function dismissAndroidToast() {
     if (e.target.tagName === 'IMG') app.classList.remove('preview-hover-active');
   }, true);
 })();
+
+// Deep-link: ?domain=X&scan=Y → open history modal with that scan
+(function checkDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const domain = params.get('domain');
+  const scanId = params.get('scan');
+  if (!domain || !scanId) return;
+
+  document.getElementById('startOverlay').classList.add('hidden');
+  openHistoryModal();
+  viewScanDetail(domain, scanId);
+})();
+
+// Restore web drawer header when opening a web endpoint
+const _originalOpenDrawer = openDrawer;
+openDrawer = function(ep) {
+  _originalOpenDrawer(ep);
+  document.querySelector('#detailDrawer .drawer-header h3').textContent = 'Endpoint Details';
+};

@@ -11,7 +11,8 @@
 <body>
 <!-- Start Form Overlay -->
 <div class="start-overlay" id="startOverlay">
-  <div class="start-form-container">
+  <div class="start-form-container" style="position:relative;">
+    <button class="summary-close" onclick="document.getElementById('startOverlay').classList.add('hidden');document.getElementById('newScanBtn').classList.remove('hidden');" style="position:absolute;top:0.75rem;right:0.75rem;">×</button>
     <h2 style="display:flex;align-items:center;justify-content:center;gap:0.6rem;">
       <svg style="height:1.5rem;width:auto;" version="1.1" viewBox="0 0 152.63 40.25" xmlns="http://www.w3.org/2000/svg">
         <path d="m31.09 11.7c1.2316 0 2.23-0.9984 2.23-2.23s-0.9984-2.23-2.23-2.23-2.23 0.99844-2.23 2.23 0.9984 2.23 2.23 2.23z" fill="currentColor"></path>
