@@ -48,6 +48,52 @@ function toggleAdvanced() {
   }
 }
 
+// Log tab switching
+function switchLogTab(tab) {
+  const activityLog = document.getElementById('activityLog');
+  const apkLog = document.getElementById('apkAnalysisLog');
+  const tabActivity = document.getElementById('logTabActivity');
+  const tabApk = document.getElementById('logTabApk');
+
+  activityLog.style.display = 'none';
+  apkLog.style.display = 'none';
+  tabActivity.classList.remove('active');
+  tabApk.classList.remove('active');
+
+  if (tab === 'apk') {
+    apkLog.style.display = '';
+    tabApk.classList.add('active');
+    tabApk.classList.remove('has-new');
+  } else {
+    activityLog.style.display = '';
+    tabActivity.classList.add('active');
+  }
+}
+
+function addApkLog(msg) {
+  const log = document.getElementById('apkAnalysisLog');
+  const entry = document.createElement('div');
+  const level = (msg.level || 'INFO').toUpperCase();
+  let levelClass = 'apk-info';
+  if (level === 'WARNING') levelClass = 'apk-warning';
+  else if (level === 'ERROR') levelClass = 'apk-error';
+  entry.className = `log-entry ${levelClass}`;
+  const pkg = msg.package_name || '';
+  const now = new Date();
+  const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  entry.textContent = `${ts} [${pkg}] ${msg.message || ''}`;
+  log.prepend(entry);
+
+  // Cap at 200 entries
+  while (log.children.length > 200) log.lastChild.remove();
+
+  // Flash the APK tab if it's not active
+  const tabApk = document.getElementById('logTabApk');
+  if (!tabApk.classList.contains('active')) {
+    tabApk.classList.add('has-new');
+  }
+}
+
 // WebSocket connection
 function ensureWebSocket() {
   return new Promise((resolve, reject) => {
@@ -230,6 +276,7 @@ function newScan() {
   appState.mobileEndpoints = {};
   appState._mobileCards = {};
   _mobileDomainFilter = 'all';
+  _mobileSeenEndpoints.clear();
 
   // Remove dynamically created mobile tab + view
   const mobileTab = document.getElementById('tabMobile');
@@ -258,6 +305,8 @@ function newScan() {
   // Reset UI
   document.getElementById('tbody').innerHTML = '';
   document.getElementById('activityLog').innerHTML = '';
+  document.getElementById('apkAnalysisLog').innerHTML = '';
+  switchLogTab('activity');
   document.getElementById('emptyState').style.display = 'block';
   updateEndpointCounter();
   document.getElementById('statPages').textContent = '0';
@@ -492,6 +541,10 @@ function handleEvent(msg) {
       showAndroidToast(msg.apps);
       break;
 
+    case 'apk_status':
+      addApkLog(msg);
+      break;
+
     case 'crawl_error':
       addLog('', `Error on ${shortenUrl(msg.url)}: ${msg.error}`, 'error');
       break;
@@ -583,6 +636,7 @@ function classifyMobileUrl(url, baseUrl, targetDomain) {
 }
 
 let _mobileDomainFilter = 'all';
+const _mobileSeenEndpoints = new Set();
 
 function setMobileDomainFilter(filter) {
   _mobileDomainFilter = filter;
@@ -726,12 +780,16 @@ function handleMobileEndpoints(msg) {
   const targetDomain = appState.targetDomain;
 
   findings.forEach((f, i) => {
+    const method = f.method || 'GET';
+    const url = f.url || '';
+    const dedupKey = `${pkg}|${method}|${url}`;
+    if (_mobileSeenEndpoints.has(dedupKey)) return;
+    _mobileSeenEndpoints.add(dedupKey);
+
     const row = tbody.insertRow();
     row.classList.add('flash');
 
-    const method = f.method || 'GET';
     const badgeClass = `badge-${method}`;
-    const url = f.url || '';
 
     // Domain relevance: relative paths or URLs containing the target domain = "domain", else "external"
     const isDomain = classifyMobileUrl(url, f.base_url || '', targetDomain);
@@ -742,8 +800,8 @@ function handleMobileEndpoints(msg) {
       : '<span class="mobile-domain-badge mobile-domain-no">External</span>';
 
     row.innerHTML =
-      `<td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${startIdx + i + 1}</td>` +
-      `<td><span class="badge ${badgeClass}" title="${escHtml(f.evidence || '')}">${escHtml(method)}</span></td>` +
+      `<td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem;">${tbody.rows.length}</td>` +
+      `<td><span class="badge ${badgeClass}" title="${escHtml((f.source_class ? f.source_class + '\n' : '') + (f.evidence || ''))}">${escHtml(method)}</span></td>` +
       `<td class="path-cell" title="${escHtml(url)}">${escHtml(trimPath(url))}</td>` +
       `<td class="reason-cell" title="${escHtml(f.context || '')}">${escHtml(f.context ? f.context.charAt(0).toUpperCase() + f.context.slice(1) : '')}</td>` +
       `<td>${f.category ? `<span class="mobile-category">${escHtml(f.category)}</span>` : ''}</td>` +

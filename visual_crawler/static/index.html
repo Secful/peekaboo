@@ -245,8 +245,15 @@
       <div class="current-url" id="currentUrl">&nbsp;</div>
     </div>
 
-    <div class="activity-header">Activity Log <span id="activityVersion" style="font-size:0.7rem;color:var(--text-muted);font-weight:400;margin-left:0.25rem"></span></div>
+    <div class="activity-header">
+      <div class="log-tabs">
+        <button class="log-tab active" id="logTabActivity" onclick="switchLogTab('activity')">Activity Log</button>
+        <button class="log-tab" id="logTabApk" onclick="switchLogTab('apk')">APK Analysis</button>
+      </div>
+      <span id="activityVersion" style="font-size:0.7rem;color:var(--text-muted);font-weight:400;margin-left:auto"></span>
+    </div>
     <div class="activity-log" id="activityLog"></div>
+    <div class="activity-log" id="apkAnalysisLog" style="display:none"></div>
   </div>
 
   <!-- Right panel -->

@@ -278,7 +278,17 @@
     color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;
     border-top:1px solid var(--border); border-bottom:1px solid var(--border);
     background:var(--surface2);
+    display:flex; align-items:center;
   }
+  .log-tabs { display:flex; gap:0; }
+  .log-tab {
+    background:none; border:none; cursor:pointer;
+    padding:0.4rem 0.75rem; font-size:0.75rem; font-weight:600;
+    color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;
+    border-bottom:2px solid transparent;
+  }
+  .log-tab.active { color:var(--green); border-bottom-color:var(--green); }
+  .log-tab.has-new { color:var(--purple-light); }
   .activity-log { flex:1; overflow-y:auto; padding:0.5rem; }
   .log-entry {
     padding:0.5rem 0.6rem; border-radius:6px; margin-bottom:0.3rem;
@@ -291,6 +301,9 @@
   .log-entry.endpoint { color:var(--green); font-weight:500; }
   .log-entry.error { color:var(--delete); font-weight:500; }
   .log-entry.page { color:var(--purple-light); }
+  .log-entry.apk-info { color:var(--text-muted); }
+  .log-entry.apk-warning { color:var(--patch); font-weight:500; }
+  .log-entry.apk-error { color:var(--delete); font-weight:500; }
 
   /* Live Preview */
   .screenshot-section { padding:0.5rem 1rem; border-top:1px solid var(--border); flex-shrink:0; position:relative; z-index:200; }

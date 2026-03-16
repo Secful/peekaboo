@@ -237,6 +237,15 @@ class GraphQLResult(BaseModel):
     type_names: list[str] = []
 
 
+class ApkAnalyzerStatusRequest(BaseModel):
+    """Real-time status update from the peekaboo-apk-analyzer."""
+    domain: str
+    package_name: str
+    scan_id: str = ""
+    type: str          # "INFO", "WARNING", "ERROR"
+    message: str
+
+
 class ApiSpecRequest(BaseModel):
     """Request body for API spec discovery findings from the api_discovery_lambda."""
     domain: str
