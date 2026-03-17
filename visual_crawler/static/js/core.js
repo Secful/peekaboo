@@ -102,7 +102,8 @@ function ensureWebSocket() {
       return;
     }
 
-    appState.ws = new WebSocket(`ws://${location.host}/ws`);
+    const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+    appState.ws = new WebSocket(`${wsProto}://${location.host}/ws`);
 
     appState.ws.onopen = () => resolve();
 
@@ -819,7 +820,7 @@ function handleMobileEndpoints(msg) {
 
   // Only show the tab when we have actual findings
   if (findings.length === 0) {
-    addLog('', `📱 Mobile: 0 endpoints from ${pkg} (${cleanAppName})`, '');
+    addLog('', `Mobile: 0 endpoints from ${pkg} (${cleanAppName})`, '');
     return;
   }
 
@@ -988,7 +989,7 @@ function handleMobileEndpoints(msg) {
   document.getElementById('mobileEmptyState').style.display = findings.length === 0 ? 'block' : 'none';
 
   // Log
-  addLog('', `📱 Mobile: ${findings.length} endpoints from ${pkg} (${cleanAppName})`, '');
+  addLog('', `Mobile: ${findings.length} endpoints from ${pkg} (${cleanAppName})`, '');
 }
 
 // Android App Toast
@@ -1022,7 +1023,7 @@ function confirmAndroidApps() {
   });
   if (selected.length > 0 && appState.ws && appState.ws.readyState === WebSocket.OPEN) {
     appState.ws.send(JSON.stringify({ action: 'publish_apk', apps: selected }));
-    addLog('', `📱 Queued ${selected.length} app(s) for APK analysis`, '');
+    addLog('', `Queued ${selected.length} app(s) for APK analysis`, '');
   }
   document.getElementById('androidToast').classList.remove('show');
 }

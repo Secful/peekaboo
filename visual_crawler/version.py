@@ -1,3 +1,3 @@
 """Version information for Visual API Crawler."""
 
-__version__ = "0.17"
+__version__ = "0.2"

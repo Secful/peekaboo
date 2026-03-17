@@ -123,7 +123,9 @@ function addLog(icon, message, cls) {
   const log = document.getElementById('activityLog');
   const div = document.createElement('div');
   div.className = `log-entry ${cls}`;
-  div.innerHTML = `<span class="icon">${icon}</span><span class="msg">${escHtml(message)}</span>`;
+  const now = new Date();
+  const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  div.innerHTML = `<span class="log-ts" style="color:var(--text-muted);font-size:0.85rem;margin-right:0.4rem">${ts}</span><span class="icon">${icon}</span><span class="msg">${escHtml(message)}</span>`;
   log.insertBefore(div, log.firstChild);
   // Keep log manageable
   while (log.children.length > 200) log.removeChild(log.lastChild);

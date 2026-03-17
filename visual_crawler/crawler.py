@@ -203,13 +203,13 @@ class APICrawler:
         logger.warning(f"Blocking detected on {page_url}: {blocking_str}")
 
         await self._emit("status", {
-            "message": f"⚠️ Blocking detected: {blocking_str}"
+            "message": f"Blocking detected: {blocking_str}"
         })
 
         if blocking_indicators['captcha']:
             # CAPTCHA requires human interaction - skip this page immediately
             await self._emit("status", {
-                "message": f"🤖 CAPTCHA detected on {page_url} - skipping page"
+                "message": f"CAPTCHA detected on {page_url} - skipping page"
             })
             raise Exception(f"CAPTCHA detected - page requires human verification")
 
@@ -217,7 +217,7 @@ class APICrawler:
             # Rate limit or forbidden - exponential backoff
             backoff = min(10 * (2 ** (self.blocking_detected_count - 1)), 120)
             await self._emit("status", {
-                "message": f"⏸️ Rate limited - backing off {backoff}s..."
+                "message": f"Rate limited - backing off {backoff}s..."
             })
             await self._sleep_with_heartbeat(backoff)
 
@@ -323,7 +323,7 @@ class APICrawler:
                        f"Viewport={self.current_viewport['width']}x{self.current_viewport['height']}")
 
             await self._emit("status", {
-                "message": "🔄 Rotated browser identity"
+                "message": "Rotated browser identity"
             })
 
             # Reset counters
@@ -445,12 +445,12 @@ class APICrawler:
                 # Verify connectivity with a test connection
                 try:
                     logger.info("🌐 Testing BrightData Scraping Browser connectivity...")
-                    await self._emit("status", {"message": "🌐 Connecting to remote browser..."})
+                    await self._emit("status", {"message": "Connecting to remote browser..."})
                     test_browser = await p.chromium.connect_over_cdp(self.scraping_browser_url)
                     await test_browser.close()
                     self.using_remote_browser = True
                     logger.info("✅ BrightData Scraping Browser available")
-                    await self._emit("status", {"message": "✅ Remote browser ready (parallel sessions)"})
+                    await self._emit("status", {"message": "Remote browser ready (parallel sessions)"})
                 except Exception as e:
                     err_str = str(e)
                     logger.error(f"❌ Failed to connect to remote browser: {e}")
@@ -466,7 +466,7 @@ class APICrawler:
                     else:
                         detail = f"Error: {err_str[:200]}"
                     logger.error(f"❌ Remote browser diagnostic: {detail}")
-                    await self._emit("status", {"message": f"⚠️ Remote browser failed: {detail}"})
+                    await self._emit("status", {"message": f"Remote browser failed: {detail}"})
                     logger.info("🔄 Falling back to local browser...")
                     self.using_remote_browser = False
 
@@ -574,7 +574,7 @@ class APICrawler:
                     backoff = 2 ** attempt
                     logger.warning(f"Retry {attempt + 1}/{max_retries} for {page_url} after {backoff}s: {e}")
                     await self._emit("status", {
-                        "message": f"⚠️ Retry {attempt + 1}/{max_retries} for {page_url}"
+                        "message": f"Retry {attempt + 1}/{max_retries} for {page_url}"
                     })
                     await self._sleep_with_heartbeat(backoff)
 
@@ -647,7 +647,7 @@ class APICrawler:
                     www_domain = f"www.{self.domain}"
                     www_url = f"https://{www_domain}"
 
-                    await self._emit("status", {"message": f"⚠️ {self.domain} failed, trying {www_domain}..."})
+                    await self._emit("status", {"message": f"{self.domain} failed, trying {www_domain}..."})
                     logger.info(f"Retrying with www prefix: {www_url}")
 
                     try:
@@ -662,7 +662,7 @@ class APICrawler:
                         # Mark www URL as visited to avoid duplicate crawls
                         self.visited_pages.add(www_url)
 
-                        await self._emit("status", {"message": f"✅ Successfully connected to {www_domain}"})
+                        await self._emit("status", {"message": f"Successfully connected to {www_domain}"})
                         logger.info(f"Connected to {www_url}, updating domain to {www_domain}")
 
                         # Continue with normal page processing (don't return)
@@ -670,7 +670,7 @@ class APICrawler:
                         # www prefix also failed - try sitemap fallback
                         logger.error(f"www prefix also failed: {www_error}")
                         await self._emit("crawl_error", {"url": www_url, "error": f"Both {self.domain} and {www_domain} failed"})
-                        await self._emit("status", {"message": f"❌ Could not connect to {self.domain} or {www_domain}"})
+                        await self._emit("status", {"message": f"Could not connect to {self.domain} or {www_domain}"})
 
                         # Try sitemap.xml as last resort
                         sitemap_success = await self._try_sitemap_fallback(page)
@@ -683,7 +683,7 @@ class APICrawler:
                 else:
                     # Not the start URL or already tried www, just skip this page
                     await self._emit("crawl_error", {"url": page_url, "error": f"{error_type}: {error_msg}"})
-                    await self._emit("status", {"message": f"⚠️ Skipped {page_url} (navigation failed). Continuing scan..."})
+                    await self._emit("status", {"message": f"Skipped {page_url} (navigation failed). Continuing scan..."})
                     return
 
             # Detect cross-domain redirect on start URL (e.g. .com → .nl)
@@ -704,7 +704,7 @@ class APICrawler:
                 await self._emit("crawl_error", {"url": page_url, "error": error_msg})
                 # Still try to extract any API hints from error page
                 if response.status == 403:
-                    await self._emit("status", {"message": f"⚠️ Access denied (403) for {page_url}. Site may be blocking crawlers."})
+                    await self._emit("status", {"message": f"Access denied (403) for {page_url}. Site may be blocking crawlers."})
 
             # Wait for dynamic content
             # Remote browsers need more time for CAPTCHA solving / JS rendering
@@ -736,7 +736,7 @@ class APICrawler:
                         blocking_str = ', '.join([k for k, v in blocking_indicators.items() if v])
                         logger.warning(f"Blocking detected on start URL {page_url}: {blocking_str}")
                         await self._emit("status", {
-                            "message": f"⚠️ CAPTCHA detected on homepage - trying sitemap fallback"
+                            "message": f"CAPTCHA detected on homepage - trying sitemap fallback"
                         })
 
                         # Try sitemap fallback
@@ -1053,7 +1053,7 @@ class APICrawler:
             # No sitemap URLs found
             logger.info("Sitemap fallback failed: no sitemaps found or no valid URLs extracted")
             await self._emit("status", {
-                "message": "⚠️ No sitemap found - scan will end"
+                "message": "No sitemap found - scan will end"
             })
             return False
 
@@ -1068,13 +1068,13 @@ class APICrawler:
         if added_count > 0:
             logger.info(f"✅ Sitemap fallback successful: added {added_count} URLs from {len(urls_found)} total")
             await self._emit("status", {
-                "message": f"✅ Found {added_count} URLs in sitemap - continuing scan"
+                "message": f"Found {added_count} URLs in sitemap - continuing scan"
             })
             return True
         else:
             logger.info("All sitemap URLs were already visited")
             await self._emit("status", {
-                "message": "⚠️ All sitemap URLs already visited - scan will end"
+                "message": "All sitemap URLs already visited - scan will end"
             })
             return False
 
@@ -1097,13 +1097,13 @@ class APICrawler:
                 # ── Strategy 2: Play Store search (fallback) ─────────────
                 if not packages:
                     await self._emit("status", {
-                        "message": f"📱 No assetlinks.json — searching Play Store for {self.domain}"
+                        "message": f"No assetlinks.json — searching Play Store for {self.domain}"
                     })
                     packages = await self._packages_from_play_search(client, _PLAY_HEADERS)
 
                 if not packages:
                     await self._emit("status", {
-                        "message": f"📱 No Android app found for {self.domain}"
+                        "message": f"No Android app found for {self.domain}"
                     })
                     return
 
@@ -1138,18 +1138,18 @@ class APICrawler:
                     self.android_apps = verified
                     for app in verified:
                         await self._emit("status", {
-                            "message": f"📱 Android app: {app['app_name']} ({app['package_name']})"
+                            "message": f"Android app: {app['app_name']} ({app['package_name']})"
                         })
                     await self._emit("android_apps", {"apps": verified})
                 else:
                     await self._emit("status", {
-                        "message": f"📱 No downloadable Android app found for {self.domain}"
+                        "message": f"No downloadable Android app found for {self.domain}"
                     })
 
         except Exception as e:
             logger.warning(f"Android app detection failed: {e}")
             await self._emit("status", {
-                "message": f"📱 Android app detection failed for {self.domain}"
+                "message": f"Android app detection failed for {self.domain}"
             })
 
     # ── helpers for _detect_android_app ──────────────────────────────────────
@@ -1249,10 +1249,10 @@ class APICrawler:
                 logger.info(f"📱 SQS: sent to {queue_name}: {body}")
             logger.info(f"📱 SQS: success — {sent}/{len(apps)} messages sent to {queue_name}")
             await self._emit("status", {
-                "message": f"📱 Published {sent} APK download job(s) to SQS"
+                "message": f"Published {sent} APK download job(s) to SQS"
             })
         except Exception as e:
             logger.error(f"📱 SQS: FAILED to publish to {queue_name}: {e}")
             await self._emit("status", {
-                "message": f"📱 Failed to publish APK jobs to SQS: {e}"
+                "message": f"Failed to publish APK jobs to SQS: {e}"
             })
