@@ -202,6 +202,7 @@ class MobileEndpointFinding(BaseModel):
     source_class: str = ""
     evidence: str = ""
     category: str = ""
+    confidence: int | None = None
 
 
 class MobileEndpointsRequest(BaseModel):

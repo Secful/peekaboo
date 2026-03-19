@@ -2135,6 +2135,8 @@
   .android-toast-body {
     padding: 0 1.4rem 0.8rem;
     display: flex; flex-direction: column; gap: 0.5rem;
+    max-height: 320px;
+    overflow-y: auto;
   }
   .android-toast-app {
     display: flex; align-items: center; gap: 0.7rem;
@@ -2246,3 +2248,33 @@
     background: rgba(107, 114, 128, 0.1); color: var(--text-muted);
     border: 1px solid rgba(107, 114, 128, 0.25);
   }
+
+  /* ── Notify Toasts (reusable) ── */
+  .notify-toast-container {
+    position: fixed; top: 50%; left: 50%; z-index: 9999;
+    transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+    pointer-events: none;
+  }
+  .notify-toast {
+    pointer-events: auto;
+    display: flex; align-items: flex-start; gap: 0.6rem;
+    min-width: 280px; max-width: 420px;
+    padding: 0.75rem 1rem; border-radius: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 4px solid #3b82f6;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    font-size: 0.85rem; color: var(--text); line-height: 1.4;
+    opacity: 1; transition: opacity 0.4s ease;
+  }
+  .notify-toast.info    { border-left-color: #3b82f6; }
+  .notify-toast.warning { border-left-color: #f59e0b; }
+  .notify-toast.error   { border-left-color: #ef4444; }
+  .notify-toast .notify-msg { flex: 1; }
+  .notify-toast .notify-close {
+    background: none; border: none; cursor: pointer;
+    font-size: 1rem; line-height: 1; color: var(--text-muted);
+    padding: 0; flex-shrink: 0;
+  }
+  .notify-toast .notify-close:hover { color: var(--text); }
+  .notify-toast.fade-out { opacity: 0; }

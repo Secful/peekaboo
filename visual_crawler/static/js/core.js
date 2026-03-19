@@ -1,5 +1,31 @@
 /* WebSocket, scan lifecycle, timer, event dispatcher, and initialization */
 
+// ── Reusable notify toast ──────────────────────────────────────────────
+function showNotifyToast(message, level = 'info') {
+  let container = document.querySelector('.notify-toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'notify-toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `notify-toast ${level}`;
+  toast.innerHTML =
+    `<span class="notify-msg">${message}</span>` +
+    `<button class="notify-close" aria-label="Close">&times;</button>`;
+
+  container.appendChild(toast);
+
+  const remove = () => {
+    toast.classList.add('fade-out');
+    toast.addEventListener('transitionend', () => toast.remove());
+  };
+
+  toast.querySelector('.notify-close').addEventListener('click', remove);
+  setTimeout(remove, 5000);
+}
+
 // Timer functions
 function updateTimer() {
   if (!appState.scanStartTime) {
@@ -546,8 +572,19 @@ function handleEvent(msg) {
       showAndroidToast(msg.apps);
       break;
 
+    case 'android_not_found':
+      showNotifyToast(`No Android app found for ${msg.domain}`, 'info');
+      break;
+
+    case 'apk_publish_failed':
+      showNotifyToast(`Failed to publish APK jobs: ${msg.error}`, 'error');
+      break;
+
     case 'apk_status':
       addApkLog(msg);
+      if ((msg.level || '').toUpperCase() === 'ERROR') {
+        showNotifyToast(`APK download failed: ${msg.message}`, 'error');
+      }
       break;
 
     case 'crawl_error':
@@ -621,22 +658,32 @@ function handleEvent(msg) {
 // Mobile Endpoints helpers
 function classifyMobileUrl(url, baseUrl, targetDomain) {
   if (!targetDomain) return false;
-  const td = targetDomain.toLowerCase();
+  const td = targetDomain.toLowerCase().replace(/^www\./, '');
 
-  // Relative paths (starting with / and no scheme) → domain
-  if (url && url.startsWith('/') && !url.startsWith('//')) return true;
+  function hostMatchesDomain(host) {
+    const h = host.replace(/^www\./, '');
+    return h === td || h.endsWith('.' + td);
+  }
 
-  // Check the URL itself for the target domain
-  const urlsToCheck = [url, baseUrl].filter(Boolean);
-  for (const u of urlsToCheck) {
+  // If base_url is present and parseable, it determines the domain
+  if (baseUrl) {
     try {
-      const host = new URL(u).hostname.toLowerCase();
-      if (host === td || host.endsWith('.' + td)) return true;
+      const baseHost = new URL(baseUrl).hostname.toLowerCase();
+      return hostMatchesDomain(baseHost);
+    } catch(e) { /* not a valid URL, fall through */ }
+  }
+
+  // Check the URL itself
+  if (url) {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      return hostMatchesDomain(host);
     } catch(e) {
-      // Not a valid absolute URL — if it looks like a relative path, it's domain
-      if (u && !u.includes('://') && !u.match(/^\d+\.\d+\.\d+\.\d+/)) return true;
+      // Not a valid absolute URL — relative paths belong to the domain (no base_url to say otherwise)
+      if (!url.includes('://') && !url.match(/^\d+\.\d+\.\d+\.\d+/)) return true;
     }
   }
+
   return false;
 }
 
@@ -760,7 +807,12 @@ function openMobileDrawer(finding, pkg) {
     html += `<div class="detail-section"><div class="detail-label">Source Class</div><div class="detail-value" style="word-break:break-all;font-family:monospace;font-size:0.85rem">${escHtml(finding.source_class)}</div></div>`;
   }
 
-  // 8 — Code Evidence (conditional, collapsible)
+  // 8 — Confidence (conditional)
+  if (finding.confidence != null) {
+    html += `<div class="detail-section"><div class="detail-label">Confidence</div><div class="detail-value">${finding.confidence}%</div></div>`;
+  }
+
+  // 9 — Code Evidence (conditional, collapsible)
   if (finding.evidence) {
     html += `<div class="detail-section"><div class="detail-label" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed')">Code Evidence ▾</div><pre class="drawer-body-pre">${escHtml(finding.evidence)}</pre></div>`;
   }
@@ -915,24 +967,8 @@ function handleMobileEndpoints(msg) {
     }
   }
 
-  const prevCount = parseInt(card.dataset.endpointCount) || 0;
-  const totalCount = prevCount + findings.length;
-  card.dataset.endpointCount = String(totalCount);
-
-  const playUrl = msg.play_url || `https://play.google.com/store/apps/details?id=${encodeURIComponent(pkg)}`;
-  const playLink = `<a href="${escHtml(playUrl)}" target="_blank" rel="noopener" class="mobile-play-link">Google Play ↗</a>`;
-  card.innerHTML =
-    `<div class="mobile-app-info">` +
-      `<strong>${escHtml(cleanAppName)}</strong>` +
-      `<span class="mobile-app-pkg">${escHtml(pkg)}</span>` +
-      (msg.app_version && msg.app_version !== 'unknown' ? `<span class="mobile-app-version">v${escHtml(msg.app_version)}</span>` : '') +
-      playLink +
-    `</div>` +
-    `<div class="mobile-app-stats">` +
-      `<span>${totalCount} endpoint${totalCount !== 1 ? 's' : ''}</span>` +
-      (msg.analyzed_classes ? `<span>${msg.analyzed_classes} classes analyzed</span>` : '') +
-      (msg.scan_duration_secs ? `<span>${msg.scan_duration_secs.toFixed(1)}s</span>` : '') +
-    `</div>`;
+  // Card content is updated after dedup loop below
+  const _cardMeta = { playUrl: msg.play_url || `https://play.google.com/store/apps/details?id=${encodeURIComponent(pkg)}`, cleanAppName, msg };
 
   // Append rows
   const tbody = document.getElementById('mobileEndpointsTbody');
@@ -940,7 +976,10 @@ function handleMobileEndpoints(msg) {
 
   const targetDomain = appState.targetDomain;
 
-  findings.forEach((f, i) => {
+  // Sort by confidence descending (highest first), nulls last
+  const sortedFindings = [...findings].sort((a, b) => (b.confidence ?? -1) - (a.confidence ?? -1));
+
+  sortedFindings.forEach((f, i) => {
     const method = f.method || 'GET';
     const url = f.url || '';
     const normUrl = url.endsWith('/') ? url.slice(0, -1) : url;
@@ -948,8 +987,18 @@ function handleMobileEndpoints(msg) {
     if (_mobileSeenEndpoints.has(dedupKey)) return;
     _mobileSeenEndpoints.add(dedupKey);
 
-    const row = tbody.insertRow();
+    // Insert at correct position to maintain global confidence sort (descending)
+    const conf = f.confidence ?? -1;
+    let insertIdx = tbody.rows.length; // default: append
+    for (let r = 0; r < tbody.rows.length; r++) {
+      if ((parseFloat(tbody.rows[r].dataset.confidence) || -1) < conf) {
+        insertIdx = r;
+        break;
+      }
+    }
+    const row = tbody.insertRow(insertIdx);
     row.classList.add('flash');
+    row.dataset.confidence = String(conf);
 
     const badgeClass = `badge-${method}`;
 
@@ -985,11 +1034,28 @@ function handleMobileEndpoints(msg) {
     }
   });
 
+  // Update card with deduplicated count
+  const dedupCount = [...document.getElementById('mobileEndpointsTbody').rows].filter(r => r.dataset.mobilePkg === pkg).length;
+  card.dataset.endpointCount = String(dedupCount);
+  const playLink = `<a href="${escHtml(_cardMeta.playUrl)}" target="_blank" rel="noopener" class="mobile-play-link">Google Play ↗</a>`;
+  card.innerHTML =
+    `<div class="mobile-app-info">` +
+      `<strong>${escHtml(_cardMeta.cleanAppName)}</strong>` +
+      `<span class="mobile-app-pkg">${escHtml(pkg)}</span>` +
+      (_cardMeta.msg.app_version && _cardMeta.msg.app_version !== 'unknown' ? `<span class="mobile-app-version">v${escHtml(_cardMeta.msg.app_version)}</span>` : '') +
+      playLink +
+    `</div>` +
+    `<div class="mobile-app-stats">` +
+      `<span>${dedupCount} endpoint${dedupCount !== 1 ? 's' : ''}</span>` +
+      (_cardMeta.msg.analyzed_classes ? `<span>${_cardMeta.msg.analyzed_classes} classes analyzed</span>` : '') +
+      (_cardMeta.msg.scan_duration_secs ? `<span>${_cardMeta.msg.scan_duration_secs.toFixed(1)}s</span>` : '') +
+    `</div>`;
+
   applyMobileDomainFilter();
   document.getElementById('mobileEmptyState').style.display = findings.length === 0 ? 'block' : 'none';
 
   // Log
-  addLog('', `Mobile: ${findings.length} endpoints from ${pkg} (${cleanAppName})`, '');
+  addLog('', `Mobile: ${dedupCount} endpoints from ${pkg} (${_cardMeta.cleanAppName})`, '');
 }
 
 // Android App Toast

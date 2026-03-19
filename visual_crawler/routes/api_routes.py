@@ -13,6 +13,12 @@ from ..scan_logger import list_scans, list_recent_scans, get_scan
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_domain(d: str) -> str:
+    """Strip optional www. prefix so copaair.com matches www.copaair.com."""
+    return d.removeprefix("www.").lower()
+
+
 # Subdomain discovery Lambda URL (configurable via env var)
 import os
 SUBDOMAIN_LAMBDA_URL = os.getenv(
@@ -133,7 +139,7 @@ async def security_insights(request: SecurityInsightsRequest):
 
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
-        if domain != request.domain:
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
             continue
         ws = _connected_clients.get(scan_id)
         if ws is None:
@@ -175,7 +181,7 @@ async def js_resources(request: JsResourcesRequest):
 
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
-        if domain != request.domain:
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
             continue
         ws = _connected_clients.get(scan_id)
         if ws is None:
@@ -219,7 +225,7 @@ async def open_ports(request: OpenPortsRequest):
 
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
-        if domain != request.domain:
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
             continue
         ws = _connected_clients.get(scan_id)
         if ws is None:
@@ -264,7 +270,7 @@ async def agentic(request: AgenticRequest):
 
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
-        if domain != request.domain:
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
             continue
         ws = _connected_clients.get(scan_id)
         if ws is None:
@@ -310,7 +316,7 @@ async def extracted_api(request: ExtractedApiRequest):
 
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
-        if domain != request.domain:
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
             continue
         ws = _connected_clients.get(scan_id)
         if ws is None:
@@ -417,7 +423,7 @@ async def api_spec(request: ApiSpecRequest):
 
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
-        if domain != request.domain:
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
             continue
         ws = _connected_clients.get(scan_id)
         if ws is None:
@@ -466,7 +472,7 @@ async def mobile_endpoints(request: MobileEndpointsRequest):
 
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
-        if domain != request.domain:
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
             continue
         ws = _connected_clients.get(scan_id)
         if ws is None:
@@ -504,7 +510,7 @@ async def apk_analyzer_status(request: ApkAnalyzerStatusRequest):
 
     pushed_to = 0
     for scan_id, domain in list(_client_domains.items()):
-        if domain != request.domain:
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
             continue
         ws = _connected_clients.get(scan_id)
         if ws is None:

@@ -1105,14 +1105,17 @@ class APICrawler:
                     await self._emit("status", {
                         "message": f"No Android app found for {self.domain}"
                     })
+                    await self._emit("android_not_found", {"domain": self.domain})
                     return
 
                 # ── Verify each package on Google Play ───────────────────
+                logger.info(f"Verifying {len(packages)} package(s) on Google Play: {packages}")
                 verified: list[dict] = []
                 for pkg in packages:
                     try:
                         play_url = f"https://play.google.com/store/apps/details?id={pkg}&hl=en"
                         play_resp = await client.get(play_url, headers=_PLAY_HEADERS)
+                        logger.info(f"Play Store check {pkg}: HTTP {play_resp.status_code}")
                         if play_resp.status_code == 200:
                             app_name = pkg  # fallback
                             # og:title is server-rendered (unlike <title> which needs JS)
@@ -1130,8 +1133,8 @@ class APICrawler:
                                 "app_name": app_name,
                                 "play_url": f"https://play.google.com/store/apps/details?id={pkg}",
                             })
-                    except Exception:
-                        pass
+                    except Exception as verify_err:
+                        logger.warning(f"Play Store verification failed for {pkg}: {verify_err}")
 
                 # ── Emit results and store (SQS publish is user-triggered) ─
                 if verified:
@@ -1145,6 +1148,7 @@ class APICrawler:
                     await self._emit("status", {
                         "message": f"No downloadable Android app found for {self.domain}"
                     })
+                    await self._emit("android_not_found", {"domain": self.domain})
 
         except Exception as e:
             logger.warning(f"Android app detection failed: {e}")
@@ -1256,3 +1260,4 @@ class APICrawler:
             await self._emit("status", {
                 "message": f"Failed to publish APK jobs to SQS: {e}"
             })
+            await self._emit("apk_publish_failed", {"error": str(e)})
