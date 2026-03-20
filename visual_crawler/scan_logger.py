@@ -72,6 +72,10 @@ def save_scan(scan_data: dict) -> None:
             v.get("findings_count", 0)
             for v in scanner.get("api_specs", {}).values()
         )
+        mobile_endpoints_count = sum(
+            len(v.get("findings", []))
+            for v in scanner.get("mobile_endpoints", {}).values()
+        )
 
         # Upload full payload to S3 (gzipped)
         s3_key = f"{domain}/{scan_id}.json.gz"
@@ -101,6 +105,7 @@ def save_scan(scan_data: dict) -> None:
                 "ports_count": ports_count,
                 "extracted_apis_count": extracted_apis_count,
                 "api_specs_count": api_specs_count,
+                "mobile_endpoints_count": mobile_endpoints_count,
                 "gsi_pk": "ALL",
                 "s3_key": s3_key,
             }
@@ -169,6 +174,7 @@ def _item_to_summary(item: dict) -> dict:
         "ports_count": _to_int(item.get("ports_count")),
         "extracted_apis_count": _to_int(item.get("extracted_apis_count")),
         "api_specs_count": _to_int(item.get("api_specs_count")),
+        "mobile_endpoints_count": _to_int(item.get("mobile_endpoints_count")),
     }
 
 

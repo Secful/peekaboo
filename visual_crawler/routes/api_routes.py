@@ -448,7 +448,11 @@ async def api_spec(request: ApiSpecRequest):
 @router.post("/api/mobileendpoints")
 async def mobile_endpoints(request: MobileEndpointsRequest):
     """Receive mobile endpoint findings from peekaboo-apk-analyzer and push to connected UI clients."""
-    from .ws_routes import _client_domains, _connected_clients
+    from .ws_routes import (
+        _client_domains, _connected_clients,
+        _mobile_expected, _mobile_received, _scan_activities,
+        _check_scan_complete,
+    )
     from ..scanner_store import scanner_store
 
     logger.warning(f"Got {request.findings_count} mobile endpoints from {request.package_name} for domain {request.domain}")
@@ -482,6 +486,26 @@ async def mobile_endpoints(request: MobileEndpointsRequest):
             pushed_to += 1
         except Exception:
             logger.warning(f"Failed to push mobile endpoints to scan {scan_id}")
+
+        # Track mobile package arrival for composite end-of-scan
+        received = _mobile_received.get(scan_id)
+        expected = _mobile_expected.get(scan_id)
+        if received is not None and expected is not None:
+            received.add(request.package_name)
+            if received >= expected:
+                activities = _scan_activities.get(scan_id)
+                if activities and "mobile" in activities:
+                    activities["mobile"] = True
+                    # Build a send_fn for this scan's WebSocket
+                    _ws = _connected_clients.get(scan_id)
+                    if _ws:
+                        async def _send(evt, _w=_ws):
+                            try:
+                                await _w.send_json(evt)
+                            except Exception:
+                                pass
+                        await _send({"type": "activity_complete", "activity": "mobile"})
+                        await _check_scan_complete(scan_id, _send)
 
     logger.warning(
         f"mobile_endpoints for {request.package_name}: "

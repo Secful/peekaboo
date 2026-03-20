@@ -81,7 +81,7 @@ function renderScanHistory(scans, domain) {
   let html = `<div class="history-count">${label}</div>`;
   html += '<table class="history-table"><thead><tr>';
   html += '<th>Domain</th><th>Date</th><th>Duration</th><th>Pages</th><th>Endpoints</th><th>APIs</th>';
-  html += '<th>Sec</th><th>Ports</th><th>JS APIs</th><th>Specs</th>';
+  html += '<th>Sec</th><th>Ports</th><th>JS APIs</th><th>Specs</th><th>Mobile</th>';
   html += '</tr></thead><tbody>';
 
   scans.forEach(scan => {
@@ -99,6 +99,7 @@ function renderScanHistory(scans, domain) {
     const portsVal = scan.ports_count ?? null;
     const jsApisVal = scan.extracted_apis_count ?? null;
     const apiSpecsVal = scan.api_specs_count ?? null;
+    const mobileVal = scan.mobile_endpoints_count ?? null;
 
     html += `<tr class="history-row" onclick="viewScanDetail('${escHtml(scanDomain)}','${scan.scan_id}')">`;
     html += `<td class="history-domain-cell">${escHtml(scanDomain)}</td>`;
@@ -111,6 +112,7 @@ function renderScanHistory(scans, domain) {
     html += `<td>${portsVal ? `<span style="color:#3b82f6;font-weight:600">${portsVal}</span>` : '<span style="color:var(--text-muted)">\u2014</span>'}</td>`;
     html += `<td>${jsApisVal ? `<span style="color:var(--patch);font-weight:600">${jsApisVal}</span>` : '<span style="color:var(--text-muted)">\u2014</span>'}</td>`;
     html += `<td>${apiSpecsVal ? `<span style="color:#7c3aed;font-weight:600">${apiSpecsVal}</span>` : '<span style="color:var(--text-muted)">\u2014</span>'}</td>`;
+    html += `<td>${mobileVal ? `<span style="color:#06b6d4;font-weight:600">${mobileVal}</span>` : '<span style="color:var(--text-muted)">\u2014</span>'}</td>`;
     html += '</tr>';
   });
 
@@ -209,6 +211,8 @@ function renderScanDetail(scan, prevHtml) {
     html += _hdStatCard('JS APIs', jsApiCount || '0');
     const apiSpecCount = _countApiSpecs(scanner);
     if (apiSpecCount > 0) html += _hdStatCard('API Specs', apiSpecCount, '#7c3aed');
+    const mobileCount = _countMobileEndpoints(scanner);
+    if (mobileCount > 0) html += _hdStatCard('Mobile', mobileCount, '#06b6d4');
   }
   html += '</div>';
 
@@ -218,6 +222,7 @@ function renderScanDetail(scan, prevHtml) {
   if (_hasData(scanner.extracted_apis)) tabs.push({ id: 'extracted_apis', label: 'JS APIs' });
   if (_hasData(scanner.open_ports)) tabs.push({ id: 'open_ports', label: 'Open Ports' });
   if (_hasData(scanner.api_specs)) tabs.push({ id: 'api_specs_tab', label: 'API Spec' });
+  if (_hasData(scanner.mobile_endpoints)) tabs.push({ id: 'mobile_endpoints', label: 'Mobile' });
   if (_hasData(scan.subdomain_results)) tabs.push({ id: 'subdomains', label: 'Subdomains' });
 
   html += '<div class="history-tabs">';
@@ -261,6 +266,7 @@ function _renderHistoryTabContent() {
     case 'extracted_apis': container.innerHTML = _renderExtractedApisTab(); break;
     case 'open_ports': container.innerHTML = _renderOpenPortsTab(); break;
     case 'api_specs_tab': container.innerHTML = _renderApiSpecsTab(); break;
+    case 'mobile_endpoints': container.innerHTML = _renderMobileEndpointsTab(); break;
     case 'subdomains': container.innerHTML = _renderSubdomainsTab(); break;
     default: container.innerHTML = '';
   }
@@ -293,6 +299,10 @@ function _countExtractedApis(scanner) {
 function _countApiSpecs(scanner) {
   if (!scanner.api_specs) return 0;
   return Object.values(scanner.api_specs).reduce((sum, v) => sum + (v.findings_count || 0), 0);
+}
+function _countMobileEndpoints(scanner) {
+  if (!scanner.mobile_endpoints) return 0;
+  return Object.values(scanner.mobile_endpoints).reduce((sum, v) => sum + (v.findings?.length || 0), 0);
 }
 
 /* ────────────────────────────────────────────────────────
@@ -601,6 +611,64 @@ function _renderApiSpecsTab() {
   }
 
   return html || '<div class="history-empty" style="padding:2rem"><div>No API spec findings</div></div>';
+}
+
+/* ────────────────────────────────────────────────────────
+   MOBILE ENDPOINTS TAB
+   ──────────────────────────────────────────────────────── */
+function _renderMobileEndpointsTab() {
+  const mobileData = _historyDetailScan.scanner?.mobile_endpoints || {};
+  const packages = Object.keys(mobileData);
+  if (packages.length === 0) {
+    return '<div class="history-empty" style="padding:2rem"><div>No mobile endpoint data</div></div>';
+  }
+
+  let html = '';
+  packages.forEach(pkg => {
+    const data = mobileData[pkg];
+    const findings = data.findings || [];
+    if (findings.length === 0) return;
+
+    const appName = data.app_name || pkg;
+    const version = data.app_version && data.app_version !== 'unknown' ? `v${data.app_version}` : '';
+    const playUrl = data.play_url || `https://play.google.com/store/apps/details?id=${encodeURIComponent(pkg)}`;
+
+    // App header card
+    html += `<div class="history-scanner-card" style="border-left-color:#06b6d4">`;
+    html += `<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">`;
+    html += `<strong style="font-size:0.9rem">${escHtml(appName)}</strong>`;
+    html += `<span style="font-size:0.75rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace">${escHtml(pkg)}</span>`;
+    if (version) html += `<span style="font-size:0.7rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:4px;background:rgba(6,182,212,0.1);color:#06b6d4;border:1px solid rgba(6,182,212,0.25)">${escHtml(version)}</span>`;
+    html += `<a href="${escHtml(playUrl)}" target="_blank" rel="noopener" style="font-size:0.72rem;color:#3b82f6;margin-left:auto">Google Play &#x2197;</a>`;
+    html += `</div>`;
+
+    // Stats line
+    const meta = [`${findings.length} endpoint${findings.length !== 1 ? 's' : ''}`];
+    if (data.analyzed_classes) meta.push(`${data.analyzed_classes} classes analyzed`);
+    if (data.scan_duration_secs) meta.push(`${data.scan_duration_secs.toFixed(1)}s`);
+    html += `<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.5rem">${escHtml(meta.join('  \u00B7  '))}</div>`;
+
+    // Endpoints table
+    html += '<table class="history-endpoint-table"><thead><tr>';
+    html += '<th style="width:70px">Method</th><th>URL</th><th style="width:22%">Description</th><th style="width:80px">Category</th>';
+    html += '</tr></thead><tbody>';
+
+    findings.forEach(f => {
+      const method = (f.method || 'GET').toUpperCase();
+      const url = f.url || '';
+      const desc = f.context ? f.context.charAt(0).toUpperCase() + f.context.slice(1) : '';
+      html += '<tr>';
+      html += `<td><span class="badge badge-${escHtml(method)}">${escHtml(method)}</span></td>`;
+      html += `<td class="history-path-cell" title="${escHtml(url)}">${escHtml(url)}</td>`;
+      html += `<td style="font-size:0.78rem;color:var(--text-muted)">${escHtml(desc)}</td>`;
+      html += `<td>${f.category ? `<span style="font-size:0.68rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:4px;background:rgba(6,182,212,0.08);color:#06b6d4;border:1px solid rgba(6,182,212,0.2)">${escHtml(f.category)}</span>` : ''}</td>`;
+      html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+  });
+
+  return html || '<div class="history-empty" style="padding:2rem"><div>No mobile endpoints found</div></div>';
 }
 
 /* ────────────────────────────────────────────────────────

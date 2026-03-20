@@ -552,7 +552,7 @@ class APICrawler:
         endpoint_dicts = [asdict(ep) for ep in self.endpoints]
         tech_analysis = analyze_technologies(endpoint_dicts, self.domain)
 
-        await self._emit("done", {
+        await self._emit("crawl_complete", {
             "total_endpoints": len(self.endpoints),
             "pages_visited": len(self.visited_pages),
             "pages_skipped": remaining_in_queue,

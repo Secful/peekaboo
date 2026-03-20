@@ -25,6 +25,7 @@ TAG_EMAIL="avishayb@salt.security"
 # Auth credentials (override via env vars)
 BASIC_AUTH_USER="${BASIC_AUTH_USER:-Shufuni}"
 BASIC_AUTH_PASS="${BASIC_AUTH_PASS:-l6XmIx08G21A3z4+vCqSZ5Jx}"
+NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 
 # Resource names derived from prefix
 ECR_REPO="${PREFIX}-repo"
@@ -259,6 +260,11 @@ BEDROCK_POLICY='{
         "sqs:SendMessage"
       ],
       "Resource": "arn:aws:sqs:*:'${ACCOUNT_ID}':'${PREFIX}'-apk-analyzer"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "ses:SendEmail",
+      "Resource": "*"
     }
   ]
 }'
@@ -589,7 +595,8 @@ TASK_DEF=$(cat <<TASKDEF
       {"name": "BASIC_AUTH_PASS", "value": "${BASIC_AUTH_PASS}"},
       {"name": "AWS_DEFAULT_REGION", "value": "${REGION}"},
       {"name": "SCAN_TABLE_NAME", "value": "${SCAN_TABLE}"},
-      {"name": "SCAN_PAYLOAD_BUCKET", "value": "${SCAN_PAYLOAD_BUCKET}"}
+      {"name": "SCAN_PAYLOAD_BUCKET", "value": "${SCAN_PAYLOAD_BUCKET}"},
+      {"name": "NOTIFY_EMAIL", "value": "${NOTIFY_EMAIL}"}
     ],
     "logConfiguration": {
       "logDriver": "awslogs",

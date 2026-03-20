@@ -34,4 +34,8 @@ const appState = {
   subdomainViewMode: 'table',
   apiFilter: 'all',
   statusFilter: 'all',
+  // Composite end-of-scan tracking
+  crawlComplete: false,
+  mobileAnalysisTriggered: false,
+  mobileAnalysisComplete: false,
 };

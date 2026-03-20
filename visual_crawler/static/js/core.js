@@ -23,7 +23,7 @@ function showNotifyToast(message, level = 'info') {
   };
 
   toast.querySelector('.notify-close').addEventListener('click', remove);
-  setTimeout(remove, 5000);
+  setTimeout(remove, 8000);
 }
 
 // Timer functions
@@ -302,6 +302,10 @@ function newScan() {
   appState.apiSpecs = {};
   appState.mobileEndpoints = {};
   appState._mobileCards = {};
+  appState.crawlComplete = false;
+  appState.mobileAnalysisTriggered = false;
+  appState.mobileAnalysisComplete = false;
+  _subdomainsActivityDone = false;
   _mobileDomainFilter = 'all';
   _mobileCategoryFilter = 'all';
   _mobileAppFilter = 'all';
@@ -405,6 +409,20 @@ function switchView(view) {
     endpointsView.style.display = '';
     tabEndpoints.classList.add('active');
   }
+}
+
+// Waiting status helper — shows what activities are still pending
+let _subdomainsActivityDone = false;
+function updateWaitingStatus() {
+  if (!appState.crawlComplete) return; // crawl hasn't finished yet
+  const pending = [];
+  if (!_subdomainsActivityDone) pending.push('subdomain discovery');
+  if (appState.mobileAnalysisTriggered && !appState.mobileAnalysisComplete) pending.push('mobile analysis');
+  if (pending.length > 0) {
+    document.getElementById('statusText').textContent =
+      `Browsing complete, waiting for ${pending.join(' and ')}...`;
+  }
+  // If nothing is pending, the composite 'done' event will update the status
 }
 
 // Event dispatcher
@@ -573,17 +591,36 @@ function handleEvent(msg) {
       break;
 
     case 'android_not_found':
-      showNotifyToast(`No Android app found for ${msg.domain}`, 'info');
+      showNotifyToast(`No mobile app detected for ${msg.domain} — mobile endpoints won't be available`, 'info');
       break;
 
     case 'apk_publish_failed':
-      showNotifyToast(`Failed to publish APK jobs: ${msg.error}`, 'error');
+      showNotifyToast('Mobile endpoint analysis could not start — check Activity log for details', 'warning');
       break;
 
     case 'apk_status':
       addApkLog(msg);
       if ((msg.level || '').toUpperCase() === 'ERROR') {
-        showNotifyToast(`APK download failed: ${msg.message}`, 'error');
+        showNotifyToast('Mobile endpoint analysis encountered an issue — check Activity log for details', 'warning');
+      }
+      break;
+
+    case 'activity_complete':
+      if (msg.activity === 'crawl') {
+        appState.crawlComplete = true;
+        if (msg.technologies) {
+          appState.detectedTechnologies = msg.technologies;
+        }
+        updateWaitingStatus();
+      } else if (msg.activity === 'subdomains') {
+        _subdomainsActivityDone = true;
+        updateWaitingStatus();
+      } else if (msg.activity === 'mobile') {
+        appState.mobileAnalysisComplete = true;
+        if (msg.timed_out) {
+          addLog('', 'Mobile analysis timed out — proceeding with available results', 'warning');
+        }
+        updateWaitingStatus();
       }
       break;
 
@@ -639,10 +676,6 @@ function handleEvent(msg) {
       document.getElementById('previewSummary').classList.remove('hidden');
 
       showScanSummary(msg);
-
-      if (!appState.subdomainResults) {
-        addLog('', 'Subdomain discovery still in progress...', '');
-      }
 
       const scanDuration = appState.scanStartTime ? (Date.now() - appState.scanStartTime) / 1000 : Infinity;
       if (scanDuration < 60) {
@@ -705,17 +738,72 @@ function setMobileDomainFilter(filter) {
 
 function setMobileCategoryFilter(cat) {
   _mobileCategoryFilter = cat;
-  const sel = document.getElementById('mobileCategorySelect');
-  if (sel && sel.value !== cat) sel.value = cat;
+  // Sync dropdown trigger text
+  const dd = document.getElementById('mobileCategoryDropdown');
+  if (dd) {
+    const item = dd.querySelector(`[data-value="${CSS.escape(cat)}"]`);
+    const label = item ? item.textContent : cat;
+    dd.querySelector('.salt-dropdown-trigger').textContent = label;
+    dd.querySelectorAll('.salt-dropdown-item').forEach(i => i.classList.toggle('active', i.dataset.value === cat));
+  }
   applyMobileDomainFilter();
 }
 
 function setMobileAppFilter(pkg) {
   _mobileAppFilter = pkg;
-  const sel = document.getElementById('mobileAppSelect');
-  if (sel && sel.value !== pkg) sel.value = pkg;
+  // Sync dropdown trigger text
+  const dd = document.getElementById('mobileAppDropdown');
+  if (dd) {
+    const item = dd.querySelector(`[data-value="${CSS.escape(pkg)}"]`);
+    const label = item ? item.textContent : pkg;
+    dd.querySelector('.salt-dropdown-trigger').textContent = label;
+    dd.querySelectorAll('.salt-dropdown-item').forEach(i => i.classList.toggle('active', i.dataset.value === pkg));
+  }
   applyMobileDomainFilter();
 }
+
+// Salt-styled custom dropdown helpers
+function toggleSaltDropdown(id) {
+  const dd = document.getElementById(id);
+  if (!dd) return;
+  const wasOpen = dd.classList.contains('open');
+  // Close all open dropdowns first
+  document.querySelectorAll('.salt-dropdown.open').forEach(d => d.classList.remove('open'));
+  if (!wasOpen) dd.classList.add('open');
+}
+
+function selectSaltDropdown(id, value, label, callback) {
+  const dd = document.getElementById(id);
+  if (!dd) return;
+  dd.querySelector('.salt-dropdown-trigger').textContent = label;
+  dd.querySelectorAll('.salt-dropdown-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.value === value);
+  });
+  dd.classList.remove('open');
+  if (callback) callback(value);
+}
+
+function addSaltDropdownOption(id, value, label, callback) {
+  const dd = document.getElementById(id);
+  if (!dd) return;
+  const menu = dd.querySelector('.salt-dropdown-menu');
+  if (!menu) return;
+  // Skip if already exists
+  if (menu.querySelector(`[data-value="${CSS.escape(value)}"]`)) return;
+  const item = document.createElement('div');
+  item.className = 'salt-dropdown-item';
+  item.dataset.value = value;
+  item.textContent = label;
+  item.onclick = () => selectSaltDropdown(id, value, label, callback);
+  menu.appendChild(item);
+}
+
+// Close dropdowns on outside click
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.salt-dropdown')) {
+    document.querySelectorAll('.salt-dropdown.open').forEach(d => d.classList.remove('open'));
+  }
+});
 
 function applyMobileDomainFilter() {
   const tbody = document.getElementById('mobileEndpointsTbody');
@@ -908,15 +996,21 @@ function handleMobileEndpoints(msg) {
         </div>
         <div class="filter-section">
           <span class="filter-label">App:</span>
-          <select id="mobileAppSelect" onchange="setMobileAppFilter(this.value)" style="padding:0.3rem 0.5rem;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:0.8rem;">
-            <option value="all">All</option>
-          </select>
+          <div class="salt-dropdown" id="mobileAppDropdown">
+            <div class="salt-dropdown-trigger" onclick="toggleSaltDropdown('mobileAppDropdown')">All</div>
+            <div class="salt-dropdown-menu">
+              <div class="salt-dropdown-item active" data-value="all" onclick="selectSaltDropdown('mobileAppDropdown','all','All',setMobileAppFilter)">All</div>
+            </div>
+          </div>
         </div>
         <div class="filter-section">
           <span class="filter-label">Category:</span>
-          <select id="mobileCategorySelect" onchange="setMobileCategoryFilter(this.value)" style="padding:0.3rem 0.5rem;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:0.8rem;">
-            <option value="all">All</option>
-          </select>
+          <div class="salt-dropdown" id="mobileCategoryDropdown">
+            <div class="salt-dropdown-trigger" onclick="toggleSaltDropdown('mobileCategoryDropdown')">All</div>
+            <div class="salt-dropdown-menu">
+              <div class="salt-dropdown-item active" data-value="all" onclick="selectSaltDropdown('mobileCategoryDropdown','all','All',setMobileCategoryFilter)">All</div>
+            </div>
+          </div>
         </div>
         <span class="mobile-filter-counts" id="mobileFilterCounts"></span>
       </div>
@@ -958,13 +1052,7 @@ function handleMobileEndpoints(msg) {
   // Populate App filter dropdown on first encounter of this package
   if (!_mobileKnownApps.has(pkg)) {
     _mobileKnownApps.set(pkg, cleanAppName);
-    const sel = document.getElementById('mobileAppSelect');
-    if (sel) {
-      const opt = document.createElement('option');
-      opt.value = pkg;
-      opt.textContent = cleanAppName;
-      sel.appendChild(opt);
-    }
+    addSaltDropdownOption('mobileAppDropdown', pkg, cleanAppName, setMobileAppFilter);
   }
 
   // Card content is updated after dedup loop below
@@ -1024,13 +1112,7 @@ function handleMobileEndpoints(msg) {
 
     if (f.category && !_mobileKnownCategories.has(f.category)) {
       _mobileKnownCategories.add(f.category);
-      const sel = document.getElementById('mobileCategorySelect');
-      if (sel) {
-        const opt = document.createElement('option');
-        opt.value = f.category;
-        opt.textContent = f.category;
-        sel.appendChild(opt);
-      }
+      addSaltDropdownOption('mobileCategoryDropdown', f.category, f.category, setMobileCategoryFilter);
     }
   });
 
@@ -1089,6 +1171,7 @@ function confirmAndroidApps() {
   });
   if (selected.length > 0 && appState.ws && appState.ws.readyState === WebSocket.OPEN) {
     appState.ws.send(JSON.stringify({ action: 'publish_apk', apps: selected }));
+    appState.mobileAnalysisTriggered = true;
     addLog('', `Queued ${selected.length} app(s) for APK analysis`, '');
   }
   document.getElementById('androidToast').classList.remove('show');

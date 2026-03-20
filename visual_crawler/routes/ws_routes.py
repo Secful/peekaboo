@@ -12,6 +12,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..crawler import APICrawler
+from ..email_notifier import send_scan_start_email
 from ..scan_logger import save_scan
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,13 @@ _active_scans: dict[str, str] = {}          # scan_id -> domain
 _connected_clients: dict[str, WebSocket] = {}  # scan_id -> ws
 _subdomains_ready: dict[str, bool] = {}     # scan_id -> True once subdomains sent
 _client_domains: dict[str, str] = {}        # scan_id -> domain (persists until WS disconnect)
+
+# Composite end-of-scan tracking
+_scan_activities: dict[str, dict[str, bool]] = {}   # scan_id -> {"crawl": bool, "subdomains": bool, "mobile"?: bool}
+_crawl_results: dict[str, dict] = {}                 # scan_id -> crawl_complete payload
+_mobile_expected: dict[str, set[str]] = {}            # scan_id -> set of expected package_names
+_mobile_received: dict[str, set[str]] = {}            # scan_id -> set of received package_names
+_scan_context: dict[str, dict] = {}                   # scan_id -> context needed for save (crawler, params, etc.)
 
 
 async def _broadcast_active_scans() -> None:
@@ -81,6 +89,104 @@ async def _fetch_subdomains(domain: str, send_event, scan_id: str = "") -> None:
             "type": "subdomains_error",
             "message": f"Subdomain discovery failed: {exc}",
         })
+
+
+async def _save_final_scan(scan_id: str) -> None:
+    """Persist the full scan to DynamoDB using stored context."""
+    ctx = _scan_context.get(scan_id)
+    if not ctx:
+        logger.warning("No scan context for %s — cannot save", scan_id)
+        return
+    try:
+        crawler = ctx["crawler"]
+        scan_started_at = ctx["scan_started_at"]
+        domain = ctx["domain"]
+        params = ctx["params"]
+        finished_at = datetime.now(timezone.utc)
+        duration = (finished_at - scan_started_at).total_seconds()
+        endpoints_for_log = []
+        for ep in crawler.endpoints:
+            ep_dict = asdict(ep)
+            ep_dict.pop("request_body", None)
+            ep_dict.pop("response_body", None)
+            endpoints_for_log.append(ep_dict)
+        scan_data = {
+            "scan_id": scan_id,
+            "domain": domain,
+            "started_at": scan_started_at.isoformat(),
+            "finished_at": finished_at.isoformat(),
+            "duration_seconds": round(duration),
+            "params": params,
+            "results": {
+                "total_endpoints": len(crawler.endpoints),
+                "confirmed_apis": sum(
+                    1 for ep in crawler.endpoints
+                    if ep.api_confidence == "API"
+                ),
+                "pages_visited": len(crawler.visited_pages),
+                "pages_skipped": len(crawler.queue),
+            },
+            "endpoints": endpoints_for_log,
+        }
+        from ..scanner_store import scanner_store as _ss
+        scan_data["scanner"] = {
+            "security_insights": _ss.get_security_insights(domain),
+            "open_ports": _ss.get_open_ports(domain),
+            "extracted_apis": _ss.get_extracted_apis(domain),
+            "agentic": _ss.get_agentic(domain),
+            "js_resources": _ss.get_js_resources(domain),
+            "api_specs": _ss.get_api_specs(domain),
+            "mobile_endpoints": _ss.get_mobile_endpoints(domain),
+        }
+        scan_data["subdomain_results"] = getattr(crawler, 'subdomain_results', {})
+        asyncio.create_task(
+            asyncio.to_thread(save_scan, scan_data)
+        )
+    except Exception as log_exc:
+        logger.warning("Failed to save final scan for %s: %s", scan_id, log_exc)
+
+
+async def _check_scan_complete(scan_id: str, send_fn) -> None:
+    """Fire composite 'done' event when all activities for a scan are complete."""
+    activities = _scan_activities.get(scan_id)
+    if not activities or not all(activities.values()):
+        return
+    # All done — emit composite "done" with the crawl payload
+    crawl_data = _crawl_results.pop(scan_id, {})
+    await send_fn({"type": "done", **crawl_data})
+    # Persist full scan history at true end-of-scan
+    await _save_final_scan(scan_id)
+    # Cleanup tracking state
+    _scan_activities.pop(scan_id, None)
+    _mobile_expected.pop(scan_id, None)
+    _mobile_received.pop(scan_id, None)
+    _scan_context.pop(scan_id, None)
+    _crawl_results.pop(scan_id, None)
+    _active_scans.pop(scan_id, None)
+    await _broadcast_active_scans()
+
+
+async def _fetch_subdomains_tracked(domain: str, send_event, scan_id: str) -> None:
+    """Wrapper around _fetch_subdomains that marks subdomains complete."""
+    try:
+        await _fetch_subdomains(domain, send_event, scan_id)
+    finally:
+        activities = _scan_activities.get(scan_id)
+        if activities is not None:
+            activities["subdomains"] = True
+            await send_event({"type": "activity_complete", "activity": "subdomains"})
+            await _check_scan_complete(scan_id, send_event)
+
+
+async def _mobile_watchdog(scan_id: str, send_fn, timeout_secs: int = 900) -> None:
+    """Force-complete mobile activity after a timeout."""
+    await asyncio.sleep(timeout_secs)
+    activities = _scan_activities.get(scan_id)
+    if activities and activities.get("mobile") is False:
+        logger.warning("Mobile watchdog fired for %s after %ds", scan_id, timeout_secs)
+        activities["mobile"] = True
+        await send_fn({"type": "activity_complete", "activity": "mobile", "timed_out": True})
+        await _check_scan_complete(scan_id, send_fn)
 
 
 @router.websocket("/ws")
@@ -180,7 +286,18 @@ async def websocket_endpoint(ws: WebSocket):
             _subdomains_ready[scan_id] = False
             _active_scans[scan_id] = domain
             _client_domains[scan_id] = domain
+            _scan_activities[scan_id] = {"crawl": False, "subdomains": False}
+            _crawl_results.pop(scan_id, None)
+            _mobile_expected.pop(scan_id, None)
+            _mobile_received.pop(scan_id, None)
             await _broadcast_active_scans()
+
+            # Fire-and-forget scan-start email notification
+            asyncio.create_task(asyncio.to_thread(
+                send_scan_start_email, domain, scan_id, scan_started_at,
+                {"max_pages": max_pages, "max_depth": max_depth,
+                 "fast_mode": fast_mode, "use_proxy": use_proxy},
+            ))
 
             try:
                 crawler = APICrawler(
@@ -208,7 +325,53 @@ async def websocket_endpoint(ws: WebSocket):
                     "message": f"Failed to create crawler: {str(e)}"
                 })
                 continue
-            crawler.on_event(send_event)
+            # Store context for _save_final_scan
+            _scan_context[scan_id] = {
+                "crawler": crawler,
+                "scan_started_at": scan_started_at,
+                "domain": domain,
+                "params": {
+                    "max_pages": max_pages,
+                    "max_depth": max_depth,
+                    "fast_mode": fast_mode,
+                    "include_subdomains": include_subdomains,
+                    "api_filter": api_filter,
+                    "use_proxy": use_proxy,
+                },
+            }
+
+            # Wrap send_event to intercept crawl_complete / apk_publish_failed
+            async def _raw_send(event: dict):
+                """Bypass interception — used for the final composite done."""
+                try:
+                    await ws.send_json(event)
+                except Exception:
+                    pass
+
+            async def send_scan_event(event: dict):
+                """Intercept lifecycle events; forward everything else."""
+                etype = event.get("type")
+                if etype == "crawl_complete":
+                    # Store payload, mark crawl done, notify frontend
+                    _crawl_results[scan_id] = {
+                        k: v for k, v in event.items() if k != "type"
+                    }
+                    activities = _scan_activities.get(scan_id)
+                    if activities is not None:
+                        activities["crawl"] = True
+                    await _raw_send({"type": "activity_complete", "activity": "crawl", **{k: v for k, v in event.items() if k != "type"}})
+                    await _check_scan_complete(scan_id, _raw_send)
+                elif etype == "apk_publish_failed":
+                    # Mobile won't deliver — remove from tracking
+                    await _raw_send(event)
+                    activities = _scan_activities.get(scan_id)
+                    if activities and "mobile" in activities:
+                        del activities["mobile"]
+                        await _check_scan_complete(scan_id, _raw_send)
+                else:
+                    await _raw_send(event)
+
+            crawler.on_event(send_scan_event)
 
             async def _listen_for_client():
                 """Listen for client messages while crawl runs."""
@@ -226,6 +389,14 @@ async def websocket_endpoint(ws: WebSocket):
                         elif data.get('action') == 'publish_apk':
                             selected = data.get('apps', [])
                             if selected:
+                                # Register mobile activity tracking
+                                activities = _scan_activities.get(scan_id)
+                                if activities is not None:
+                                    activities["mobile"] = False
+                                _mobile_expected[scan_id] = {
+                                    app["package_name"] for app in selected
+                                }
+                                _mobile_received[scan_id] = set()
                                 asyncio.create_task(
                                     crawler._publish_apk_jobs(selected)
                                 )
@@ -236,7 +407,7 @@ async def websocket_endpoint(ws: WebSocket):
             crawl_task = asyncio.create_task(crawler.crawl())
             listen_task = asyncio.create_task(_listen_for_client())
             subdomain_task = asyncio.create_task(
-                _fetch_subdomains(domain, send_event, scan_id)
+                _fetch_subdomains_tracked(domain, send_scan_event, scan_id)
             )
             try:
                 # Wait for crawl to finish; listener runs alongside
@@ -256,58 +427,18 @@ async def websocket_endpoint(ws: WebSocket):
                 except (asyncio.CancelledError, WebSocketDisconnect):
                     pass
 
-                # Save scan results to DynamoDB BEFORE waiting for subdomain task
-                # so a browser-close / stop doesn't skip the save.
-                try:
-                    finished_at = datetime.now(timezone.utc)
-                    duration = (finished_at - scan_started_at).total_seconds()
-                    endpoints_for_log = []
-                    for ep in crawler.endpoints:
-                        ep_dict = asdict(ep)
-                        ep_dict.pop("request_body", None)
-                        ep_dict.pop("response_body", None)
-                        endpoints_for_log.append(ep_dict)
-                    scan_data = {
-                        "scan_id": scan_id,
-                        "domain": domain,
-                        "started_at": scan_started_at.isoformat(),
-                        "finished_at": finished_at.isoformat(),
-                        "duration_seconds": round(duration),
-                        "params": {
-                            "max_pages": max_pages,
-                            "max_depth": max_depth,
-                            "fast_mode": fast_mode,
-                            "include_subdomains": include_subdomains,
-                            "api_filter": api_filter,
-                            "use_proxy": use_proxy,
-                        },
-                        "results": {
-                            "total_endpoints": len(crawler.endpoints),
-                            "confirmed_apis": sum(
-                                1 for ep in crawler.endpoints
-                                if ep.api_confidence == "API"
-                            ),
-                            "pages_visited": len(crawler.visited_pages),
-                            "pages_skipped": len(crawler.queue),
-                        },
-                        "endpoints": endpoints_for_log,
-                    }
-                    # Persist scanner data alongside endpoints
-                    from ..scanner_store import scanner_store as _ss
-                    scan_data["scanner"] = {
-                        "security_insights": _ss.get_security_insights(domain),
-                        "open_ports": _ss.get_open_ports(domain),
-                        "extracted_apis": _ss.get_extracted_apis(domain),
-                        "agentic": _ss.get_agentic(domain),
-                        "js_resources": _ss.get_js_resources(domain),
-                        "api_specs": _ss.get_api_specs(domain),
-                    }
-                    scan_data["subdomain_results"] = getattr(crawler, 'subdomain_results', {})
-                    asyncio.create_task(
-                        asyncio.to_thread(save_scan, scan_data)
-                    )
-                except Exception as log_exc:
-                    logger.warning("Failed to prepare scan log: %s", log_exc)
+                # Safety: if crawl errored out before emitting crawl_complete,
+                # mark crawl as done so _check_scan_complete can still fire.
+                activities = _scan_activities.get(scan_id)
+                if activities and not activities.get("crawl"):
+                    activities["crawl"] = True
+                    _crawl_results.setdefault(scan_id, {
+                        "total_endpoints": len(crawler.endpoints),
+                        "pages_visited": len(crawler.visited_pages),
+                        "pages_skipped": len(crawler.queue),
+                    })
+                    await _raw_send({"type": "activity_complete", "activity": "crawl"})
+                    await _check_scan_complete(scan_id, _raw_send)
 
                 # Let subdomain discovery finish even after crawl ends
                 if not subdomain_task.done():
@@ -316,9 +447,12 @@ async def websocket_endpoint(ws: WebSocket):
                     except Exception:
                         pass
 
-                # Scan finished — remove from active, but keep client connected
-                _active_scans.pop(scan_id, None)
-                await _broadcast_active_scans()
+                # If mobile is still pending, start watchdog
+                activities = _scan_activities.get(scan_id)
+                if activities and activities.get("mobile") is False:
+                    asyncio.create_task(
+                        _mobile_watchdog(scan_id, _raw_send, 900)
+                    )
 
     except WebSocketDisconnect:
         pass
@@ -327,4 +461,9 @@ async def websocket_endpoint(ws: WebSocket):
         _connected_clients.pop(scan_id, None)
         _subdomains_ready.pop(scan_id, None)
         _client_domains.pop(scan_id, None)
+        _scan_activities.pop(scan_id, None)
+        _crawl_results.pop(scan_id, None)
+        _mobile_expected.pop(scan_id, None)
+        _mobile_received.pop(scan_id, None)
+        _scan_context.pop(scan_id, None)
         await _broadcast_active_scans()
