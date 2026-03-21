@@ -120,6 +120,7 @@ function renderActiveScans(scans) {
 }
 
 function addLog(icon, message, cls) {
+  _resetInactivityTimer();
   const log = document.getElementById('activityLog');
   const div = document.createElement('div');
   div.className = `log-entry ${cls}`;

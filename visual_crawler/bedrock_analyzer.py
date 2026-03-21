@@ -2,7 +2,9 @@
 
 import json
 import logging
+import time
 import boto3
+from botocore.exceptions import ClientError
 from typing import Optional
 
 # Set up logger
@@ -165,3 +167,63 @@ class BedrockAPIAnalyzer:
                 "error": str(e),
                 "description": "Failed to generate description"
             }
+
+    async def describe_services(
+        self,
+        target_domain: str,
+        hostnames: list[str],
+    ) -> dict:
+        """
+        Batch-describe external service domains using a single LLM call.
+
+        Returns:
+            Dict mapping hostname -> short description string.
+        """
+        if not hostnames:
+            return {}
+
+        numbered = "\n".join(f"{i+1}. {h}" for i, h in enumerate(hostnames))
+        prompt = (
+            f'You are a web service classification expert. A website at "{target_domain}" '
+            f"communicates with these external domains. For each, provide a short description "
+            f"(under 12 words).\n\n"
+            f"External domains:\n{numbered}\n\n"
+            f'Respond in JSON only: {{"domain1": "Service — what it does", ...}}\n'
+            f"Rules: Start with service/company name, then dash, then what it does. "
+            f'If unknown, write "Unknown service". Return valid JSON only.'
+        )
+
+        request_body_bedrock = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 4000,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2,
+        }
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = self.bedrock_runtime.invoke_model(
+                    modelId=self.model_id,
+                    body=json.dumps(request_body_bedrock),
+                )
+                response_body_json = json.loads(response["body"].read())
+                content_text = response_body_json["content"][0]["text"]
+                parsed = _parse_llm_response(content_text)
+                # Ensure we return a flat dict of host->description strings
+                if isinstance(parsed, dict) and not any(
+                    k in parsed for k in ("description", "raw_response", "error")
+                ):
+                    return parsed
+                return {}
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "ThrottlingException" and attempt < max_retries - 1:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(f"Bedrock throttled, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait)
+                    continue
+                logger.error(f"Bedrock describe_services call failed: {e}")
+                return {}
+            except Exception as e:
+                logger.error(f"Bedrock describe_services call failed: {e}")
+                return {}

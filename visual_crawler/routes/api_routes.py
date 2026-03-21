@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, ApkAnalyzerStatusRequest
+from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, ApkAnalyzerStatusRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -49,6 +49,24 @@ async def generate_description(request: GenerateDescriptionRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate description: {str(e)}"
+        )
+
+
+@router.post("/api/describe-services")
+async def describe_services(request: DescribeServicesRequest):
+    """Batch-describe external service domains using AWS Bedrock with Claude."""
+    try:
+        analyzer = BedrockAPIAnalyzer()
+        result = await analyzer.describe_services(
+            target_domain=request.target_domain,
+            hostnames=request.hostnames,
+        )
+        return JSONResponse(content={"descriptions": result})
+    except Exception as e:
+        logger.error(f"Failed to describe services: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to describe services: {str(e)}",
         )
 
 

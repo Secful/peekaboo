@@ -4,9 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Salt Security — API Discovery</title>
-<link rel="stylesheet" href="/static/css/styles.css?v=10">
+<link rel="stylesheet" href="/static/css/styles.css?v=14">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
 <!-- Start Form Overlay -->
@@ -244,6 +245,14 @@
         </div>
       </div>
       <div class="current-url" id="currentUrl">&nbsp;</div>
+      <div class="inactivity-bar hidden" id="inactivityBar">
+        <div class="inactivity-segments" id="inactivitySegments">
+          <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+          <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+          <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+          <span class="seg"></span>
+        </div>
+      </div>
     </div>
 
     <div class="activity-header">
@@ -267,6 +276,16 @@
 
     <!-- Endpoints view (default) -->
     <div id="endpointsView">
+    <!-- Toggle bar: always visible when endpoints tab is active -->
+    <div class="endpoint-subview-bar">
+      <div class="endpoint-view-toggle">
+        <span class="evt-btn active" id="evtTable" onclick="switchEndpointSubView('table')">API's</span>
+        <span class="evt-btn" id="evtMesh" onclick="switchEndpointSubView('mesh')">Service Mesh</span>
+      </div>
+    </div>
+
+    <!-- Table sub-view -->
+    <div id="endpointTableView">
     <div class="table-controls">
       <input class="search-input" id="searchInput" placeholder="Filter endpoints..." oninput="currentPage = 1; applyFilters();">
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
@@ -323,6 +342,17 @@
       <div class="empty-state" id="emptyState">
         <div class="icon">📡</div>
         <div>Waiting for API endpoints to appear...</div>
+      </div>
+    </div>
+    </div><!-- /endpointTableView -->
+
+    <!-- Service Mesh sub-view -->
+    <div id="serviceMeshView" style="display:none">
+      <div class="servicemesh-content" id="serviceMeshContent">
+        <div class="subdomain-placeholder">
+          <div class="icon">🕸</div>
+          <div>Start a scan to visualize the service mesh</div>
+        </div>
       </div>
     </div>
     </div><!-- /endpointsView -->
@@ -501,11 +531,11 @@
 </div>
 
 </body>
-<script src="/static/js/state.js?v=8"></script>
+<script src="/static/js/state.js?v=9"></script>
 <script src="/static/js/constants.js?v=8"></script>
 <script src="/static/js/utils.js?v=7"></script>
 <script src="/static/js/detection.js?v=7"></script>
-<script src="/static/js/endpoints.js?v=7"></script>
+<script src="/static/js/endpoints.js?v=8"></script>
 <script src="/static/js/filters.js?v=7"></script>
 <script src="/static/js/drawer.js?v=7"></script>
 <script src="/static/js/subdomains.js?v=8"></script>
@@ -513,5 +543,6 @@
 <script src="/static/js/report.js?v=7"></script>
 <script src="/static/js/ai-description.js?v=7"></script>
 <script src="/static/js/history.js?v=8"></script>
-<script src="/static/js/core.js?v=9"></script>
+<script src="/static/js/servicemesh.js?v=8"></script>
+<script src="/static/js/core.js?v=12"></script>
 </html>

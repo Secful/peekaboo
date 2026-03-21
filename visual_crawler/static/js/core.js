@@ -1,5 +1,13 @@
 /* WebSocket, scan lifecycle, timer, event dispatcher, and initialization */
 
+// ── Inactivity-based scan completion ─────────────────────────────────
+let _inactivityInterval = null;   // setInterval handle (ticks every 12s)
+let _inactivityElapsed  = 0;      // seconds elapsed since last activity
+let _doneMsg            = null;   // stored 'done' message for finalization
+let _backendDone        = false;  // true once composite 'done' event received
+const _INACTIVITY_TIMEOUT = 120;  // total seconds before finalizing
+const _INACTIVITY_TICK    = 12;   // seconds per segment (120 / 10)
+
 // ── Reusable notify toast ──────────────────────────────────────────────
 function showNotifyToast(message, level = 'info') {
   let container = document.querySelector('.notify-toast-container');
@@ -60,6 +68,66 @@ function resetTimer() {
   document.getElementById('statTimer').textContent = '00:00';
 }
 
+// ── Inactivity timer helpers ─────────────────────────────────────────
+function _startInactivityTimer() {
+  if (_inactivityInterval) { clearInterval(_inactivityInterval); _inactivityInterval = null; }
+  const bar  = document.getElementById('inactivityBar');
+  const segs = document.getElementById('inactivitySegments').children;
+  bar.classList.remove('hidden');
+  for (let i = 0; i < segs.length; i++) segs[i].classList.remove('filled');
+  _inactivityElapsed = 0;
+
+  _inactivityInterval = setInterval(() => {
+    _inactivityElapsed += _INACTIVITY_TICK;
+    const idx = Math.floor(_inactivityElapsed / _INACTIVITY_TICK) - 1;
+    if (idx >= 0 && idx < segs.length) segs[idx].classList.add('filled');
+    if (_inactivityElapsed >= _INACTIVITY_TIMEOUT) _finalizeScan();
+  }, _INACTIVITY_TICK * 1000);
+}
+
+function _resetInactivityTimer() {
+  if (!_inactivityInterval) return;          // timer not started yet
+  _inactivityElapsed = 0;
+  const segs = document.getElementById('inactivitySegments').children;
+  for (let i = 0; i < segs.length; i++) segs[i].classList.remove('filled');
+}
+
+function _finalizeScan() {
+  if (_inactivityInterval) { clearInterval(_inactivityInterval); _inactivityInterval = null; }
+  document.getElementById('inactivityBar').classList.add('hidden');
+  document.getElementById('liveDot').classList.add('done');
+
+  // Tell backend to persist the scan to history
+  _sendSaveScan();
+
+  if (_backendDone) {
+    const total = _doneMsg ? _doneMsg.total_endpoints
+                           : document.getElementById('statEndpointsTotal').textContent;
+    document.getElementById('statusText').textContent = `Done — ${total} endpoints found`;
+    document.getElementById('piStatus').textContent = 'Completed';
+    document.getElementById('piStatus').style.color = 'var(--green)';
+    if (_doneMsg) showScanSummary(_doneMsg);
+  } else {
+    stopTimer();
+    const total = document.getElementById('statEndpointsTotal').textContent;
+    document.getElementById('statusText').textContent = `Done (stalled) — ${total} endpoints found`;
+    document.getElementById('piStatus').textContent = 'Stalled';
+    document.getElementById('piStatus').style.color = 'var(--yellow, #eab308)';
+    document.getElementById('pauseBtn').classList.add('hidden');
+    document.getElementById('findingsBtn').classList.add('hidden');
+    document.getElementById('stopBtn').classList.add('hidden');
+    document.getElementById('newScanBtn').classList.remove('hidden');
+    addLog('', 'Scan finalized — 2 minutes of inactivity', 'warning');
+    showCurrentFindings();
+  }
+}
+
+function _sendSaveScan() {
+  if (appState.ws && appState.ws.readyState === WebSocket.OPEN) {
+    appState.ws.send(JSON.stringify({ action: 'save_scan' }));
+  }
+}
+
 // Advanced settings toggle
 function toggleAdvanced() {
   const settings = document.getElementById('advancedSettings');
@@ -97,6 +165,7 @@ function switchLogTab(tab) {
 }
 
 function addApkLog(msg) {
+  _resetInactivityTimer();
   const log = document.getElementById('apkAnalysisLog');
   const entry = document.createElement('div');
   const level = (msg.level || 'INFO').toUpperCase();
@@ -143,6 +212,7 @@ function ensureWebSocket() {
     };
 
     appState.ws.onclose = () => {
+      if (_inactivityInterval) _finalizeScan();
       document.getElementById('liveDot').classList.add('done');
       document.getElementById('statusText').textContent = 'Disconnected';
       document.getElementById('pauseBtn').classList.add('hidden');
@@ -224,6 +294,7 @@ async function startScan(event) {
     document.getElementById('statusText').textContent = 'Starting scan...';
     addLog('', `Scan started for ${params.domain}`, 'page');
     appState.ws.send(JSON.stringify(params));
+    _startInactivityTimer();
   } catch (err) {
     document.getElementById('statusText').textContent = 'Connection failed';
   }
@@ -271,6 +342,9 @@ function stopScan() {
   if (appState.ws && appState.ws.readyState === WebSocket.OPEN) {
     appState.ws.send(JSON.stringify({ action: 'stop' }));
   }
+  if (_inactivityInterval) { clearInterval(_inactivityInterval); _inactivityInterval = null; }
+  document.getElementById('inactivityBar').classList.add('hidden');
+  _sendSaveScan();
   stopTimer();
   document.getElementById('liveDot').classList.add('done');
   document.getElementById('statusText').textContent = 'Stopped';
@@ -283,6 +357,13 @@ function stopScan() {
 }
 
 function newScan() {
+  // Reset inactivity / done state
+  _doneMsg = null;
+  _backendDone = false;
+  if (_inactivityInterval) { clearInterval(_inactivityInterval); _inactivityInterval = null; }
+  _inactivityElapsed = 0;
+  document.getElementById('inactivityBar').classList.add('hidden');
+
   // Clear current data
   appState.endpoints.length = 0;
   appState.hosts.clear();
@@ -302,6 +383,7 @@ function newScan() {
   appState.apiSpecs = {};
   appState.mobileEndpoints = {};
   appState._mobileCards = {};
+  appState.serviceMeshDescriptions = null;
   appState.crawlComplete = false;
   appState.mobileAnalysisTriggered = false;
   appState.mobileAnalysisComplete = false;
@@ -372,6 +454,15 @@ function newScan() {
       <div class="icon">🌐</div>
       <div>Start a scan to discover subdomains</div>
     </div>`;
+
+  // Reset service mesh view and toggle back to table
+  document.getElementById('serviceMeshContent').innerHTML = `
+    <div class="subdomain-placeholder">
+      <div class="icon">🕸</div>
+      <div>Start a scan to visualize the service mesh</div>
+    </div>`;
+  switchEndpointSubView('table');
+
   switchView('endpoints');
 
   // Show the start form
@@ -408,6 +499,26 @@ function switchView(view) {
   } else {
     endpointsView.style.display = '';
     tabEndpoints.classList.add('active');
+  }
+}
+
+// Toggle between Table and Mesh sub-views within Web Endpoints
+function switchEndpointSubView(subView) {
+  const tableView = document.getElementById('endpointTableView');
+  const meshView = document.getElementById('serviceMeshView');
+  const btnTable = document.getElementById('evtTable');
+  const btnMesh = document.getElementById('evtMesh');
+
+  btnTable.classList.toggle('active', subView === 'table');
+  btnMesh.classList.toggle('active', subView === 'mesh');
+
+  if (subView === 'mesh') {
+    tableView.style.display = 'none';
+    meshView.style.display = '';
+    renderServiceMesh();
+  } else {
+    tableView.style.display = '';
+    meshView.style.display = 'none';
   }
 }
 
@@ -639,9 +750,9 @@ function handleEvent(msg) {
         console.log('Technologies detected:', appState.detectedTechnologies);
       }
 
-      document.getElementById('liveDot').classList.add('done');
+      // Intermediate status — final "Completed" deferred to inactivity timer
       document.getElementById('statusText').textContent =
-        `Done — ${msg.total_endpoints} endpoints found`;
+        'Browsing complete \u2014 analyzing subdomains\u2026';
       document.getElementById('pauseBtn').classList.add('hidden');
       document.getElementById('findingsBtn').classList.add('hidden');
       document.getElementById('stopBtn').classList.add('hidden');
@@ -667,15 +778,12 @@ function handleEvent(msg) {
         emptyState.style.display = 'block';
       }
 
-      document.getElementById('piStatus').textContent = 'Completed';
-      document.getElementById('piStatus').style.color = 'var(--green)';
+      document.getElementById('piStatus').textContent = 'Analyzing\u2026';
       document.getElementById('piTarget').textContent = appState.targetDomain;
 
       document.getElementById('previewLabel').textContent = 'Summary';
       document.getElementById('previewLive').classList.add('hidden');
       document.getElementById('previewSummary').classList.remove('hidden');
-
-      showScanSummary(msg);
 
       const scanDuration = appState.scanStartTime ? (Date.now() - appState.scanStartTime) / 1000 : Infinity;
       if (scanDuration < 60) {
@@ -684,6 +792,11 @@ function handleEvent(msg) {
 
       // Resolve any remaining security spinners after a grace period
       setTimeout(resolveStaleSecuritySpinners, 90000);
+
+      // Mark backend done and reset inactivity countdown for post-crawl analysis
+      _doneMsg = msg;
+      _backendDone = true;
+      _resetInactivityTimer();   // fresh 120s window for post-crawl analysis
       break;
   }
 }

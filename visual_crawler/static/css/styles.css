@@ -834,6 +834,9 @@
   #endpointsView {
     display: flex; flex-direction: column; flex: 1; overflow: hidden;
   }
+  #endpointTableView {
+    display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;
+  }
 
   /* Subdomains view */
   #subdomainsView { flex: 1; overflow-y: auto; }
@@ -2322,3 +2325,79 @@
   }
   .notify-toast .notify-close:hover { color: var(--text); }
   .notify-toast.fade-out { opacity: 0; }
+
+  /* Inactivity countdown bar */
+  .inactivity-bar { padding: 4px 0; margin: 4px 0 0; }
+  .inactivity-bar.hidden { display: none; }
+  .inactivity-segments { display: flex; gap: 2px; height: 4px; }
+  .inactivity-segments .seg {
+    flex: 1; background: var(--border); border-radius: 2px;
+    transition: background 0.3s;
+  }
+  .inactivity-segments .seg.filled { background: var(--green); }
+
+  /* ── Service Mesh ── */
+  .servicemesh-content {
+    display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 400px;
+  }
+  .servicemesh-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.4rem 1rem; border-bottom: 1px solid var(--border);
+    background: var(--surface2); flex-shrink: 0;
+  }
+  .servicemesh-stats {
+    display: flex; gap: 1.25rem; font-size: 0.85rem; color: var(--text-muted); font-weight: 500;
+  }
+  .servicemesh-zoom-hint {
+    font-size: 0.72rem; color: var(--text-muted); font-style: italic;
+  }
+  .servicemesh-graph-container {
+    flex: 1; display: flex; align-items: stretch; justify-content: stretch;
+    padding: 0; overflow: hidden; min-height: 0;
+  }
+  .servicemesh-svg {
+    width: 100%; height: 100%;
+  }
+  .servicemesh-hub-node {
+    fill: var(--purple); stroke: var(--purple-dark); stroke-width: 2;
+  }
+  .servicemesh-hub-label {
+    font-size: 11px; font-weight: 700; fill: var(--purple); font-family: 'JetBrains Mono', monospace;
+  }
+  .servicemesh-hub-count {
+    font-size: 12px; font-weight: 700; fill: #fff; font-family: 'JetBrains Mono', monospace;
+  }
+  .servicemesh-spoke-node {
+    fill: var(--surface); stroke: var(--green); stroke-width: 2;
+    transition: fill 0.15s, stroke-width 0.15s;
+  }
+  .servicemesh-spoke-group:hover .servicemesh-spoke-node {
+    fill: rgba(5, 150, 105, 0.1); stroke-width: 3;
+  }
+  .servicemesh-spoke-label {
+    font-size: 9px; font-weight: 600; fill: var(--text); font-family: 'JetBrains Mono', monospace;
+  }
+  .servicemesh-spoke-count {
+    font-size: 8px; font-weight: 500; fill: var(--text-muted); font-family: 'JetBrains Mono', monospace;
+  }
+  .servicemesh-spoke-desc {
+    font-size: 7.5px; fill: var(--green); font-style: italic; font-family: 'Inter', sans-serif;
+  }
+  .servicemesh-overflow {
+    font-size: 10px; fill: var(--text-muted); font-style: italic; font-family: 'Inter', sans-serif;
+  }
+  .endpoint-subview-bar {
+    display: flex; align-items: center; padding: 0.5rem 0.75rem 0;
+  }
+  .endpoint-view-toggle {
+    display: inline-flex; border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden; flex-shrink: 0;
+  }
+  .evt-btn {
+    padding: 0.3rem 0.75rem; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; color: var(--text-muted); background: var(--surface);
+    transition: all 0.15s; user-select: none; border-right: 1px solid var(--border);
+  }
+  .evt-btn:last-child { border-right: none; }
+  .evt-btn.active { background: var(--purple); color: #fff; }
+  .evt-btn:not(.active):hover { background: var(--surface2); }

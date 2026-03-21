@@ -154,13 +154,10 @@ async def _check_scan_complete(scan_id: str, send_fn) -> None:
     # All done — emit composite "done" with the crawl payload
     crawl_data = _crawl_results.pop(scan_id, {})
     await send_fn({"type": "done", **crawl_data})
-    # Persist full scan history at true end-of-scan
-    await _save_final_scan(scan_id)
-    # Cleanup tracking state
+    # Cleanup tracking state (but keep _scan_context alive for deferred save)
     _scan_activities.pop(scan_id, None)
     _mobile_expected.pop(scan_id, None)
     _mobile_received.pop(scan_id, None)
-    _scan_context.pop(scan_id, None)
     _crawl_results.pop(scan_id, None)
     _active_scans.pop(scan_id, None)
     await _broadcast_active_scans()
@@ -211,6 +208,8 @@ async def websocket_endpoint(ws: WebSocket):
         except Exception:
             pass
 
+    crawler = None  # last crawler instance — needed for post-crawl publish_apk
+
     try:
         # Loop: wait for scan params, run scan, wait again
         while True:
@@ -227,6 +226,28 @@ async def websocket_endpoint(ws: WebSocket):
                 if retry_domain:
                     asyncio.create_task(
                         _fetch_subdomains(retry_domain, send_event, scan_id)
+                    )
+                continue
+
+            # Persist scan to history (triggered by frontend after inactivity timeout or stop)
+            if params.get('action') == 'save_scan':
+                await _save_final_scan(scan_id)
+                _scan_context.pop(scan_id, None)
+                continue
+
+            # Handle publish_apk after crawl has finished (listener already canceled)
+            if params.get('action') == 'publish_apk':
+                selected = params.get('apps', [])
+                if selected and crawler is not None:
+                    activities = _scan_activities.get(scan_id)
+                    if activities is not None:
+                        activities["mobile"] = False
+                    _mobile_expected[scan_id] = {
+                        app["package_name"] for app in selected
+                    }
+                    _mobile_received[scan_id] = set()
+                    asyncio.create_task(
+                        crawler._publish_apk_jobs(selected)
                     )
                 continue
 
@@ -386,6 +407,9 @@ async def websocket_endpoint(ws: WebSocket):
                             asyncio.create_task(
                                 _fetch_subdomains(domain, send_event, scan_id)
                             )
+                        elif data.get('action') == 'save_scan':
+                            await _save_final_scan(scan_id)
+                            _scan_context.pop(scan_id, None)
                         elif data.get('action') == 'publish_apk':
                             selected = data.get('apps', [])
                             if selected:

@@ -31,6 +31,7 @@ const appState = {
   subdomainMapInstance: null,
   subdomainMapMarkers: [],
   subdomainMapBounds: null,
+  serviceMeshDescriptions: null,
   subdomainViewMode: 'table',
   apiFilter: 'all',
   statusFilter: 'all',

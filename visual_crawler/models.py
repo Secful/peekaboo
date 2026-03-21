@@ -35,6 +35,12 @@ class DiscoveredEndpoint:
 
 # Pydantic request models for API routes
 
+class DescribeServicesRequest(BaseModel):
+    """Request body for batch service description."""
+    target_domain: str
+    hostnames: list[str]
+
+
 class GenerateDescriptionRequest(BaseModel):
     """Request body for generating API description."""
     method: str
