@@ -1136,7 +1136,7 @@ class APICrawler:
                     except Exception as verify_err:
                         logger.warning(f"Play Store verification failed for {pkg}: {verify_err}")
 
-                # ── Emit results and store (SQS publish is user-triggered) ─
+                # ── Emit results and store ─
                 if verified:
                     self.android_apps = verified
                     for app in verified:
@@ -1261,3 +1261,4 @@ class APICrawler:
                 "message": f"Failed to publish APK jobs to SQS: {e}"
             })
             await self._emit("apk_publish_failed", {"error": str(e)})
+

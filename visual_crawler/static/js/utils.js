@@ -27,3 +27,5 @@ function getStatusExplanation(statusCode) {
 function getMethodExplanation(method) {
   return methodExplanations[method] || `${method} - HTTP method for interacting with this resource.`;
 }
+
+

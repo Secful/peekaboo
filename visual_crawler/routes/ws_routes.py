@@ -17,6 +17,20 @@ from ..scan_logger import save_scan
 
 logger = logging.getLogger(__name__)
 
+
+def _publish_git_search_job(domain: str, scan_id: str) -> None:
+    """Publish a git-search job to SQS. Runs in a thread via asyncio.to_thread."""
+    queue_name = "peekaboo-git-search-queue"
+    try:
+        import boto3
+        sqs = boto3.client("sqs", region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+        queue_url = sqs.get_queue_url(QueueName=queue_name)["QueueUrl"]
+        body = json.dumps({"domain": domain, "scan_id": scan_id})
+        sqs.send_message(QueueUrl=queue_url, MessageBody=body)
+        logger.info(f"SQS: sent git-search job to {queue_name}: {body}")
+    except Exception as e:
+        logger.warning(f"SQS: failed to publish git-search job to {queue_name}: {e}")
+
 # Subdomain discovery Lambda URL (configurable via env var)
 SUBDOMAIN_LAMBDA_URL = os.getenv(
     'SUBDOMAIN_LAMBDA_URL',
@@ -137,6 +151,7 @@ async def _save_final_scan(scan_id: str) -> None:
             "js_resources": _ss.get_js_resources(domain),
             "api_specs": _ss.get_api_specs(domain),
             "mobile_endpoints": _ss.get_mobile_endpoints(domain),
+            "git_findings": _ss.get_git_findings(domain),
         }
         scan_data["subdomain_results"] = getattr(crawler, 'subdomain_results', {})
         asyncio.create_task(
@@ -361,6 +376,11 @@ async def websocket_endpoint(ws: WebSocket):
                 },
             }
 
+            # Fire-and-forget git-search SQS job
+            asyncio.create_task(asyncio.to_thread(
+                _publish_git_search_job, domain, scan_id
+            ))
+
             # Wrap send_event to intercept crawl_complete / apk_publish_failed
             async def _raw_send(event: dict):
                 """Bypass interception — used for the final composite done."""
@@ -481,6 +501,9 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        # Persist scan on disconnect if not already saved
+        if scan_id in _scan_context:
+            await _save_final_scan(scan_id)
         _active_scans.pop(scan_id, None)
         _connected_clients.pop(scan_id, None)
         _subdomains_ready.pop(scan_id, None)

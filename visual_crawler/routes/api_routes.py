@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, ApkAnalyzerStatusRequest
+from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, ApkAnalyzerStatusRequest, GitFindingsRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -356,6 +356,97 @@ async def extracted_api(request: ExtractedApiRequest):
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
 
 
+def _parse_postman_collection(spec: dict) -> dict:
+    """Extract endpoints from a Postman Collection v2.x format."""
+    info = spec.get("info") or {}
+    title = info.get("name", "")
+    schema_url = info.get("schema", "")
+    if "v2.1" in schema_url:
+        spec_version = "Postman Collection v2.1"
+    elif "v2.0" in schema_url:
+        spec_version = "Postman Collection v2.0"
+    else:
+        spec_version = "Postman Collection"
+
+    endpoints: list[dict] = []
+
+    def _extract_items(items: list, folder_prefix: str = ""):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            # Nested folder — recurse
+            if "item" in item and isinstance(item["item"], list):
+                name = item.get("name", "")
+                prefix = f"{folder_prefix}/{name}" if folder_prefix else name
+                _extract_items(item["item"], prefix)
+                continue
+            req = item.get("request")
+            if not isinstance(req, dict):
+                continue
+            method = req.get("method", "GET").upper()
+            # URL can be a string or an object with raw/path
+            url_obj = req.get("url", "")
+            if isinstance(url_obj, dict):
+                path = url_obj.get("raw", "")
+                # Build path from path segments if available
+                path_parts = url_obj.get("path")
+                if isinstance(path_parts, list):
+                    path = "/" + "/".join(str(p) for p in path_parts)
+                # Extract query parameters
+                params = []
+                for q in url_obj.get("query") or []:
+                    if isinstance(q, dict):
+                        params.append({
+                            "name": q.get("key", ""),
+                            "in": "query",
+                            "type": "",
+                            "required": False,
+                            "description": (q.get("description") or "")[:120],
+                        })
+                # Path variables
+                for v in url_obj.get("variable") or []:
+                    if isinstance(v, dict):
+                        params.append({
+                            "name": v.get("key", ""),
+                            "in": "path",
+                            "type": "",
+                            "required": True,
+                            "description": (v.get("description") or "")[:120],
+                        })
+            else:
+                path = str(url_obj)
+                params = []
+
+            # Request body
+            request_body = None
+            body = req.get("body")
+            if isinstance(body, dict) and body.get("mode") == "raw":
+                raw = body.get("raw", "")
+                if raw:
+                    try:
+                        request_body = __import__("json").loads(raw)
+                    except Exception:
+                        pass
+
+            desc = item.get("name", "")
+            if len(desc) > 120:
+                desc = desc[:117] + "..."
+            category = folder_prefix or ""
+
+            endpoints.append({
+                "method": method,
+                "path": path,
+                "description": f"{category}: {desc}" if category else desc,
+                "parameters": params,
+                "request_body": request_body,
+                "responses": {},
+            })
+
+    _extract_items(spec.get("item", []))
+    endpoints.sort(key=lambda e: (e["path"], e["method"]))
+    return {"endpoints": endpoints, "spec_version": spec_version, "title": title}
+
+
 @router.get("/api/fetch-spec")
 async def fetch_spec(url: str):
     """Proxy-fetch an OpenAPI/Swagger JSON or YAML spec and extract endpoints."""
@@ -386,6 +477,44 @@ async def fetch_spec(url: str):
         return JSONResponse(content={"error": str(e), "endpoints": []})
 
     try:
+        import json as _json
+
+        # ── Postman collection detection & parsing ──
+        if isinstance(spec.get("item"), list) and isinstance(spec.get("info"), dict):
+            return JSONResponse(content=_parse_postman_collection(spec))
+
+        MAX_SCHEMA_CHARS = 2048
+
+        def _resolve_ref(obj, root):
+            """Resolve a single $ref one level deep; return obj unchanged if not a ref."""
+            if not isinstance(obj, dict) or "$ref" not in obj:
+                return obj
+            ref = obj["$ref"]
+            if not isinstance(ref, str) or not ref.startswith("#/"):
+                return obj
+            parts = ref.lstrip("#/").split("/")
+            cur = root
+            for p in parts:
+                if isinstance(cur, dict):
+                    cur = cur.get(p)
+                else:
+                    return obj
+            return cur if isinstance(cur, dict) else obj
+
+        def _cap_schema(schema):
+            """Stringify and truncate a schema dict to MAX_SCHEMA_CHARS."""
+            if schema is None:
+                return None
+            try:
+                s = _json.dumps(schema, default=str)
+                if len(s) > MAX_SCHEMA_CHARS:
+                    return _json.loads(s[:MAX_SCHEMA_CHARS - 20].rsplit(",", 1)[0] + "}")
+            except Exception:
+                pass
+            return schema
+
+        is_oas3 = bool(spec.get("openapi"))
+
         endpoints = []
         http_methods = {"get", "post", "put", "delete", "patch", "options", "head"}
         for path, methods in (spec.get("paths") or {}).items():
@@ -399,7 +528,77 @@ async def fetch_spec(url: str):
                 desc = detail.get("summary") or detail.get("description") or ""
                 if len(desc) > 120:
                     desc = desc[:117] + "..."
-                endpoints.append({"method": method.upper(), "path": path, "description": desc})
+
+                # --- Parameters (query / path / header) ---
+                params = []
+                for p in detail.get("parameters") or []:
+                    if not isinstance(p, dict):
+                        continue
+                    p = _resolve_ref(p, spec)
+                    loc = p.get("in", "")
+                    if loc not in ("query", "path", "header"):
+                        continue
+                    schema = _resolve_ref(p.get("schema") or {}, spec) if is_oas3 else {}
+                    params.append({
+                        "name": p.get("name", ""),
+                        "in": loc,
+                        "type": schema.get("type", p.get("type", "")),
+                        "required": bool(p.get("required")),
+                        "description": (p.get("description") or "")[:120],
+                    })
+
+                # --- Request body ---
+                request_body = None
+                if is_oas3:
+                    rb = detail.get("requestBody")
+                    if isinstance(rb, dict):
+                        rb = _resolve_ref(rb, spec)
+                        content = rb.get("content") or {}
+                        for ct in ("application/json", "application/xml", "multipart/form-data"):
+                            if ct in content:
+                                schema = _resolve_ref((content[ct] or {}).get("schema", {}), spec)
+                                request_body = _cap_schema(schema)
+                                break
+                        if request_body is None and content:
+                            first = next(iter(content.values()), {})
+                            schema = _resolve_ref((first or {}).get("schema", {}), spec)
+                            request_body = _cap_schema(schema)
+                else:
+                    # Swagger 2: body parameter
+                    for p in detail.get("parameters") or []:
+                        if isinstance(p, dict) and p.get("in") == "body":
+                            schema = _resolve_ref(p.get("schema", {}), spec)
+                            request_body = _cap_schema(schema)
+                            break
+
+                # --- Responses ---
+                responses = {}
+                for status, resp in (detail.get("responses") or {}).items():
+                    if not isinstance(resp, dict):
+                        continue
+                    resp = _resolve_ref(resp, spec)
+                    entry = {"description": (resp.get("description") or "")[:200]}
+                    if is_oas3:
+                        resp_content = resp.get("content") or {}
+                        for ct in ("application/json", "application/xml"):
+                            if ct in resp_content:
+                                schema = _resolve_ref((resp_content[ct] or {}).get("schema", {}), spec)
+                                entry["schema"] = _cap_schema(schema)
+                                break
+                    else:
+                        schema = resp.get("schema")
+                        if isinstance(schema, dict):
+                            entry["schema"] = _cap_schema(_resolve_ref(schema, spec))
+                    responses[str(status)] = entry
+
+                endpoints.append({
+                    "method": method.upper(),
+                    "path": path,
+                    "description": desc,
+                    "parameters": params,
+                    "request_body": request_body,
+                    "responses": responses,
+                })
         endpoints.sort(key=lambda e: (e["path"], e["method"]))
 
         title = ""
@@ -564,3 +763,49 @@ async def apk_analyzer_status(request: ApkAnalyzerStatusRequest):
             logger.warning(f"Failed to push APK status to scan {scan_id}")
 
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+
+@router.post("/api/gitfindings")
+async def git_findings(request: GitFindingsRequest):
+    """Receive git-based API spec findings from the git-search service and push to connected UI clients."""
+    from .ws_routes import _client_domains, _connected_clients, _subdomains_ready
+    from ..scanner_store import scanner_store
+
+    logger.warning(f"Got {request.findings_count} git findings for domain {request.domain}")
+
+    payload = {
+        "type": "git_findings",
+        "domain": request.domain,
+        "scan_id": request.scan_id,
+        "scan_duration_secs": request.scan_duration_secs,
+        "findings_count": request.findings_count,
+        "findings": [f.model_dump() for f in request.findings],
+        "errors": request.errors,
+    }
+
+    scanner_store.store_git_findings(request.domain, request.scan_id, payload)
+
+    pushed_to = 0
+    for scan_id, domain in list(_client_domains.items()):
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
+            continue
+        ws = _connected_clients.get(scan_id)
+        if ws is None:
+            continue
+        if _subdomains_ready.get(scan_id):
+            try:
+                await ws.send_json(payload)
+                pushed_to += 1
+            except Exception:
+                logger.warning(f"Failed to push git findings to scan {scan_id}")
+
+    logger.warning(
+        f"git_findings for {request.domain}: "
+        f"pushed_to={pushed_to}, "
+        f"findings_count={request.findings_count}, "
+        f"client_domains={dict(_client_domains)}, "
+        f"subdomains_ready={dict(_subdomains_ready)}"
+    )
+    return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+

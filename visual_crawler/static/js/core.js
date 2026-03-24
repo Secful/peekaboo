@@ -213,6 +213,7 @@ function ensureWebSocket() {
 
     appState.ws.onclose = () => {
       if (_inactivityInterval) _finalizeScan();
+
       document.getElementById('liveDot').classList.add('done');
       document.getElementById('statusText').textContent = 'Disconnected';
       document.getElementById('pauseBtn').classList.add('hidden');
@@ -381,6 +382,7 @@ function newScan() {
   appState.agentic = {};
   appState.extractedApis = {};
   appState.apiSpecs = {};
+  appState.gitFindings = null;
   appState.mobileEndpoints = {};
   appState._mobileCards = {};
   appState.serviceMeshDescriptions = null;
@@ -400,6 +402,12 @@ function newScan() {
   if (mobileTab) mobileTab.remove();
   const mobileView = document.getElementById('mobileEndpointsView');
   if (mobileView) mobileView.remove();
+
+  // Remove dynamically created git specs tab + view
+  const gitSpecsTab = document.getElementById('tabGitSpecs');
+  if (gitSpecsTab) gitSpecsTab.remove();
+  const gitSpecsView = document.getElementById('gitSpecsView');
+  if (gitSpecsView) gitSpecsView.remove();
 
   // Reset map state
   Object.keys(appState.geoCache).forEach(k => delete appState.geoCache[k]);
@@ -467,25 +475,32 @@ function newScan() {
 
   // Show the start form
   document.getElementById('startOverlay').classList.remove('hidden');
+  const domainInput = document.getElementById('domain');
+  domainInput.value = '';
+  domainInput.focus();
 }
 
 function switchView(view) {
   const endpointsView = document.getElementById('endpointsView');
   const subdomainsView = document.getElementById('subdomainsView');
   const mobileView = document.getElementById('mobileEndpointsView');
+  const gitSpecsView = document.getElementById('gitSpecsView');
   const tabEndpoints = document.getElementById('tabEndpoints');
   const tabSubdomains = document.getElementById('tabSubdomains');
   const tabMobile = document.getElementById('tabMobile');
+  const tabGitSpecs = document.getElementById('tabGitSpecs');
 
   // Hide all views
   endpointsView.style.display = 'none';
   subdomainsView.style.display = 'none';
   if (mobileView) mobileView.style.display = 'none';
+  if (gitSpecsView) gitSpecsView.style.display = 'none';
 
   // Deactivate all tabs
   tabEndpoints.classList.remove('active');
   tabSubdomains.classList.remove('active');
   if (tabMobile) tabMobile.classList.remove('active');
+  if (tabGitSpecs) tabGitSpecs.classList.remove('active');
 
   if (view === 'subdomains') {
     subdomainsView.style.display = '';
@@ -496,6 +511,9 @@ function switchView(view) {
   } else if (view === 'mobile' && mobileView) {
     mobileView.style.display = '';
     if (tabMobile) tabMobile.classList.add('active');
+  } else if (view === 'gitspecs' && gitSpecsView) {
+    gitSpecsView.style.display = '';
+    if (tabGitSpecs) tabGitSpecs.classList.add('active');
   } else {
     endpointsView.style.display = '';
     tabEndpoints.classList.add('active');
@@ -693,6 +711,26 @@ function handleEvent(msg) {
       }
       break;
 
+    case 'git_findings': {
+      const dur = msg.scan_duration_secs ? ` (${msg.scan_duration_secs.toFixed(1)}s)` : '';
+      if (msg.findings && msg.findings.length > 0) {
+        addLog('', `Git scan: found ${msg.findings.length} API spec(s) in public repos${dur}`, 'endpoint');
+        msg.findings.forEach(f => {
+          addLog('', `  ${f.source}: ${f.repo} \u2014 ${f.spec_type} (${f.discovery_method})`, '');
+        });
+        appState.gitFindings = msg;
+        handleGitFindings(msg);
+      } else {
+        addLog('', `Git scan: no API specs found in public repos${dur}`, '');
+      }
+      if (msg.errors && msg.errors.length > 0) {
+        msg.errors.forEach(err => {
+          addLog('', `Git scan warning: ${err}`, 'warning');
+        });
+      }
+      break;
+    }
+
     case 'mobile_endpoints':
       handleMobileEndpoints(msg);
       break;
@@ -711,7 +749,9 @@ function handleEvent(msg) {
 
     case 'apk_status':
       addApkLog(msg);
-      if ((msg.level || '').toUpperCase() === 'ERROR') {
+      if (/flutter/i.test(msg.message || '') && /not supported/i.test(msg.message || '')) {
+        showNotifyToast(`The Android app "${msg.package_name || 'detected app'}" is a Flutter-based app, which we can't analyze yet. Mobile endpoints won't be available for this app.`, 'warning');
+      } else if ((msg.level || '').toUpperCase() === 'ERROR') {
         showNotifyToast('Mobile endpoint analysis encountered an issue — check Activity log for details', 'warning');
       }
       break;
@@ -1251,6 +1291,276 @@ function handleMobileEndpoints(msg) {
 
   // Log
   addLog('', `Mobile: ${dedupCount} endpoints from ${pkg} (${_cardMeta.cleanAppName})`, '');
+}
+
+// ─── Git Findings / OpenAPI Specs Tab ───
+
+function handleGitFindings(msg) {
+  const findings = msg.findings || [];
+  if (findings.length === 0) return;
+
+  // Derive primary source for header card
+  const sourceCounts = {};
+  findings.forEach(f => {
+    const s = f.source || 'Unknown';
+    sourceCounts[s] = (sourceCounts[s] || 0) + 1;
+  });
+  const primarySource = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])[0][0];
+
+  // Create tab + view (idempotent)
+  if (!document.getElementById('tabGitSpecs')) {
+    const tabContainer = document.querySelector('.view-tabs');
+    const tabBtn = document.createElement('button');
+    tabBtn.className = 'view-tab';
+    tabBtn.id = 'tabGitSpecs';
+    tabBtn.onclick = () => switchView('gitspecs');
+    tabBtn.textContent = 'OpenAPI Specs';
+    tabContainer.appendChild(tabBtn);
+
+    const rightPanel = document.querySelector('.right-panel');
+    const viewDiv = document.createElement('div');
+    viewDiv.id = 'gitSpecsView';
+    viewDiv.style.display = 'none';
+    viewDiv.innerHTML = `
+      <div id="gitSpecsList">
+        <div id="gitSpecsHeader" class="mobile-apps-header"></div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:35px">#</th>
+                <th style="width:80px">Source</th>
+                <th style="width:25%">Repository</th>
+                <th style="width:30%">File</th>
+                <th style="width:100px">Spec Type</th>
+                <th style="width:25%">Description</th>
+              </tr>
+            </thead>
+            <tbody id="gitSpecsTbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="gitSpecsDetail" style="display:none">
+        <div class="git-specs-detail-header" id="gitSpecsDetailHeader"></div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:35px">#</th>
+                <th style="width:70px">Method</th>
+                <th style="width:40%">Path</th>
+                <th style="width:35%">Description</th>
+              </tr>
+            </thead>
+            <tbody id="gitSpecsEndpointsTbody"></tbody>
+          </table>
+        </div>
+      </div>`;
+    rightPanel.appendChild(viewDiv);
+  }
+
+  // Header card
+  const headerDiv = document.getElementById('gitSpecsHeader');
+  const dur = msg.scan_duration_secs ? `${msg.scan_duration_secs.toFixed(1)}s` : '';
+  headerDiv.innerHTML = `
+    <div class="mobile-app-card">
+      <div class="mobile-app-info">
+        <strong>${escHtml(primarySource)} API Specs</strong>
+        <span class="mobile-app-pkg">${findings.length} spec${findings.length !== 1 ? 's' : ''} discovered</span>
+      </div>
+      <div class="mobile-app-stats">
+        <span>${findings.length} spec${findings.length !== 1 ? 's' : ''}</span>
+        ${dur ? `<span>${dur}</span>` : ''}
+      </div>
+    </div>`;
+
+  // Populate specs table (Level 1)
+  const tbody = document.getElementById('gitSpecsTbody');
+  tbody.innerHTML = '';
+  findings.forEach((f, i) => {
+    const row = tbody.insertRow();
+    row.classList.add('flash');
+    row.style.cursor = 'pointer';
+
+    const fileName = (f.file_path || '').split('/').pop() || f.file_path || '';
+    const specBadge = f.spec_type || 'Unknown';
+
+    row.innerHTML =
+      `<td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem">${i + 1}</td>` +
+      `<td>${escHtml(f.source || '')}</td>` +
+      `<td class="path-cell" title="${escHtml(f.repo || '')}">${escHtml(f.repo || '')}</td>` +
+      `<td class="path-cell">${f.file_url ? `<a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" style="color:var(--link)" onclick="event.stopPropagation()">${escHtml(fileName)}</a>` : escHtml(fileName)}<span class="git-spec-badge-count" id="gitSpecBadge${i}" style="display:none;margin-left:6px;font-size:0.75rem;background:var(--accent);color:#fff;padding:1px 6px;border-radius:8px"></span></td>` +
+      `<td><span class="mobile-category">${escHtml(specBadge)}</span></td>` +
+      `<td class="reason-cell" title="${escHtml(f.description || '')}">${escHtml(f.description || '')}</td>`;
+
+    row.dataset.findingIdx = String(i);
+    row.onclick = () => showGitSpecEndpoints(f);
+
+    // Auto-fetch spec in background
+    if (f.raw_url) {
+      fetch(`/api/fetch-spec?url=${encodeURIComponent(f.raw_url)}`)
+        .then(r => r.json())
+        .then(data => {
+          f._parsedSpec = data;
+          const badge = document.getElementById(`gitSpecBadge${i}`);
+          if (badge && data.endpoints && data.endpoints.length > 0) {
+            badge.textContent = `${data.endpoints.length} endpoints`;
+            badge.style.display = 'inline';
+          }
+        })
+        .catch(() => {});
+    }
+  });
+}
+
+// Strip HTML tags from a string (for spec descriptions that contain markup)
+function stripHtml(str) {
+  if (!str) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = str;
+  return tmp.textContent || tmp.innerText || '';
+}
+
+// Level 2: show endpoints for a single spec
+function showGitSpecEndpoints(finding) {
+  const listEl = document.getElementById('gitSpecsList');
+  const detailEl = document.getElementById('gitSpecsDetail');
+  const headerEl = document.getElementById('gitSpecsDetailHeader');
+  const tbody = document.getElementById('gitSpecsEndpointsTbody');
+
+  const parsed = finding._parsedSpec;
+  const specTitle = (parsed && parsed.title) || finding.file_path || 'Spec';
+  const specVersion = (parsed && parsed.spec_version) || '';
+  const endpoints = (parsed && parsed.endpoints) || [];
+
+  // Render header bar with back button + title
+  headerEl.innerHTML =
+    `<button class="git-specs-back-btn" onclick="showGitSpecsList()">&#8592; Back</button>` +
+    `<span class="git-specs-detail-title">${escHtml(specTitle)}</span>` +
+    (specVersion ? `<span class="mobile-category" style="margin-left:8px">${escHtml(specVersion)}</span>` : '') +
+    `<span style="color:var(--text-muted);font-size:0.85rem;margin-left:8px">${endpoints.length} endpoint${endpoints.length !== 1 ? 's' : ''}</span>`;
+
+  // Populate endpoints table
+  tbody.innerHTML = '';
+
+  if (!parsed) {
+    // Spec not fetched yet — show spinner and retry
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-muted)"><div class="spinner" style="margin:0 auto 8px"></div>Loading spec endpoints...</td></tr>`;
+    listEl.style.display = 'none';
+    detailEl.style.display = '';
+    // Poll until parsed
+    const pollId = setInterval(() => {
+      if (finding._parsedSpec) {
+        clearInterval(pollId);
+        showGitSpecEndpoints(finding);
+      }
+    }, 500);
+    return;
+  }
+
+  if (endpoints.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-muted)">No endpoints found in this spec</td></tr>`;
+  } else {
+    endpoints.forEach((ep, i) => {
+      const row = tbody.insertRow();
+      const badgeClass = `badge-${ep.method}`;
+      const hasDetails = (ep.parameters && ep.parameters.length > 0) || ep.request_body || (ep.responses && Object.keys(ep.responses).length > 0);
+
+      const cleanDesc = stripHtml(ep.description || '');
+
+      row.innerHTML =
+        `<td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem">${i + 1}</td>` +
+        `<td><span class="badge ${badgeClass}" style="min-width:55px;text-align:center">${escHtml(ep.method)}</span></td>` +
+        `<td class="path-cell" style="font-family:monospace;font-size:0.85rem" title="${escHtml(ep.path)}">${escHtml(ep.path)}</td>` +
+        `<td class="reason-cell" title="${escHtml(cleanDesc)}">${escHtml(cleanDesc)}</td>`;
+
+      if (hasDetails) {
+        row.style.cursor = 'pointer';
+        row.onclick = () => openGitEndpointDrawer(finding, ep);
+      }
+    });
+  }
+
+  listEl.style.display = 'none';
+  detailEl.style.display = '';
+}
+
+// Navigate back to specs list (Level 1)
+function showGitSpecsList() {
+  document.getElementById('gitSpecsList').style.display = '';
+  document.getElementById('gitSpecsDetail').style.display = 'none';
+}
+
+// Level 3: endpoint detail drawer
+function openGitEndpointDrawer(finding, endpoint) {
+  const drawer = document.getElementById('detailDrawer');
+  const content = document.getElementById('drawerContent');
+  document.querySelector('#detailDrawer .drawer-header h3').textContent = 'Endpoint Details';
+
+  const badgeClass = `badge-${endpoint.method}`;
+  let html = '';
+
+  // Method
+  html += `<div class="detail-section"><div class="detail-label">Method</div><div class="detail-value"><span class="badge ${badgeClass}">${escHtml(endpoint.method)}</span></div></div>`;
+
+  // Path
+  html += `<div class="detail-section"><div class="detail-label">Path</div><div class="detail-value" style="font-family:monospace;font-size:0.9rem;word-break:break-all">${escHtml(endpoint.path)}</div></div>`;
+
+  // Description
+  if (endpoint.description) {
+    html += `<div class="detail-section"><div class="detail-label">Description</div><div class="detail-value">${escHtml(stripHtml(endpoint.description))}</div></div>`;
+  }
+
+  // ── Spec Info separator
+  html += `<div class="detail-section" style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.75rem"><div class="detail-label" style="font-weight:700;font-size:0.9rem">Spec Info</div></div>`;
+
+  html += `<div class="detail-section"><div class="detail-label">Source</div><div class="detail-value">${escHtml(finding.source || '')}${finding.discovery_method ? ` <span style="color:var(--text-muted);font-size:0.85rem">(${escHtml(finding.discovery_method)})</span>` : ''}</div></div>`;
+
+  if (finding.repo) {
+    const repoUrl = finding.repo_url || (finding.source === 'GitHub' ? `https://github.com/${finding.repo}` : '');
+    html += `<div class="detail-section"><div class="detail-label">Repository</div><div class="detail-value">${repoUrl ? `<a href="${escHtml(repoUrl)}" target="_blank" rel="noopener" style="color:var(--link)">${escHtml(finding.repo)} ↗</a>` : escHtml(finding.repo)}</div></div>`;
+  }
+
+  if (finding.file_path) {
+    html += `<div class="detail-section"><div class="detail-label">File Path</div><div class="detail-value" style="font-family:monospace;font-size:0.85rem">${finding.file_url ? `<a href="${escHtml(finding.file_url)}" target="_blank" rel="noopener" style="color:var(--link)">${escHtml(finding.file_path)} ↗</a>` : escHtml(finding.file_path)}</div></div>`;
+  }
+
+  if (finding.spec_type) {
+    const parsed = finding._parsedSpec;
+    const versionStr = parsed && parsed.spec_version ? ` ${parsed.spec_version}` : '';
+    html += `<div class="detail-section"><div class="detail-label">Spec Type</div><div class="detail-value"><span class="mobile-category">${escHtml(finding.spec_type)}${escHtml(versionStr)}</span></div></div>`;
+  }
+
+  // ── Parameters
+  if (endpoint.parameters && endpoint.parameters.length > 0) {
+    html += `<div class="detail-section" style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.75rem"><div class="detail-label" style="font-weight:700;font-size:0.9rem">Parameters (${endpoint.parameters.length})</div></div>`;
+    html += `<table style="width:100%;font-size:0.8rem"><thead><tr><th style="text-align:left;padding:2px 6px">Name</th><th style="text-align:left;padding:2px 6px">In</th><th style="text-align:left;padding:2px 6px">Type</th><th style="text-align:left;padding:2px 6px">Required</th><th style="text-align:left;padding:2px 6px">Description</th></tr></thead><tbody>`;
+    endpoint.parameters.forEach(p => {
+      html += `<tr><td style="padding:2px 6px;font-family:monospace">${escHtml(p.name)}</td><td style="padding:2px 6px">${escHtml(p.in)}</td><td style="padding:2px 6px">${escHtml(p.type || '')}</td><td style="padding:2px 6px">${p.required ? '✓' : ''}</td><td style="padding:2px 6px;color:var(--text-muted)">${escHtml(p.description || '')}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+
+  // ── Request Body (collapsible)
+  if (endpoint.request_body) {
+    html += `<div class="detail-section" style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.75rem"><div class="detail-label" style="font-weight:700;font-size:0.9rem;cursor:pointer" onclick="this.parentElement.nextElementSibling.classList.toggle('collapsed')">Request Body ▾</div></div>`;
+    html += `<pre class="drawer-body-pre" style="max-height:300px;overflow:auto">${escHtml(JSON.stringify(endpoint.request_body, null, 2))}</pre>`;
+  }
+
+  // ── Responses (collapsible per status code)
+  if (endpoint.responses && Object.keys(endpoint.responses).length > 0) {
+    html += `<div class="detail-section" style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.75rem"><div class="detail-label" style="font-weight:700;font-size:0.9rem">Responses</div></div>`;
+    Object.entries(endpoint.responses).forEach(([status, resp]) => {
+      html += `<div class="detail-section"><div class="detail-label" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed')"><span style="font-weight:600">${escHtml(status)}</span>${resp.description ? ` — <span style="color:var(--text-muted)">${escHtml(resp.description)}</span>` : ''} ▾</div>`;
+      if (resp.schema) {
+        html += `<pre class="drawer-body-pre" style="max-height:200px;overflow:auto">${escHtml(JSON.stringify(resp.schema, null, 2))}</pre>`;
+      }
+      html += `</div>`;
+    });
+  }
+
+  content.innerHTML = html;
+  drawer.classList.add('open');
 }
 
 // Android App Toast

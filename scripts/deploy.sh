@@ -25,7 +25,7 @@ TAG_EMAIL="avishayb@salt.security"
 # Auth credentials (override via env vars)
 BASIC_AUTH_USER="${BASIC_AUTH_USER:-Shufuni}"
 BASIC_AUTH_PASS="${BASIC_AUTH_PASS:-l6XmIx08G21A3z4+vCqSZ5Jx}"
-NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
+NOTIFY_EMAIL="${NOTIFY_EMAIL:-avishayb@salt.security}"
 
 # Resource names derived from prefix
 ECR_REPO="${PREFIX}-repo"
@@ -259,7 +259,10 @@ BEDROCK_POLICY='{
         "sqs:GetQueueUrl",
         "sqs:SendMessage"
       ],
-      "Resource": "arn:aws:sqs:*:'${ACCOUNT_ID}':'${PREFIX}'-apk-analyzer"
+      "Resource": [
+        "arn:aws:sqs:*:'${ACCOUNT_ID}':'${PREFIX}'-apk-analyzer",
+        "arn:aws:sqs:*:'${ACCOUNT_ID}':'${PREFIX}'-git-search-queue"
+      ]
     },
     {
       "Effect": "Allow",
@@ -355,6 +358,26 @@ else
     --region "${REGION}" > /dev/null
   echo "  ✔ Created SQS queue ${APK_QUEUE}"
 fi
+APK_QUEUE_URL=$(aws sqs get-queue-url --queue-name "${APK_QUEUE}" --region "${REGION}" --query "QueueUrl" --output text)
+aws sqs tag-queue --queue-url "${APK_QUEUE_URL}" \
+  --tags Environment="${TAG_ENVIRONMENT}",Team="${TAG_TEAM}",Service="${TAG_SERVICE}",Email="${TAG_EMAIL}" \
+  --region "${REGION}"
+
+# SQS queue for git-search jobs
+GIT_SEARCH_QUEUE="${PREFIX}-git-search-queue"
+if aws sqs get-queue-url --queue-name "${GIT_SEARCH_QUEUE}" --region "${REGION}" &>/dev/null; then
+  echo "  ✔ SQS queue ${GIT_SEARCH_QUEUE} already exists"
+else
+  aws sqs create-queue \
+    --queue-name "${GIT_SEARCH_QUEUE}" \
+    --tags Environment="${TAG_ENVIRONMENT}",Team="${TAG_TEAM}",Service="${TAG_SERVICE}",Email="${TAG_EMAIL}" \
+    --region "${REGION}" > /dev/null
+  echo "  ✔ Created SQS queue ${GIT_SEARCH_QUEUE}"
+fi
+GIT_QUEUE_URL=$(aws sqs get-queue-url --queue-name "${GIT_SEARCH_QUEUE}" --region "${REGION}" --query "QueueUrl" --output text)
+aws sqs tag-queue --queue-url "${GIT_QUEUE_URL}" \
+  --tags Environment="${TAG_ENVIRONMENT}",Team="${TAG_TEAM}",Service="${TAG_SERVICE}",Email="${TAG_EMAIL}" \
+  --region "${REGION}"
 
 # ── 6. CloudWatch Log Group ─────────────────────────────────────────────────
 echo ""

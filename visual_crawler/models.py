@@ -253,6 +253,28 @@ class ApkAnalyzerStatusRequest(BaseModel):
     message: str
 
 
+class GitFinding(BaseModel):
+    """A single API spec finding from public source control."""
+    source: str
+    repo: str
+    file_path: str
+    file_url: str
+    raw_url: str
+    spec_type: str
+    description: str
+    discovery_method: str
+
+
+class GitFindingsRequest(BaseModel):
+    """Request body for git-based API spec findings from the git-search service."""
+    domain: str
+    scan_id: str
+    scan_duration_secs: float = 0
+    findings_count: int = 0
+    findings: list[GitFinding] = []
+    errors: list[str] = []
+
+
 class ApiSpecRequest(BaseModel):
     """Request body for API spec discovery findings from the api_discovery_lambda."""
     domain: str

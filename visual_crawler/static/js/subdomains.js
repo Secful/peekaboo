@@ -511,10 +511,12 @@ function openApiDrawer(idx) {
 
   content.innerHTML = html;
   drawer.classList.add('open');
+
 }
 
 function closeApiDrawer() {
   document.getElementById('apiDrawer').classList.remove('open');
+
 }
 
 function toggleUrlList(event, listId) {
@@ -873,10 +875,12 @@ function openSecurityDrawer(subdomain) {
 
   content.innerHTML = barHtml + legendHtml + cardsHtml;
   drawer.classList.add('open');
+
 }
 
 function closeSecurityDrawer() {
   document.getElementById('securityDrawer').classList.remove('open');
+
 }
 
 /* Open Ports — pill + drawer */
@@ -940,10 +944,12 @@ function openOpenPortsDrawer(subdomain) {
 
   content.innerHTML = html;
   drawer.classList.add('open');
+
 }
 
 function closeOpenPortsDrawer() {
   document.getElementById('openPortsDrawer').classList.remove('open');
+
 }
 
 /* Agentic Discovery — pill + drawer */
@@ -1113,10 +1119,12 @@ function openAgenticDrawer(subdomain) {
 
   content.innerHTML = html;
   drawer.classList.add('open');
+
 }
 
 function closeAgenticDrawer() {
   document.getElementById('agenticDrawer').classList.remove('open');
+
 }
 
 /* API Spec Discovery — pill + drawer */
@@ -1246,6 +1254,7 @@ function openApiSpecDrawer(subdomain) {
   content.innerHTML = html;
   drawer.classList.add('open');
 
+
   // Kick off async endpoint fetches after DOM is ready
   for (const job of _specEndpointsToFetch) {
     fetchSpecEndpoints(job.url, job.containerId);
@@ -1254,6 +1263,7 @@ function openApiSpecDrawer(subdomain) {
 
 function closeApiSpecDrawer() {
   document.getElementById('apiSpecDrawer').classList.remove('open');
+
 }
 
 /* Fetch + render parsed endpoints from an OpenAPI/Swagger JSON spec */

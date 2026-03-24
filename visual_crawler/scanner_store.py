@@ -21,6 +21,7 @@ class _DomainData:
     extracted_apis: dict[str, dict] = field(default_factory=dict)
     api_specs: dict[str, dict] = field(default_factory=dict)
     mobile_endpoints: dict[str, dict] = field(default_factory=dict)
+    git_findings: dict[str, dict] = field(default_factory=dict)
 
 
 class ScannerStore:
@@ -64,6 +65,10 @@ class ScannerStore:
         with self._lock:
             self._get_or_create(domain).mobile_endpoints[package_name] = payload
 
+    def store_git_findings(self, domain: str, key: str, payload: dict) -> None:
+        with self._lock:
+            self._get_or_create(domain).git_findings[key] = payload
+
     def get_security_insights(self, domain: str) -> dict[str, dict]:
         with self._lock:
             data = self._data.get(domain)
@@ -99,6 +104,11 @@ class ScannerStore:
             data = self._data.get(domain)
             return dict(data.mobile_endpoints) if data else {}
 
+    def get_git_findings(self, domain: str) -> dict[str, dict]:
+        with self._lock:
+            data = self._data.get(domain)
+            return dict(data.git_findings) if data else {}
+
     def get_all_for_domain(self, domain: str) -> list[dict]:
         """Return all stored payloads for a domain as a flat list."""
         with self._lock:
@@ -113,6 +123,7 @@ class ScannerStore:
             payloads.extend(data.extracted_apis.values())
             payloads.extend(data.api_specs.values())
             payloads.extend(data.mobile_endpoints.values())
+            payloads.extend(data.git_findings.values())
             return list(payloads)
 
     def cleanup_expired(self) -> int:
