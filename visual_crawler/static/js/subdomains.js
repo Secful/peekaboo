@@ -932,9 +932,10 @@ function openOpenPortsDrawer(subdomain) {
     const port = p.port || '—';
     const proto = p.protocol || 'tcp';
     const service = p.service || '—';
-    const isSensitive = SENSITIVE_PORTS.has(p.port);
-    const badgeClass = isSensitive ? 'port-badge-sensitive' : 'port-badge-normal';
-    html += `<tr class="port-row">
+    const risk = (p.risk_level || '').toLowerCase();
+    const badgeClass = `port-badge-${risk || 'blue'}`;
+    const tooltip = p.description ? ` title="${escHtml(p.description)}"` : '';
+    html += `<tr class="port-row"${tooltip}>
       <td><span class="port-badge ${badgeClass}">${port}</span></td>
       <td>${escHtml(proto)}</td>
       <td>${escHtml(service)}</td>

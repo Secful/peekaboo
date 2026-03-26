@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Salt Security — API Discovery</title>
-<link rel="stylesheet" href="/static/css/styles.css?v=16">
+<link rel="stylesheet" href="/static/css/styles.css?v=19">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -354,6 +354,11 @@
         </div>
       </div>
     </div>
+
+    <!-- Headers sub-view (inside Web Endpoints) -->
+    <div id="headersSubView" style="display:none">
+      <div id="headersContent"></div>
+    </div>
     </div><!-- /endpointsView -->
 
     <!-- Subdomains view -->
@@ -519,7 +524,7 @@
 <!-- Android App Toast -->
 <div class="android-toast" id="androidToast">
   <div class="android-toast-header">
-    <span>📱 Android Apps Detected</span>
+    <span id="androidToastTitle">📱 Android Apps Detected</span>
   </div>
   <div class="android-toast-body" id="androidToastBody"></div>
   <div class="android-toast-footer">🚧 Under Construction — APK analysis coming soon</div>
@@ -538,10 +543,11 @@
 <script src="/static/js/filters.js?v=8"></script>
 <script src="/static/js/drawer.js?v=8"></script>
 <script src="/static/js/subdomains.js?v=9"></script>
+<script src="/static/js/headers.js?v=6"></script>
 <script src="/static/js/modals.js?v=7"></script>
 <script src="/static/js/report.js?v=7"></script>
 <script src="/static/js/ai-description.js?v=7"></script>
 <script src="/static/js/history.js?v=8"></script>
 <script src="/static/js/servicemesh.js?v=8"></script>
-<script src="/static/js/core.js?v=14"></script>
+<script src="/static/js/core.js?v=17"></script>
 </html>

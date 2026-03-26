@@ -36,6 +36,13 @@ const appState = {
   subdomainViewMode: 'table',
   apiFilter: 'all',
   statusFilter: 'all',
+  headerAnalysis: {
+    responseHeaderMap: {},
+    requestHeaderMap: {},
+    findings: {},
+    score: null,
+    endpointsAnalyzed: 0,
+  },
   // Composite end-of-scan tracking
   crawlComplete: false,
   mobileAnalysisTriggered: false,

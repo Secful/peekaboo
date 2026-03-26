@@ -224,6 +224,9 @@ function renderScanDetail(scan, prevHtml) {
   if (_hasData(scanner.api_specs)) tabs.push({ id: 'api_specs_tab', label: 'API Spec' });
   if (_hasData(scanner.mobile_endpoints)) tabs.push({ id: 'mobile_endpoints', label: 'Mobile' });
   if (_hasData(scan.subdomain_results)) tabs.push({ id: 'subdomains', label: 'Subdomains' });
+  // Headers tab — show if any endpoint has response_headers
+  const hasHeaders = allEndpoints.some(ep => ep.response_headers && Object.keys(ep.response_headers).length > 0);
+  if (hasHeaders) tabs.push({ id: 'headers', label: 'Headers' });
 
   html += '<div class="history-tabs">';
   tabs.forEach(t => {
@@ -268,6 +271,7 @@ function _renderHistoryTabContent() {
     case 'api_specs_tab': container.innerHTML = _renderApiSpecsTab(); break;
     case 'mobile_endpoints': container.innerHTML = _renderMobileEndpointsTab(); break;
     case 'subdomains': container.innerHTML = _renderSubdomainsTab(); break;
+    case 'headers': container.innerHTML = renderHeadersHistoryTab(_historyDetailScan.endpoints || []); break;
     default: container.innerHTML = '';
   }
 }
@@ -497,10 +501,11 @@ function _renderOpenPortsTab() {
       const proto = p.protocol || 'tcp';
       const service = p.service || '\u2014';
       const state = p.state || 'open';
-      const commonPorts = [80, 443, 8080, 8443];
-      const portColor = commonPorts.includes(Number(port)) ? 'color:var(--green)' : 'color:#f59e0b';
-      html += '<tr>';
-      html += `<td style="font-family:'JetBrains Mono',monospace;font-weight:600;${portColor}">${escHtml(String(port))}</td>`;
+      const risk = (p.risk_level || '').toLowerCase();
+      const badgeClass = `port-badge-${risk || 'blue'}`;
+      const tooltip = p.description ? ` title="${escHtml(p.description)}"` : '';
+      html += `<tr${tooltip}>`;
+      html += `<td><span class="port-badge ${badgeClass}">${escHtml(String(port))}</span></td>`;
       html += `<td>${escHtml(proto)}</td>`;
       html += `<td>${escHtml(service)}</td>`;
       html += `<td>${escHtml(state)}</td>`;

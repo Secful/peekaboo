@@ -409,6 +409,15 @@ function newScan() {
   const gitSpecsView = document.getElementById('gitSpecsView');
   if (gitSpecsView) gitSpecsView.remove();
 
+  // Remove dynamically created headers sub-tab button; reset content
+  const evtHeaders = document.getElementById('evtHeaders');
+  if (evtHeaders) evtHeaders.remove();
+  const headersContentEl = document.getElementById('headersContent');
+  if (headersContentEl) headersContentEl.innerHTML = '';
+  appState.headerAnalysis = { responseHeaderMap: {}, requestHeaderMap: {}, findings: {}, score: null, endpointsAnalyzed: 0 };
+  _headersSubTab = 'heatmap';
+  _headersHeatmapShowAll = false;
+
   // Reset map state
   Object.keys(appState.geoCache).forEach(k => delete appState.geoCache[k]);
   appState.subdomainViewMode = 'table';
@@ -524,19 +533,27 @@ function switchView(view) {
 function switchEndpointSubView(subView) {
   const tableView = document.getElementById('endpointTableView');
   const meshView = document.getElementById('serviceMeshView');
+  const headersSubView = document.getElementById('headersSubView');
   const btnTable = document.getElementById('evtTable');
   const btnMesh = document.getElementById('evtMesh');
+  const btnHeaders = document.getElementById('evtHeaders');
 
   btnTable.classList.toggle('active', subView === 'table');
   btnMesh.classList.toggle('active', subView === 'mesh');
+  if (btnHeaders) btnHeaders.classList.toggle('active', subView === 'headers');
+
+  tableView.style.display = 'none';
+  meshView.style.display = 'none';
+  if (headersSubView) headersSubView.style.display = 'none';
 
   if (subView === 'mesh') {
-    tableView.style.display = 'none';
     meshView.style.display = '';
     renderServiceMesh();
+  } else if (subView === 'headers' && headersSubView) {
+    headersSubView.style.display = '';
+    renderHeadersView();
   } else {
     tableView.style.display = '';
-    meshView.style.display = 'none';
   }
 }
 
@@ -617,6 +634,7 @@ function handleEvent(msg) {
         appState.endpoints.push(msg);
         appState.hosts.add(msg.host);
       }
+      updateHeaderAnalysis(msg);
       break;
 
     case 'active_scans':
@@ -1295,6 +1313,30 @@ function handleMobileEndpoints(msg) {
 
 // ─── Git Findings / OpenAPI Specs Tab ───
 
+function _updateGitSpecsCount() {
+  const tbody = document.getElementById('gitSpecsTbody');
+  if (!tbody) return;
+  const visibleRows = Array.from(tbody.rows).filter(r => r.style.display !== 'none');
+  // Re-number visible rows
+  visibleRows.forEach((r, idx) => {
+    const numCell = r.querySelector('.row-number');
+    if (numCell) numCell.textContent = idx + 1;
+  });
+  // Update header count
+  const headerDiv = document.getElementById('gitSpecsHeader');
+  if (headerDiv) {
+    const countEls = headerDiv.querySelectorAll('.mobile-app-pkg, .mobile-app-stats span:first-child');
+    countEls.forEach(el => {
+      el.textContent = el.textContent.replace(/\d+ spec/, `${visibleRows.length} spec`);
+    });
+  }
+  // Hide the tab entirely if nothing left
+  if (visibleRows.length === 0) {
+    const tab = document.getElementById('tabGitSpecs');
+    if (tab) tab.style.display = 'none';
+  }
+}
+
 function handleGitFindings(msg) {
   const findings = msg.findings || [];
   if (findings.length === 0) return;
@@ -1403,9 +1445,14 @@ function handleGitFindings(msg) {
         .then(data => {
           f._parsedSpec = data;
           const badge = document.getElementById(`gitSpecBadge${i}`);
-          if (badge && data.endpoints && data.endpoints.length > 0) {
-            badge.textContent = `${data.endpoints.length} endpoints`;
-            badge.style.display = 'inline';
+          if (data.endpoints && data.endpoints.length > 0) {
+            if (badge) {
+              badge.textContent = `${data.endpoints.length} endpoints`;
+              badge.style.display = 'inline';
+            }
+          } else {
+            row.style.display = 'none';
+            _updateGitSpecsCount();
           }
         })
         .catch(() => {});
@@ -1566,6 +1613,12 @@ function openGitEndpointDrawer(finding, endpoint) {
 // Android App Toast
 let _androidToastApps = [];
 
+function _updateAndroidToastTitle() {
+  const total = _androidToastApps.length;
+  const checked = document.querySelectorAll('#androidToastBody input[type="checkbox"]:checked').length;
+  document.getElementById('androidToastTitle').textContent = `\u{1F4F1} Android Apps Detected (${checked}/${total})`;
+}
+
 function showAndroidToast(apps) {
   _androidToastApps = apps;
   const toast = document.getElementById('androidToast');
@@ -1577,12 +1630,13 @@ function showAndroidToast(apps) {
   sorted.sort((a, b) => (b.relevant ? 1 : 0) - (a.relevant ? 1 : 0));
   body.innerHTML = sorted.map(({ app: a, idx, relevant }) => {
     return `<label class="android-toast-app">` +
-      `<input type="checkbox" ${relevant ? 'checked' : ''} data-idx="${idx}">` +
+      `<input type="checkbox" ${relevant ? 'checked' : ''} data-idx="${idx}" onchange="_updateAndroidToastTitle()">` +
       `<div class="app-info"><span class="app-name">${escHtml(a.app_name)}</span>` +
       `<span class="app-pkg">${escHtml(a.package_name)}</span></div>` +
       `<a class="app-play-link" href="${escHtml(a.play_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Google Play ↗</a>` +
     `</label>`;
   }).join('');
+  _updateAndroidToastTitle();
   toast.classList.add('show');
 }
 

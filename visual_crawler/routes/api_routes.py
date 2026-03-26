@@ -443,8 +443,16 @@ def _parse_postman_collection(spec: dict) -> dict:
             })
 
     _extract_items(spec.get("item", []))
-    endpoints.sort(key=lambda e: (e["path"], e["method"]))
-    return {"endpoints": endpoints, "spec_version": spec_version, "title": title}
+    # Deduplicate by method+path, keeping the first occurrence
+    seen: set[tuple[str, str]] = set()
+    deduped: list[dict] = []
+    for ep in endpoints:
+        key = (ep["method"], ep["path"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(ep)
+    deduped.sort(key=lambda e: (e["path"], e["method"]))
+    return {"endpoints": deduped, "spec_version": spec_version, "title": title}
 
 
 @router.get("/api/fetch-spec")
