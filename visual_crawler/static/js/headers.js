@@ -572,6 +572,171 @@ function toggleHeaderRowExpand(name) {
   expandRow.classList.remove('collapsed');
 }
 
+// ── Attack flow SVG diagrams (one per security rule) ─────────────────
+function _attackSvg(id) {
+  // Shared palette
+  const R = '#ef4444', O = '#f97316', B = '#3b82f6', G = '#059669', M = '#6b7280';
+  // Helper: rounded-rect node
+  function node(x, y, w, h, fill, label, textFill) {
+    textFill = textFill || '#fff';
+    const lines = label.split('\\n');
+    const lineH = 15;
+    const startY = y + h / 2 - ((lines.length - 1) * lineH) / 2;
+    let t = '';
+    lines.forEach((l, i) => {
+      t += `<text x="${x + w / 2}" y="${startY + i * lineH}" text-anchor="middle" dominant-baseline="central" fill="${textFill}" font-size="11" font-family="system-ui,sans-serif">${l}</text>`;
+    });
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${fill}" opacity="0.9"/>${t}`;
+  }
+  // Helper: arrow
+  function arrow(x1, y1, x2, y2, color, label) {
+    color = color || M;
+    const mid = (x1 + x2) / 2;
+    let a = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="1.5" marker-end="url(#ah-${id})"/>`;
+    if (label) {
+      a += `<text x="${mid}" y="${NY - 6}" text-anchor="middle" fill="${color}" font-size="9" font-weight="500" font-family="system-ui,sans-serif">${label}</text>`;
+    }
+    return a;
+  }
+  const W = 520, H = 110;
+  const NY = 28; // node Y (top), labels render above at NY-6
+  const AY = NY + 25; // arrow Y (vertical center of nodes)
+  const hdr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="attack-diagram"><defs><marker id="ah-${id}" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="${M}"/></marker></defs>`;
+
+  const diagrams = {
+    'missing-hsts': () => {
+      return hdr
+        + node(0, NY, 90, 50, R, 'Attacker\\n(same WiFi)')
+        + arrow(92, AY, 148, AY, R, 'Intercepts')
+        + node(150, NY, 100, 50, O, 'HTTP Request\\n(downgraded)')
+        + arrow(252, AY, 308, AY, O, 'Plaintext')
+        + node(310, NY, 90, 50, B, 'Your API\\n(no HSTS)')
+        + arrow(402, AY, 428, AY, M)
+        + node(430, NY, 90, 50, '#7c3aed', 'Stolen data\\n& credentials')
+        + '</svg>';
+    },
+    'missing-xcto': () => {
+      return hdr
+        + node(0, NY, 90, 50, R, 'Attacker')
+        + arrow(92, AY, 138, AY, R, 'Uploads file')
+        + node(140, NY, 100, 50, O, 'Malicious file\\n(.jpg → .js)')
+        + arrow(242, AY, 288, AY, O, 'MIME sniff')
+        + node(290, NY, 100, 50, B, 'Browser\\nexecutes as JS')
+        + arrow(392, AY, 428, AY, M)
+        + node(430, NY, 90, 50, '#7c3aed', 'XSS\\nCode runs')
+        + '</svg>';
+    },
+    'missing-xfo': () => {
+      return hdr
+        + node(0, NY, 90, 50, R, 'Attacker\\nsite')
+        + arrow(92, AY, 138, AY, R, 'Embeds iframe')
+        + node(140, NY, 100, 50, O, 'Your page\\nin hidden iframe')
+        + arrow(242, AY, 288, AY, O, 'User clicks')
+        + node(290, NY, 100, 50, B, 'Action triggered\\non your site')
+        + arrow(392, AY, 428, AY, M)
+        + node(430, NY, 90, 50, '#7c3aed', 'Clickjacked\\naction')
+        + '</svg>';
+    },
+    'missing-csp': () => {
+      return hdr
+        + node(0, NY, 90, 50, R, 'Attacker')
+        + arrow(92, AY, 138, AY, R, 'Injects script')
+        + node(140, NY, 100, 50, O, '&lt;script&gt; tag\\nin page')
+        + arrow(242, AY, 288, AY, O, 'No CSP block')
+        + node(290, NY, 100, 50, B, 'Browser runs\\nmalicious code')
+        + arrow(392, AY, 428, AY, M)
+        + node(430, NY, 90, 50, '#7c3aed', 'Data theft\\n& hijack')
+        + '</svg>';
+    },
+    'server-leakage': () => {
+      return hdr
+        + node(0, NY, 90, 50, R, 'Attacker')
+        + arrow(92, AY, 138, AY, R, 'Reads header')
+        + node(140, NY, 100, 50, O, 'Server: nginx\\n/1.21.3')
+        + arrow(242, AY, 288, AY, O, 'Looks up CVEs')
+        + node(290, NY, 100, 50, B, 'Known exploit\\nfor v1.21.3')
+        + arrow(392, AY, 428, AY, M)
+        + node(430, NY, 90, 50, '#7c3aed', 'Targeted\\nattack')
+        + '</svg>';
+    },
+    'tech-leakage': () => {
+      return hdr
+        + node(0, NY, 90, 50, R, 'Attacker')
+        + arrow(92, AY, 138, AY, R, 'Reads header')
+        + node(140, NY, 100, 50, O, 'X-Powered-By:\\nExpress')
+        + arrow(242, AY, 288, AY, O, 'Narrows attack')
+        + node(290, NY, 100, 50, B, 'Express-specific\\nexploits')
+        + arrow(392, AY, 428, AY, M)
+        + node(430, NY, 90, 50, '#7c3aed', 'Framework\\nexploited')
+        + '</svg>';
+    },
+    'cors-wildcard': () => {
+      return hdr
+        + node(0, NY, 90, 50, R, 'evil-site.com')
+        + arrow(92, AY, 138, AY, R, 'JS fetch()')
+        + node(140, NY, 100, 50, O, "User's browser\\n(logged in)")
+        + arrow(242, AY, 288, AY, O, 'CORS: *')
+        + node(290, NY, 100, 50, B, 'Your API\\nreturns data')
+        + arrow(392, AY, 428, AY, M)
+        + node(430, NY, 90, 50, '#7c3aed', 'Data sent\\nto attacker')
+        + '</svg>';
+    },
+    'insecure-cookies': () => {
+      // 3-row diagram — labels placed above each row's nodes manually
+      const H2 = 155;
+      const hdr2 = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H2}" class="attack-diagram"><defs><marker id="ah-${id}" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="${M}"/></marker></defs>`;
+      const r1 = 10, r2 = 60, r3 = 110; // row top positions
+      function lbl(x, y, text, color) {
+        return `<text x="${x}" y="${y}" text-anchor="middle" fill="${color}" font-size="9" font-weight="500" font-family="system-ui,sans-serif">${text}</text>`;
+      }
+      return hdr2
+        // Row 1: Missing Secure
+        + node(0, r1, 90, 36, R, 'No Secure flag')
+        + lbl(120, r1 - 2, 'HTTP request', R) + arrow(92, r1+18, 148, r1+18, R)
+        + node(150, r1, 130, 36, O, 'Cookie sent in plaintext')
+        + arrow(282, r1+18, 338, r1+18, M)
+        + node(340, r1, 120, 36, '#7c3aed', 'Session hijacked')
+        // Row 2: Missing HttpOnly
+        + node(0, r2, 90, 36, R, 'No HttpOnly')
+        + lbl(120, r2 - 2, 'XSS payload', R) + arrow(92, r2+18, 148, r2+18, R)
+        + node(150, r2, 130, 36, O, 'JS reads document.cookie')
+        + arrow(282, r2+18, 338, r2+18, M)
+        + node(340, r2, 120, 36, '#7c3aed', 'Cookie stolen')
+        // Row 3: Missing SameSite
+        + node(0, r3, 90, 36, R, 'No SameSite')
+        + lbl(120, r3 - 2, 'Cross-site form', R) + arrow(92, r3+18, 148, r3+18, R)
+        + node(150, r3, 130, 36, O, 'Cookie auto-attached')
+        + arrow(282, r3+18, 338, r3+18, M)
+        + node(340, r3, 120, 36, '#7c3aed', 'CSRF attack')
+        + '</svg>';
+    },
+    'no-cache-control': () => {
+      return hdr
+        + node(0, NY, 90, 50, B, 'User A\\nlogs in')
+        + arrow(92, AY, 138, AY, B, 'API response')
+        + node(140, NY, 100, 50, O, 'Proxy / browser\\ncaches response')
+        + arrow(242, AY, 288, AY, O, 'Shared cache')
+        + node(290, NY, 100, 50, R, 'User B\\nsame machine')
+        + arrow(392, AY, 428, AY, M)
+        + node(430, NY, 90, 50, '#7c3aed', "Reads A's\\nprivate data")
+        + '</svg>';
+    },
+    'no-rate-limit': () => {
+      return hdr
+        + node(0, NY, 90, 50, R, 'Attacker\\n(bot)')
+        + arrow(92, AY, 138, AY, R, '1000s of req/s')
+        + node(140, NY, 100, 50, O, 'Login endpoint\\n(no throttle)')
+        + arrow(242, AY, 288, AY, O, 'Brute force')
+        + node(290, NY, 100, 50, B, 'Password\\nguessed')
+        + arrow(392, AY, 428, AY, M)
+        + node(430, NY, 90, 50, '#7c3aed', 'Account\\ncompromised')
+        + '</svg>';
+    },
+  };
+
+  return (diagrams[id] || (() => ''))();
+}
+
 // ── Findings sub-tab ────────────────────────────────────────────────
 function _renderHeadersFindings(ha) {
   const findingsList = Object.values(ha.findings)
@@ -602,8 +767,13 @@ function _renderHeadersFindings(ha) {
     html += `<div class="header-finding-impact">${escHtml(f.impact)}</div>`;
     if (f.fix) html += `<div class="header-finding-fix">${escHtml(f.fix)}</div>`;
 
-    // Expandable endpoint list
+    // Expandable: diagram + endpoint list
     html += `<div class="header-finding-endpoints collapsed" id="${cardId}">`;
+    const diagram = _attackSvg(f.id);
+    if (diagram) {
+      html += `<div class="header-finding-diagram">${diagram}</div>`;
+    }
+    html += `<div class="header-finding-ep-label">Affected Endpoints</div>`;
     const shown = f.affectedEndpoints.slice(0, 30);
     shown.forEach(ep => {
       html += `<div class="header-finding-ep">`;

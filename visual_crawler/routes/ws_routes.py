@@ -328,11 +328,16 @@ async def websocket_endpoint(ws: WebSocket):
             _mobile_received.pop(scan_id, None)
             await _broadcast_active_scans()
 
+            # Resolve client IP (X-Forwarded-For behind ALB, fallback to ws.client)
+            _xff = dict(ws.headers).get("x-forwarded-for", "")
+            _client_ip = _xff.split(",")[0].strip() if _xff else (ws.client.host if ws.client else "unknown")
+
             # Fire-and-forget scan-start email notification
             asyncio.create_task(asyncio.to_thread(
                 send_scan_start_email, domain, scan_id, scan_started_at,
                 {"max_pages": max_pages, "max_depth": max_depth,
                  "fast_mode": fast_mode, "use_proxy": use_proxy},
+                _client_ip,
             ))
 
             try:

@@ -24,7 +24,7 @@ def _ses_client():
     return _ses
 
 
-def send_scan_start_email(domain: str, scan_id: str, started_at, params: dict) -> None:
+def send_scan_start_email(domain: str, scan_id: str, started_at, params: dict, client_ip: str = "unknown") -> None:
     """Send a scan-start notification via SES.
 
     Never raises -- notification failures must not break a scan.
@@ -40,6 +40,7 @@ def send_scan_start_email(domain: str, scan_id: str, started_at, params: dict) -
             f"Domain:    {domain}\n"
             f"Scan ID:   {scan_id}\n"
             f"Started:   {started_at}\n"
+            f"Client IP: {client_ip}\n"
             f"Max pages: {params.get('max_pages', 'N/A')}\n"
             f"Max depth: {params.get('max_depth', 'N/A')}\n"
             f"Fast mode: {params.get('fast_mode', 'N/A')}\n"
@@ -53,6 +54,7 @@ def send_scan_start_email(domain: str, scan_id: str, started_at, params: dict) -
   <tr><td><b>Domain</b></td><td>{domain}</td></tr>
   <tr><td><b>Scan ID</b></td><td>{scan_id}</td></tr>
   <tr><td><b>Started</b></td><td>{started_at}</td></tr>
+  <tr><td><b>Client IP</b></td><td>{client_ip}</td></tr>
   <tr><td><b>Max Pages</b></td><td>{params.get('max_pages', 'N/A')}</td></tr>
   <tr><td><b>Max Depth</b></td><td>{params.get('max_depth', 'N/A')}</td></tr>
   <tr><td><b>Fast Mode</b></td><td>{params.get('fast_mode', 'N/A')}</td></tr>
