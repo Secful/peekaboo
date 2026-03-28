@@ -199,6 +199,17 @@ class ExtractedApiRequest(BaseModel):
     findings: list[ExtractedApiFinding] = []
 
 
+class MobileTrafficVerification(BaseModel):
+    """Verification probe results for an ambiguous mobile traffic test."""
+    options_allowed: str = ""
+    options_cors: bool = False
+    malformed_status: int = 0
+    malformed_differs: bool = False
+    parent_status: int = 0
+    parent_differs: bool = False
+    waf_detected: str = ""
+
+
 class MobileTrafficRequest(BaseModel):
     """Single mobile endpoint traffic result from the testing Lambda."""
     domain: str
@@ -217,6 +228,8 @@ class MobileTrafficRequest(BaseModel):
     error: str = ""
     tls: bool = False
     redirect_url: str = ""
+    confidence: int = 0
+    verification: Optional[MobileTrafficVerification] = None
 
 
 class MobileEndpointFinding(BaseModel):

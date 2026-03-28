@@ -2347,6 +2347,34 @@
   .mobile-traffic-5xx { background: rgba(239,68,68,0.15); color: var(--red); }
   .mobile-traffic-err { background: rgba(239,68,68,0.15); color: var(--red); }
 
+  /* Confidence pill (inline on table row + drawer) */
+  .mobile-traffic-conf {
+    display: inline-block; padding: 0.1rem 0.35rem; border-radius: 4px;
+    font-size: 0.65rem; font-weight: 600; margin-left: 0.25rem;
+  }
+  .conf-high { background: rgba(5,150,105,0.12); color: var(--green); }
+  .conf-med  { background: rgba(234,179,8,0.12); color: #ca8a04; }
+  .conf-low  { background: rgba(239,68,68,0.12); color: var(--red); }
+
+  /* WAF indicator pill */
+  .mobile-traffic-waf {
+    display: inline-block; padding: 0.1rem 0.35rem; border-radius: 4px;
+    font-size: 0.65rem; font-weight: 600; margin-left: 0.25rem;
+    background: rgba(124,58,237,0.12); color: var(--patch);
+    text-transform: capitalize;
+  }
+
+  /* Verification probes table in drawer */
+  .verification-table {
+    width: 100%; font-size: 0.82rem; border-collapse: collapse; margin-top: 0.3rem;
+  }
+  .verification-table td {
+    padding: 0.2rem 0.5rem; border-bottom: 1px solid var(--border);
+  }
+  .verification-table td:first-child {
+    color: var(--text-muted); white-space: nowrap; width: 45%;
+  }
+
   /* ── Notify Toasts (reusable) ── */
   .notify-toast-container {
     position: fixed; top: 50%; left: 50%; z-index: 9999;

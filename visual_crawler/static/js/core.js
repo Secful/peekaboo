@@ -1147,6 +1147,37 @@ function openMobileDrawer(finding, pkg) {
     else { _tBadgeClass = 'mobile-traffic-5xx'; _tBadgeText = String(_tsc); }
     html += `<div class="detail-section"><div class="detail-label">Status Code</div><div class="detail-value"><span class="mobile-traffic-badge ${_tBadgeClass}">${_tBadgeText}</span></div></div>`;
 
+    // Confidence
+    if (_trafficData.confidence != null) {
+      const _conf = _trafficData.confidence;
+      const _confCls = _conf >= 80 ? 'conf-high' : _conf >= 40 ? 'conf-med' : 'conf-low';
+      html += `<div class="detail-section"><div class="detail-label">Endpoint Confidence</div><div class="detail-value"><span class="mobile-traffic-conf ${_confCls}">${_conf}%</span></div></div>`;
+    }
+
+    // Verification probes (conditional)
+    const _v = _trafficData.verification;
+    if (_v) {
+      let _vRows = '';
+      if (_v.waf_detected) {
+        _vRows += `<tr><td>WAF Detected</td><td><span class="mobile-traffic-waf">${escHtml(_v.waf_detected)}</span></td></tr>`;
+      }
+      if (_v.options_allowed) {
+        _vRows += `<tr><td>OPTIONS Allowed</td><td style="font-family:monospace;font-size:0.85rem">${escHtml(_v.options_allowed)}</td></tr>`;
+      }
+      if (_v.options_cors) {
+        _vRows += `<tr><td>CORS Enabled</td><td><span style="color:var(--green)">Yes</span></td></tr>`;
+      }
+      if (_v.malformed_status) {
+        _vRows += `<tr><td>Malformed Path Status</td><td>${_v.malformed_status}${_v.malformed_differs ? ' <span style="color:var(--green)">(differs)</span>' : ' <span style="color:var(--text-muted)">(same)</span>'}</td></tr>`;
+      }
+      if (_v.parent_status) {
+        _vRows += `<tr><td>Parent Path Status</td><td>${_v.parent_status}${_v.parent_differs ? ' <span style="color:var(--green)">(differs)</span>' : ' <span style="color:var(--text-muted)">(same)</span>'}</td></tr>`;
+      }
+      if (_vRows) {
+        html += `<div class="detail-section"><div class="detail-label" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed')">Verification Probes ▾</div><table class="verification-table">${_vRows}</table></div>`;
+      }
+    }
+
     if (_trafficData.full_url) {
       html += `<div class="detail-section"><div class="detail-label">Full URL Tested</div><div class="detail-value" style="word-break:break-all;font-family:monospace;font-size:0.85rem">${escHtml(_trafficData.full_url)}</div></div>`;
     }
@@ -1264,13 +1295,37 @@ function handleMobileTraffic(msg) {
     badge.textContent = badgeText;
     methodCell.appendChild(badge);
 
+    // Confidence pill
+    const oldConf = methodCell.querySelector('.mobile-traffic-conf');
+    if (oldConf) oldConf.remove();
+    const conf = msg.confidence;
+    if (conf != null) {
+      const confEl = document.createElement('span');
+      const confCls = conf >= 80 ? 'conf-high' : conf >= 40 ? 'conf-med' : 'conf-low';
+      confEl.className = `mobile-traffic-conf ${confCls}`;
+      confEl.textContent = `${conf}%`;
+      confEl.title = 'Endpoint confidence';
+      methodCell.appendChild(confEl);
+    }
+
+    // WAF indicator
+    const oldWaf = methodCell.querySelector('.mobile-traffic-waf');
+    if (oldWaf) oldWaf.remove();
+    if (msg.verification && msg.verification.waf_detected) {
+      const wafEl = document.createElement('span');
+      wafEl.className = 'mobile-traffic-waf';
+      wafEl.textContent = msg.verification.waf_detected;
+      wafEl.title = 'WAF detected';
+      methodCell.appendChild(wafEl);
+    }
+
     // Flash the row
     row.classList.remove('flash');
     void row.offsetWidth;
     row.classList.add('flash');
   }
 
-  addLog('', `Traffic: ${method} ${normUrl} → ${msg.status_code || 'ERR'}`, '');
+  addLog('', `Traffic: ${method} ${normUrl} → ${msg.status_code || 'ERR'} (${msg.confidence}%)`, '');
 }
 
 // Mobile Endpoints handler
