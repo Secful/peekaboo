@@ -408,6 +408,7 @@ function newScan() {
   _mobileDomainFilter = 'all';
   _mobileCategoryFilter = 'all';
   _mobileAppFilter = 'all';
+  _mobileStatusFilter = 'all';
   _mobileKnownCategories.clear();
   _mobileKnownApps.clear();
   _mobileSeenEndpoints.clear();
@@ -914,6 +915,7 @@ function classifyMobileUrl(url, baseUrl, targetDomain) {
 let _mobileDomainFilter = 'all';
 let _mobileCategoryFilter = 'all';
 let _mobileAppFilter = 'all';
+let _mobileStatusFilter = 'all';
 const _mobileKnownCategories = new Set();
 const _mobileSeenEndpoints = new Set();
 const _mobileKnownApps = new Map(); // pkg → appName
@@ -1011,6 +1013,26 @@ function applyMobileDomainFilter() {
     const catText = (row.cells[4] && row.cells[4].textContent || '').trim().toLowerCase();
     const categoryOk = _mobileCategoryFilter === 'all' || catText === _mobileCategoryFilter.toLowerCase();
     const appOk = _mobileAppFilter === 'all' || row.dataset.mobilePkg === _mobileAppFilter;
+    let statusOk = true;
+    if (_mobileStatusFilter !== 'all') {
+      const key = row.dataset.mobileKey || '';
+      const traffic = _mobileTrafficResults[key];
+      if (_mobileStatusFilter === 'tested') {
+        statusOk = !!traffic;
+      } else if (_mobileStatusFilter === 'untested') {
+        statusOk = !traffic;
+      } else if (traffic) {
+        const sc = traffic.status_code || 0;
+        if (_mobileStatusFilter === '2xx') statusOk = sc >= 200 && sc < 300;
+        else if (_mobileStatusFilter === '3xx') statusOk = sc >= 300 && sc < 400;
+        else if (_mobileStatusFilter === '4xx') statusOk = sc >= 400 && sc < 500;
+        else if (_mobileStatusFilter === '5xx') statusOk = sc >= 500;
+        else if (_mobileStatusFilter === 'err') statusOk = sc === 0;
+        else statusOk = false;
+      } else {
+        statusOk = false;
+      }
+    }
     let searchOk = true;
     if (query) {
       const method = (row.cells[1] && row.cells[1].textContent || '').toLowerCase();
@@ -1018,7 +1040,7 @@ function applyMobileDomainFilter() {
       const desc = (row.cells[3] && row.cells[3].textContent || '').toLowerCase();
       searchOk = method.includes(query) || path.includes(query) || desc.includes(query);
     }
-    const show = domainOk && categoryOk && appOk && searchOk;
+    const show = domainOk && categoryOk && appOk && statusOk && searchOk;
     row.style.display = show ? '' : 'none';
     if (show) {
       visibleIdx++;
@@ -1313,6 +1335,19 @@ function handleMobileEndpoints(msg) {
               <div class="salt-dropdown-item active" data-value="all" onclick="selectSaltDropdown('mobileCategoryDropdown','all','All',setMobileCategoryFilter)">All</div>
             </div>
           </div>
+        </div>
+        <div class="filter-section">
+          <span class="filter-label">Status:</span>
+          <select class="mobile-status-select" id="mobileStatusSelect" onchange="_mobileStatusFilter=this.value;applyMobileDomainFilter()">
+            <option value="all">All</option>
+            <option value="tested">Tested</option>
+            <option value="untested">Not tested</option>
+            <option value="2xx">2xx OK</option>
+            <option value="3xx">3xx Redirect</option>
+            <option value="4xx">4xx Client Err</option>
+            <option value="5xx">5xx Server Err</option>
+            <option value="err">Connection Err</option>
+          </select>
         </div>
         <span class="mobile-filter-counts" id="mobileFilterCounts"></span>
       </div>
