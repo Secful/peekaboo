@@ -1863,6 +1863,8 @@
     word-break: break-word; border: 1px solid var(--border);
   }
 
+  .agentic-spec-endpoints { margin-top: 0.5rem; }
+
   /* MCP Discovery section inside agentic drawer */
   .agentic-mcp-section {
     margin-top: 1rem; padding-top: 0.85rem;
@@ -2296,6 +2298,12 @@
   .mobile-filter-counts {
     font-size: 0.75rem; color: var(--text-muted);
   }
+  .mobile-base-url-list {
+    margin: 0; padding-left: 1.2rem; list-style: disc;
+    font-family: monospace; font-size: 0.82rem; word-break: break-all;
+  }
+  .mobile-base-url-list li + li { margin-top: 0.2rem; }
+
   .mobile-domain-badge {
     display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
     font-size: 0.72rem; font-weight: 600;
@@ -2308,6 +2316,17 @@
     background: rgba(107, 114, 128, 0.1); color: var(--text-muted);
     border: 1px solid rgba(107, 114, 128, 0.25);
   }
+
+  /* ── Mobile Traffic Badges ── */
+  .mobile-traffic-badge {
+    display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 700; margin-left: 0.3rem;
+  }
+  .mobile-traffic-2xx { background: rgba(5,150,105,0.15); color: var(--green); }
+  .mobile-traffic-3xx { background: rgba(234,179,8,0.15); color: #ca8a04; }
+  .mobile-traffic-4xx { background: rgba(249,115,22,0.15); color: #ea580c; }
+  .mobile-traffic-5xx { background: rgba(239,68,68,0.15); color: var(--red); }
+  .mobile-traffic-err { background: rgba(239,68,68,0.15); color: var(--red); }
 
   /* ── Notify Toasts (reusable) ── */
   .notify-toast-container {

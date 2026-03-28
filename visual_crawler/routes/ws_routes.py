@@ -235,6 +235,10 @@ async def websocket_endpoint(ws: WebSocket):
                 break
             params = json.loads(params_msg)
 
+            # Keep-alive heartbeat — just ignore
+            if params.get('action') == 'heartbeat':
+                continue
+
             # Handle retry_subdomains outside of an active crawl
             if params.get('action') == 'retry_subdomains':
                 retry_domain = params.get('domain', '').strip()
@@ -425,7 +429,9 @@ async def websocket_endpoint(ws: WebSocket):
                     while True:
                         msg = await ws.receive_text()
                         data = json.loads(msg)
-                        if data.get('action') == 'stop':
+                        if data.get('action') == 'heartbeat':
+                            continue
+                        elif data.get('action') == 'stop':
                             crawler.stop()
                             return
                         elif data.get('action') == 'retry_subdomains':

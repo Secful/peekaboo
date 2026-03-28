@@ -199,6 +199,26 @@ class ExtractedApiRequest(BaseModel):
     findings: list[ExtractedApiFinding] = []
 
 
+class MobileTrafficRequest(BaseModel):
+    """Single mobile endpoint traffic result from the testing Lambda."""
+    domain: str
+    package_name: str
+    app_name: str = ""
+    scan_id: str = ""
+    method: str
+    url: str
+    full_url: str = ""
+    base_url_used: str = ""
+    status_code: int = 0
+    content_type: str = ""
+    response_body: str = ""
+    response_size: int = 0
+    latency_ms: int = 0
+    error: str = ""
+    tls: bool = False
+    redirect_url: str = ""
+
+
 class MobileEndpointFinding(BaseModel):
     """A single API endpoint extracted from an Android APK."""
     method: str

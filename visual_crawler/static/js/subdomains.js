@@ -992,7 +992,9 @@ function openAgenticDrawer(subdomain) {
 
   const findings = data.findings || [];
   let html = '';
-  for (const f of findings) {
+  const _agenticSpecsToFetch = [];
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
     const statusCls = f.status_code >= 200 && f.status_code < 300 ? 'status-2xx'
       : f.status_code >= 300 && f.status_code < 400 ? 'status-3xx'
       : f.status_code >= 400 && f.status_code < 500 ? 'status-4xx'
@@ -1002,6 +1004,21 @@ function openAgenticDrawer(subdomain) {
       ? `<a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" class="agentic-finding-link">View source</a>`
       : '';
 
+    // Detect ai-plugin.json and extract spec URL for auto-parsing
+    const isAiPlugin = (f.path || '').includes('ai-plugin') || (f.name || '').toLowerCase().includes('ai-plugin');
+    let specContainerHtml = '';
+    if (isAiPlugin && f.body_preview) {
+      try {
+        const pluginJson = JSON.parse(f.body_preview);
+        const specUrl = pluginJson?.api?.url;
+        if (specUrl) {
+          const cid = `agentic-spec-${i}`;
+          specContainerHtml = `<div id="${cid}" class="agentic-spec-endpoints"></div>`;
+          _agenticSpecsToFetch.push({ url: specUrl, containerId: cid });
+        }
+      } catch (e) { /* not valid JSON, skip */ }
+    }
+
     html += `<div class="agentic-finding-card">
       <div class="agentic-finding-top">
         <span class="agentic-finding-name">${escHtml(f.name)}</span>
@@ -1010,6 +1027,7 @@ function openAgenticDrawer(subdomain) {
       <div class="agentic-finding-path">${escHtml(f.path)}</div>
       ${f.description ? `<div class="agentic-finding-desc">${escHtml(f.description)}</div>` : ''}
       ${f.body_preview ? `<pre class="agentic-body-preview">${escHtml(f.body_preview)}</pre>` : ''}
+      ${specContainerHtml}
       <div class="agentic-finding-meta">
         ${f.status_code ? `<span class="agentic-status-badge ${statusCls}">${f.status_code}</span>` : ''}
         ${f.content_type ? `<span class="agentic-content-type">${escHtml(f.content_type)}</span>` : ''}
@@ -1120,6 +1138,11 @@ function openAgenticDrawer(subdomain) {
 
   content.innerHTML = html;
   drawer.classList.add('open');
+
+  // Auto-fetch OpenAPI specs linked from ai-plugin.json findings
+  for (const job of _agenticSpecsToFetch) {
+    fetchSpecEndpoints(job.url, job.containerId);
+  }
 
 }
 

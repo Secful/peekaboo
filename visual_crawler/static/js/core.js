@@ -1,5 +1,19 @@
 /* WebSocket, scan lifecycle, timer, event dispatcher, and initialization */
 
+// ── WebSocket keep-alive heartbeat (prevents ALB idle-timeout disconnect) ──
+let _heartbeatInterval = null;
+function _startHeartbeat() {
+  _stopHeartbeat();
+  _heartbeatInterval = setInterval(() => {
+    if (appState.ws && appState.ws.readyState === WebSocket.OPEN) {
+      appState.ws.send(JSON.stringify({ action: 'heartbeat' }));
+    }
+  }, 30000);
+}
+function _stopHeartbeat() {
+  if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
+}
+
 // ── Inactivity-based scan completion ─────────────────────────────────
 let _inactivityInterval = null;   // setInterval handle (ticks every 12s)
 let _inactivityElapsed  = 0;      // seconds elapsed since last activity
@@ -200,7 +214,7 @@ function ensureWebSocket() {
     const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
     appState.ws = new WebSocket(`${wsProto}://${location.host}/ws`);
 
-    appState.ws.onopen = () => resolve();
+    appState.ws.onopen = () => { _startHeartbeat(); resolve(); };
 
     appState.ws.onmessage = (e) => {
       try {
@@ -212,6 +226,7 @@ function ensureWebSocket() {
     };
 
     appState.ws.onclose = () => {
+      _stopHeartbeat();
       if (_inactivityInterval) _finalizeScan();
 
       document.getElementById('liveDot').classList.add('done');
@@ -396,6 +411,7 @@ function newScan() {
   _mobileKnownCategories.clear();
   _mobileKnownApps.clear();
   _mobileSeenEndpoints.clear();
+  Object.keys(_mobileTrafficResults).forEach(k => delete _mobileTrafficResults[k]);
 
   // Remove dynamically created mobile tab + view
   const mobileTab = document.getElementById('tabMobile');
@@ -753,6 +769,10 @@ function handleEvent(msg) {
       handleMobileEndpoints(msg);
       break;
 
+    case 'mobile_traffic':
+      handleMobileTraffic(msg);
+      break;
+
     case 'android_apps':
       showAndroidToast(msg.apps);
       break;
@@ -897,6 +917,9 @@ let _mobileAppFilter = 'all';
 const _mobileKnownCategories = new Set();
 const _mobileSeenEndpoints = new Set();
 const _mobileKnownApps = new Map(); // pkg → appName
+
+// Mobile traffic test results: key "pkg|METHOD|normUrl" → traffic payload
+const _mobileTrafficResults = {};
 
 function setMobileDomainFilter(filter) {
   _mobileDomainFilter = filter;
@@ -1048,6 +1071,15 @@ function openMobileDrawer(finding, pkg) {
     html += `<div class="detail-section"><div class="detail-label">Base URL</div><div class="detail-value" style="word-break:break-all">${escHtml(finding.base_url)}</div></div>`;
   }
 
+  // 3b — Base URL Candidates (conditional)
+  if (finding.base_url_candidates && finding.base_url_candidates.length > 0) {
+    html += `<div class="detail-section"><div class="detail-label">Base URL Candidates</div><div class="detail-value"><ul class="mobile-base-url-list">`;
+    for (const c of finding.base_url_candidates) {
+      html += `<li>${escHtml(c)}</li>`;
+    }
+    html += `</ul></div></div>`;
+  }
+
   // 4 — Domain Classification
   html += `<div class="detail-section"><div class="detail-label">Domain Classification</div><div class="detail-value">${domainBadge}</div></div>`;
 
@@ -1074,6 +1106,53 @@ function openMobileDrawer(finding, pkg) {
   // 9 — Code Evidence (conditional, collapsible)
   if (finding.evidence) {
     html += `<div class="detail-section"><div class="detail-label" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed')">Code Evidence ▾</div><pre class="drawer-body-pre">${escHtml(finding.evidence)}</pre></div>`;
+  }
+
+  // — Traffic Test section (conditional)
+  const _trafficNormUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+  const _trafficKey = `${pkg}|${method}|${_trafficNormUrl}`;
+  const _trafficData = _mobileTrafficResults[_trafficKey];
+  if (_trafficData) {
+    html += `<div class="detail-section" style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.75rem"><div class="detail-label" style="font-weight:700;font-size:0.9rem">Traffic Test</div></div>`;
+
+    // Status Code badge
+    const _tsc = _trafficData.status_code || 0;
+    let _tBadgeClass, _tBadgeText;
+    if (_tsc === 0) { _tBadgeClass = 'mobile-traffic-err'; _tBadgeText = 'ERR'; }
+    else if (_tsc >= 200 && _tsc < 300) { _tBadgeClass = 'mobile-traffic-2xx'; _tBadgeText = String(_tsc); }
+    else if (_tsc >= 300 && _tsc < 400) { _tBadgeClass = 'mobile-traffic-3xx'; _tBadgeText = String(_tsc); }
+    else if (_tsc >= 400 && _tsc < 500) { _tBadgeClass = 'mobile-traffic-4xx'; _tBadgeText = String(_tsc); }
+    else { _tBadgeClass = 'mobile-traffic-5xx'; _tBadgeText = String(_tsc); }
+    html += `<div class="detail-section"><div class="detail-label">Status Code</div><div class="detail-value"><span class="mobile-traffic-badge ${_tBadgeClass}">${_tBadgeText}</span></div></div>`;
+
+    if (_trafficData.full_url) {
+      html += `<div class="detail-section"><div class="detail-label">Full URL Tested</div><div class="detail-value" style="word-break:break-all;font-family:monospace;font-size:0.85rem">${escHtml(_trafficData.full_url)}</div></div>`;
+    }
+    if (_trafficData.base_url_used) {
+      html += `<div class="detail-section"><div class="detail-label">Base URL Used</div><div class="detail-value" style="word-break:break-all;font-family:monospace;font-size:0.85rem">${escHtml(_trafficData.base_url_used)}</div></div>`;
+    }
+    if (_trafficData.latency_ms) {
+      html += `<div class="detail-section"><div class="detail-label">Latency</div><div class="detail-value">${_trafficData.latency_ms.toLocaleString()} ms</div></div>`;
+    }
+    if (_trafficData.response_size) {
+      const _sz = _trafficData.response_size;
+      const _szFmt = _sz >= 1024 ? `${(_sz / 1024).toFixed(1)} KB` : `${_sz} bytes`;
+      html += `<div class="detail-section"><div class="detail-label">Response Size</div><div class="detail-value">${_szFmt}</div></div>`;
+    }
+    if (_trafficData.content_type) {
+      html += `<div class="detail-section"><div class="detail-label">Content-Type</div><div class="detail-value" style="font-family:monospace;font-size:0.85rem">${escHtml(_trafficData.content_type)}</div></div>`;
+    }
+    html += `<div class="detail-section"><div class="detail-label">TLS</div><div class="detail-value">${_trafficData.tls ? '<span style="color:var(--green)">Yes</span>' : '<span style="color:var(--text-muted)">No</span>'}</div></div>`;
+    if (_trafficData.redirect_url) {
+      html += `<div class="detail-section"><div class="detail-label">Redirect URL</div><div class="detail-value" style="word-break:break-all;font-family:monospace;font-size:0.85rem">${escHtml(_trafficData.redirect_url)}</div></div>`;
+    }
+    if (_trafficData.error) {
+      html += `<div class="detail-section"><div class="detail-label">Error</div><div class="detail-value" style="color:var(--red)">${escHtml(_trafficData.error)}</div></div>`;
+    }
+    if (_trafficData.response_body) {
+      const _bodyPreview = _trafficData.response_body.length > 2000 ? _trafficData.response_body.slice(0, 2000) + '\n… (truncated)' : _trafficData.response_body;
+      html += `<div class="detail-section"><div class="detail-label" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed')">Response Body ▾</div><pre class="drawer-body-pre collapsed">${escHtml(_bodyPreview)}</pre></div>`;
+    }
   }
 
   // — App Information separator
@@ -1118,6 +1197,58 @@ function openMobileDrawer(finding, pkg) {
   content.innerHTML = html;
   document.querySelector('#detailDrawer .drawer-header h3').textContent = 'Mobile Endpoint Details';
   drawer.classList.add('open');
+}
+
+// Mobile Traffic test result handler
+function handleMobileTraffic(msg) {
+  _resetInactivityTimer();
+  const pkg = msg.package_name || 'unknown';
+  const method = (msg.method || 'GET').toUpperCase();
+  const rawUrl = msg.url || '';
+  const normUrl = rawUrl.endsWith('/') ? rawUrl.slice(0, -1) : rawUrl;
+  const key = `${pkg}|${method}|${normUrl}`;
+
+  _mobileTrafficResults[key] = msg;
+
+  // Find matching row and inject status badge
+  const row = document.querySelector(`[data-mobile-key="${CSS.escape(key)}"]`);
+  if (row) {
+    const methodCell = row.cells[1];
+    // Remove any existing traffic badge
+    const old = methodCell.querySelector('.mobile-traffic-badge');
+    if (old) old.remove();
+
+    const sc = msg.status_code || 0;
+    let badgeClass, badgeText;
+    if (sc === 0) {
+      badgeClass = 'mobile-traffic-err';
+      badgeText = 'ERR';
+    } else if (sc >= 200 && sc < 300) {
+      badgeClass = 'mobile-traffic-2xx';
+      badgeText = String(sc);
+    } else if (sc >= 300 && sc < 400) {
+      badgeClass = 'mobile-traffic-3xx';
+      badgeText = String(sc);
+    } else if (sc >= 400 && sc < 500) {
+      badgeClass = 'mobile-traffic-4xx';
+      badgeText = String(sc);
+    } else {
+      badgeClass = 'mobile-traffic-5xx';
+      badgeText = String(sc);
+    }
+
+    const badge = document.createElement('span');
+    badge.className = `mobile-traffic-badge ${badgeClass}`;
+    badge.textContent = badgeText;
+    methodCell.appendChild(badge);
+
+    // Flash the row
+    row.classList.remove('flash');
+    void row.offsetWidth;
+    row.classList.add('flash');
+  }
+
+  addLog('', `Traffic: ${method} ${normUrl} → ${msg.status_code || 'ERR'}`, '');
 }
 
 // Mobile Endpoints handler
@@ -1258,6 +1389,7 @@ function handleMobileEndpoints(msg) {
     const row = tbody.insertRow(insertIdx);
     row.classList.add('flash');
     row.dataset.confidence = String(conf);
+    row.dataset.mobileKey = dedupKey;
 
     const badgeClass = `badge-${method}`;
 
@@ -1427,11 +1559,12 @@ function handleGitFindings(msg) {
     const fileName = (f.file_path || '').split('/').pop() || f.file_path || '';
     const specBadge = f.spec_type || 'Unknown';
 
+    const repoUrl = f.repo ? (f.source === 'GitHub' ? `https://github.com/${f.repo}` : f.file_url || '') : '';
     row.innerHTML =
       `<td class="row-number" style="text-align:center;color:var(--text-muted);font-size:0.85rem">${i + 1}</td>` +
       `<td>${escHtml(f.source || '')}</td>` +
-      `<td class="path-cell" title="${escHtml(f.repo || '')}">${escHtml(f.repo || '')}</td>` +
-      `<td class="path-cell">${f.file_url ? `<a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" style="color:var(--link)" onclick="event.stopPropagation()">${escHtml(fileName)}</a>` : escHtml(fileName)}<span class="git-spec-badge-count" id="gitSpecBadge${i}" style="display:none;margin-left:6px;font-size:0.75rem;background:var(--accent);color:#fff;padding:1px 6px;border-radius:8px"></span></td>` +
+      `<td class="path-cell" title="${escHtml(f.repo || '')}">${repoUrl ? `<a href="${escHtml(repoUrl)}" target="_blank" rel="noopener" style="color:var(--link)" onclick="event.stopPropagation()">${escHtml(f.repo)}</a>` : escHtml(f.repo || '')}</td>` +
+      `<td class="path-cell">${f.file_url ? `<a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" style="color:var(--link)" onclick="event.stopPropagation()">${escHtml(fileName)} &#8599;</a>` : escHtml(fileName)}<span class="git-spec-badge-count" id="gitSpecBadge${i}" style="display:none;margin-left:6px;font-size:0.75rem;background:var(--accent);color:#fff;padding:1px 6px;border-radius:8px"></span></td>` +
       `<td><span class="mobile-category">${escHtml(specBadge)}</span></td>` +
       `<td class="reason-cell" title="${escHtml(f.description || '')}">${escHtml(f.description || '')}</td>`;
 
@@ -1480,12 +1613,16 @@ function showGitSpecEndpoints(finding) {
   const specVersion = (parsed && parsed.spec_version) || '';
   const endpoints = (parsed && parsed.endpoints) || [];
 
-  // Render header bar with back button + title
+  // Render header bar with back button + title + source link
+  const sourceLink = finding.file_url
+    ? `<a href="${escHtml(finding.file_url)}" target="_blank" rel="noopener" style="margin-left:10px;font-size:0.8rem;color:var(--link);text-decoration:none;border:1px solid var(--link);padding:2px 8px;border-radius:4px">View Source &#8599;</a>`
+    : '';
   headerEl.innerHTML =
     `<button class="git-specs-back-btn" onclick="showGitSpecsList()">&#8592; Back</button>` +
     `<span class="git-specs-detail-title">${escHtml(specTitle)}</span>` +
     (specVersion ? `<span class="mobile-category" style="margin-left:8px">${escHtml(specVersion)}</span>` : '') +
-    `<span style="color:var(--text-muted);font-size:0.85rem;margin-left:8px">${endpoints.length} endpoint${endpoints.length !== 1 ? 's' : ''}</span>`;
+    `<span style="color:var(--text-muted);font-size:0.85rem;margin-left:8px">${endpoints.length} endpoint${endpoints.length !== 1 ? 's' : ''}</span>` +
+    sourceLink;
 
   // Populate endpoints table
   tbody.innerHTML = '';

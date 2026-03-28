@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, ApkAnalyzerStatusRequest, GitFindingsRequest
+from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -17,6 +17,19 @@ logger = logging.getLogger(__name__)
 def _normalize_domain(d: str) -> str:
     """Strip optional www. prefix so copaair.com matches www.copaair.com."""
     return d.removeprefix("www.").lower()
+
+
+async def _spec_contains_domain(raw_url: str, domain: str) -> bool:
+    """Fetch a raw spec URL and check whether *domain* appears in the content."""
+    base = _normalize_domain(domain)
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(raw_url)
+            resp.raise_for_status()
+            return base in resp.text.lower()
+    except Exception as exc:
+        logger.warning("spec-domain-check failed for %s: %s", raw_url, exc)
+        return False
 
 
 # Subdomain discovery Lambda URL (configurable via env var)
@@ -741,6 +754,49 @@ async def mobile_endpoints(request: MobileEndpointsRequest):
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
 
 
+@router.post("/api/mobiletraffic")
+async def mobile_traffic(request: MobileTrafficRequest):
+    """Receive a single mobile endpoint traffic test result and push to connected UI clients."""
+    from .ws_routes import _client_domains, _connected_clients
+
+    logger.info(f"Mobile traffic result: {request.method} {request.url} -> {request.status_code} for {request.package_name}")
+
+    payload = {
+        "type": "mobile_traffic",
+        "domain": request.domain,
+        "package_name": request.package_name,
+        "app_name": request.app_name,
+        "scan_id": request.scan_id,
+        "method": request.method,
+        "url": request.url,
+        "full_url": request.full_url,
+        "base_url_used": request.base_url_used,
+        "status_code": request.status_code,
+        "content_type": request.content_type,
+        "response_body": request.response_body,
+        "response_size": request.response_size,
+        "latency_ms": request.latency_ms,
+        "error": request.error,
+        "tls": request.tls,
+        "redirect_url": request.redirect_url,
+    }
+
+    pushed_to = 0
+    for scan_id, domain in list(_client_domains.items()):
+        if _normalize_domain(domain) != _normalize_domain(request.domain):
+            continue
+        ws = _connected_clients.get(scan_id)
+        if ws is None:
+            continue
+        try:
+            await ws.send_json(payload)
+            pushed_to += 1
+        except Exception:
+            logger.warning(f"Failed to push mobile traffic to scan {scan_id}")
+
+    return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+
 @router.post("/api/apkanalyzerstatus")
 async def apk_analyzer_status(request: ApkAnalyzerStatusRequest):
     """Receive real-time status updates from peekaboo-apk-analyzer and push to connected UI clients."""
@@ -781,13 +837,29 @@ async def git_findings(request: GitFindingsRequest):
 
     logger.warning(f"Got {request.findings_count} git findings for domain {request.domain}")
 
+    # --- Domain-validation filter: only keep specs that mention the domain ---
+    raw_findings = request.findings
+    if raw_findings:
+        checks = await asyncio.gather(
+            *[_spec_contains_domain(f.raw_url, request.domain) for f in raw_findings]
+        )
+        validated = [f for f, ok in zip(raw_findings, checks) if ok]
+        dropped = len(raw_findings) - len(validated)
+        if dropped:
+            logger.warning(
+                "git-findings domain filter: kept %d/%d for %s (dropped %d)",
+                len(validated), len(raw_findings), request.domain, dropped,
+            )
+    else:
+        validated = []
+
     payload = {
         "type": "git_findings",
         "domain": request.domain,
         "scan_id": request.scan_id,
         "scan_duration_secs": request.scan_duration_secs,
-        "findings_count": request.findings_count,
-        "findings": [f.model_dump() for f in request.findings],
+        "findings_count": len(validated),
+        "findings": [f.model_dump() for f in validated],
         "errors": request.errors,
     }
 
