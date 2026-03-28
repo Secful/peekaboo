@@ -1300,30 +1300,6 @@ function handleMobileTraffic(msg) {
     badge.textContent = badgeText;
     methodCell.appendChild(badge);
 
-    // Confidence pill
-    const oldConf = methodCell.querySelector('.mobile-traffic-conf');
-    if (oldConf) oldConf.remove();
-    const conf = msg.confidence;
-    if (conf != null) {
-      const confEl = document.createElement('span');
-      const confCls = conf >= 80 ? 'conf-high' : conf >= 40 ? 'conf-med' : 'conf-low';
-      confEl.className = `mobile-traffic-conf ${confCls}`;
-      confEl.textContent = `${conf}%`;
-      confEl.title = 'Endpoint confidence';
-      methodCell.appendChild(confEl);
-    }
-
-    // WAF indicator
-    const oldWaf = methodCell.querySelector('.mobile-traffic-waf');
-    if (oldWaf) oldWaf.remove();
-    if (msg.verification && msg.verification.waf_detected) {
-      const wafEl = document.createElement('span');
-      wafEl.className = 'mobile-traffic-waf';
-      wafEl.textContent = msg.verification.waf_detected;
-      wafEl.title = 'WAF detected';
-      methodCell.appendChild(wafEl);
-    }
-
     // Flash the row
     row.classList.remove('flash');
     void row.offsetWidth;
