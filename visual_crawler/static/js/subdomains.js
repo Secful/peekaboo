@@ -1172,7 +1172,7 @@ function applyApiSpecPill(subdomain) {
 
   span.appendChild(document.createTextNode(' '));
   span.appendChild(pill);
-  console.log(`[api-spec] Applied to ${subdomain} (${findings.length} findings)`);
+  console.log(`[api-spec] Applied to ${subdomain} (${count} findings)`);
 }
 
 function openApiSpecDrawer(subdomain) {
