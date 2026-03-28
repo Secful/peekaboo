@@ -958,6 +958,11 @@ function setMobileAppFilter(pkg) {
   applyMobileDomainFilter();
 }
 
+function setMobileStatusFilter(val) {
+  _mobileStatusFilter = val;
+  applyMobileDomainFilter();
+}
+
 // Salt-styled custom dropdown helpers
 function toggleSaltDropdown(id) {
   const dd = document.getElementById(id);
@@ -1393,16 +1398,19 @@ function handleMobileEndpoints(msg) {
         </div>
         <div class="filter-section">
           <span class="filter-label">Status:</span>
-          <select class="mobile-status-select" id="mobileStatusSelect" onchange="_mobileStatusFilter=this.value;applyMobileDomainFilter()">
-            <option value="all">All</option>
-            <option value="tested">Tested</option>
-            <option value="untested">Not tested</option>
-            <option value="2xx">2xx OK</option>
-            <option value="3xx">3xx Redirect</option>
-            <option value="4xx">4xx Client Err</option>
-            <option value="5xx">5xx Server Err</option>
-            <option value="err">Connection Err</option>
-          </select>
+          <div class="salt-dropdown" id="mobileStatusDropdown">
+            <div class="salt-dropdown-trigger" onclick="toggleSaltDropdown('mobileStatusDropdown')">All</div>
+            <div class="salt-dropdown-menu">
+              <div class="salt-dropdown-item active" data-value="all" onclick="selectSaltDropdown('mobileStatusDropdown','all','All',setMobileStatusFilter)">All</div>
+              <div class="salt-dropdown-item" data-value="tested" onclick="selectSaltDropdown('mobileStatusDropdown','tested','Tested',setMobileStatusFilter)">Tested</div>
+              <div class="salt-dropdown-item" data-value="untested" onclick="selectSaltDropdown('mobileStatusDropdown','untested','Not tested',setMobileStatusFilter)">Not tested</div>
+              <div class="salt-dropdown-item" data-value="2xx" onclick="selectSaltDropdown('mobileStatusDropdown','2xx','2xx OK',setMobileStatusFilter)">2xx OK</div>
+              <div class="salt-dropdown-item" data-value="3xx" onclick="selectSaltDropdown('mobileStatusDropdown','3xx','3xx Redirect',setMobileStatusFilter)">3xx Redirect</div>
+              <div class="salt-dropdown-item" data-value="4xx" onclick="selectSaltDropdown('mobileStatusDropdown','4xx','4xx Client Err',setMobileStatusFilter)">4xx Client Err</div>
+              <div class="salt-dropdown-item" data-value="5xx" onclick="selectSaltDropdown('mobileStatusDropdown','5xx','5xx Server Err',setMobileStatusFilter)">5xx Server Err</div>
+              <div class="salt-dropdown-item" data-value="err" onclick="selectSaltDropdown('mobileStatusDropdown','err','Connection Err',setMobileStatusFilter)">Connection Err</div>
+            </div>
+          </div>
         </div>
         <span class="mobile-filter-counts" id="mobileFilterCounts"></span>
       </div>
