@@ -781,6 +781,7 @@ async def mobile_traffic(request: MobileTrafficRequest):
         "redirect_url": request.redirect_url,
         "confidence": request.confidence,
         "verification": request.verification.model_dump() if request.verification else None,
+        "response_headers": request.response_headers,
     }
 
     pushed_to = 0

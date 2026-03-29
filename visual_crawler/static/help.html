@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Peekaboo — Help &amp; Documentation</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --purple: #4a1d96; --purple-light: #6b2fc7; --purple-dark: #2d1159;
+    --navy: #0f1419; --navy-light: #1a1f2e;
+    --green: #059669; --green-dark: #047857;
+    --bg: #f8f9fb; --surface: #ffffff; --surface2: #f3f4f6;
+    --border: #e5e7eb; --text: #1f2937; --text-muted: #6b7280;
+    --accent: var(--purple); --accent2: var(--purple-light);
+    --shadow: rgba(0, 0, 0, 0.08);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg); color: var(--text);
+    letter-spacing: -0.015em; line-height: 1.7;
+  }
+
+  /* Header */
+  .help-header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 1.25rem 2rem; position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    box-shadow: 0 1px 3px var(--shadow);
+  }
+  .help-header-left { display: flex; align-items: center; gap: 1rem; }
+  .help-header h1 {
+    font-size: 1.3rem; font-weight: 700;
+    background: linear-gradient(135deg, var(--green), var(--purple-light));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .help-header .subtitle { color: var(--text-muted); font-size: 0.85rem; }
+  .back-link {
+    padding: 0.45rem 1.1rem; border-radius: 20px; border: 1px solid var(--border);
+    background: rgba(0,0,0,0.03); color: #4b5563; cursor: pointer;
+    font-size: 0.8rem; font-weight: 500; transition: all 0.15s;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;
+  }
+  .back-link:hover { background: rgba(0,0,0,0.08); color: var(--text); }
+
+  /* Layout */
+  .help-layout {
+    display: grid; grid-template-columns: 240px 1fr;
+    max-width: 1200px; margin: 0 auto; gap: 0;
+  }
+
+  /* Sidebar TOC */
+  .help-sidebar {
+    position: sticky; top: 64px; height: calc(100vh - 64px);
+    overflow-y: auto; padding: 1.5rem 1rem 2rem 1.5rem;
+    border-right: 1px solid var(--border); background: var(--surface);
+  }
+  .help-sidebar h3 {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.75rem;
+  }
+  .toc-list { list-style: none; }
+  .toc-list li { margin-bottom: 0.15rem; }
+  .toc-list a {
+    display: block; padding: 0.3rem 0.6rem; border-radius: 6px;
+    color: var(--text-muted); text-decoration: none; font-size: 0.82rem;
+    font-weight: 500; transition: all 0.15s;
+  }
+  .toc-list a:hover { background: var(--surface2); color: var(--text); }
+  .toc-list .toc-sub { padding-left: 1.2rem; }
+  .toc-list .toc-sub a { font-size: 0.78rem; font-weight: 400; }
+
+  /* Content */
+  .help-content {
+    padding: 2rem 3rem 4rem 3rem; max-width: 800px;
+  }
+  .help-content section { margin-bottom: 2.5rem; }
+  .help-content h2 {
+    font-size: 1.35rem; font-weight: 700; margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem; border-bottom: 2px solid var(--border);
+    color: var(--navy);
+  }
+  .help-content h3 {
+    font-size: 1.05rem; font-weight: 600; margin: 1.25rem 0 0.5rem;
+    color: var(--purple);
+  }
+  .help-content h4 {
+    font-size: 0.92rem; font-weight: 600; margin: 1rem 0 0.4rem;
+    color: var(--text);
+  }
+  .help-content p { margin-bottom: 0.75rem; font-size: 0.9rem; }
+  .help-content ul, .help-content ol {
+    margin: 0.5rem 0 0.75rem 1.5rem; font-size: 0.9rem;
+  }
+  .help-content li { margin-bottom: 0.35rem; }
+  .help-content code {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.82rem;
+    background: var(--surface2); padding: 0.15rem 0.4rem; border-radius: 4px;
+    color: var(--purple);
+  }
+  .help-content strong { font-weight: 600; }
+
+  /* Callout boxes */
+  .callout {
+    border-left: 3px solid var(--green); background: rgba(5, 150, 105, 0.05);
+    padding: 0.75rem 1rem; border-radius: 0 8px 8px 0;
+    margin: 0.75rem 0; font-size: 0.85rem;
+  }
+  .callout.tip { border-left-color: var(--green); background: rgba(5, 150, 105, 0.05); }
+  .callout.note { border-left-color: var(--purple); background: rgba(74, 29, 150, 0.05); }
+  .callout.warning { border-left-color: #d97706; background: rgba(217, 119, 6, 0.05); }
+  .callout-label {
+    font-weight: 600; font-size: 0.78rem; text-transform: uppercase;
+    letter-spacing: 0.04em; margin-bottom: 0.25rem;
+  }
+  .callout.tip .callout-label { color: var(--green); }
+  .callout.note .callout-label { color: var(--purple); }
+  .callout.warning .callout-label { color: #d97706; }
+
+  /* Description list for settings */
+  .setting-list { margin: 0.5rem 0 1rem; }
+  .setting-item {
+    display: grid; grid-template-columns: 160px 1fr; gap: 0.5rem;
+    padding: 0.5rem 0; border-bottom: 1px solid var(--surface2);
+    font-size: 0.88rem;
+  }
+  .setting-name { font-weight: 600; color: var(--navy); }
+  .setting-desc { color: var(--text-muted); }
+
+  /* Columns explained */
+  .col-table {
+    width: 100%; border-collapse: collapse; margin: 0.5rem 0 1rem;
+    font-size: 0.85rem;
+  }
+  .col-table th {
+    text-align: left; padding: 0.5rem 0.75rem; background: var(--surface2);
+    font-weight: 600; font-size: 0.78rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--text-muted);
+  }
+  .col-table td {
+    padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--surface2);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .help-layout { grid-template-columns: 1fr; }
+    .help-sidebar {
+      position: relative; top: 0; height: auto;
+      border-right: none; border-bottom: 1px solid var(--border);
+      padding: 1rem;
+    }
+    .help-content { padding: 1.5rem 1.25rem 3rem; }
+    .setting-item { grid-template-columns: 1fr; }
+    .help-header { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="help-header">
+  <div class="help-header-left">
+    <div>
+      <h1>Peekaboo</h1>
+      <div class="subtitle">Help &amp; Documentation</div>
+    </div>
+  </div>
+  <a class="back-link" href="/">&#8592; Back to Dashboard</a>
+</div>
+
+<div class="help-layout">
+
+<!-- Sidebar TOC -->
+<nav class="help-sidebar">
+  <h3>Contents</h3>
+  <ul class="toc-list">
+    <li><a href="#what-is-peekaboo">What is Peekaboo?</a></li>
+    <li><a href="#getting-started">Getting Started</a></li>
+    <li class="toc-sub"><a href="#starting-a-scan">Starting a Scan</a></li>
+    <li class="toc-sub"><a href="#advanced-settings">Advanced Settings</a></li>
+    <li class="toc-sub"><a href="#api-filter">API Filter</a></li>
+    <li><a href="#dashboard-layout">Dashboard Layout</a></li>
+    <li><a href="#web-endpoints">Web Endpoints Tab</a></li>
+    <li class="toc-sub"><a href="#api-table">API Table</a></li>
+    <li class="toc-sub"><a href="#service-mesh">Service Mesh</a></li>
+    <li class="toc-sub"><a href="#headers-analysis">Headers Analysis</a></li>
+    <li class="toc-sub"><a href="#security-findings">Security Findings</a></li>
+    <li><a href="#subdomains">Subdomains Tab</a></li>
+    <li class="toc-sub"><a href="#subdomain-table">Table View</a></li>
+    <li class="toc-sub"><a href="#subdomain-map">Map View</a></li>
+    <li class="toc-sub"><a href="#subdomain-drawers">Detail Drawers</a></li>
+    <li><a href="#mobile-endpoints">Mobile Endpoints Tab</a></li>
+    <li><a href="#openapi-specs">OpenAPI Specs Tab</a></li>
+    <li><a href="#scan-controls">Scan Controls</a></li>
+    <li><a href="#activity-log">Activity Log</a></li>
+    <li><a href="#scan-lifecycle">Scan Lifecycle</a></li>
+  </ul>
+</nav>
+
+<!-- Main content -->
+<main class="help-content">
+
+  <!-- 1. What is Peekaboo? -->
+  <section id="what-is-peekaboo">
+    <h2>What is Peekaboo?</h2>
+    <p>
+      Peekaboo is a real-time API crawler and security scanner. It uses a headless browser to
+      navigate a target website, intercepting network traffic, discovering API endpoints,
+      enumerating subdomains, and identifying security issues &mdash; all from a single domain input.
+    </p>
+    <p><strong>Key capabilities:</strong></p>
+    <ul>
+      <li>Discovers web API endpoints by intercepting live network requests and analyzing page source</li>
+      <li>Enumerates subdomains and resolves their geolocation, technology stack, and open ports</li>
+      <li>Detects and analyzes Android APKs to extract mobile API endpoints</li>
+      <li>Discovers OpenAPI/Swagger specifications from public Git repositories</li>
+      <li>Evaluates HTTP security headers across all discovered hosts</li>
+      <li>Runs agentic AI analysis on subdomains for deeper security insights</li>
+    </ul>
+  </section>
+
+  <!-- 2. Getting Started -->
+  <section id="getting-started">
+    <h2>Getting Started</h2>
+
+    <h3 id="starting-a-scan">Starting a Scan</h3>
+    <p>
+      When you first open Peekaboo, a start form appears asking for a target domain.
+      Enter the domain you want to scan (e.g. <code>example.com</code>) and click
+      <strong>Start Scan</strong>. The crawler will begin navigating the site and
+      intercepting API traffic immediately.
+    </p>
+
+    <h3 id="advanced-settings">Advanced Settings</h3>
+    <p>Click <strong>Show Advanced Settings</strong> in the start form to configure:</p>
+    <div class="setting-list">
+      <div class="setting-item">
+        <span class="setting-name">Max Pages</span>
+        <span class="setting-desc">Maximum number of pages to crawl (default: 50).</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">Max Depth</span>
+        <span class="setting-desc">How many link-levels deep from the start page to follow (default: 3).</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">Timeout</span>
+        <span class="setting-desc">Per-page navigation timeout in seconds (default: 30).</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">Proxy</span>
+        <span class="setting-desc">Optional HTTP/SOCKS proxy URL for the browser to route traffic through.</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">Concurrent Pages</span>
+        <span class="setting-desc">Number of browser tabs to run in parallel (default: 3).</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">Fast Mode</span>
+        <span class="setting-desc">Skip screenshots and reduce per-page interaction for faster scans.</span>
+      </div>
+    </div>
+
+    <h3 id="api-filter">API Filter Options</h3>
+    <p>Before starting a scan, you can choose which API traffic to capture:</p>
+    <ul>
+      <li><strong>All</strong> &mdash; Capture every intercepted request (default).</li>
+      <li><strong>Target Domain Only</strong> &mdash; Only capture requests to the target domain and its subdomains.</li>
+      <li><strong>External Only</strong> &mdash; Only capture requests to third-party domains.</li>
+    </ul>
+  </section>
+
+  <!-- 3. Dashboard Layout -->
+  <section id="dashboard-layout">
+    <h2>Dashboard Layout</h2>
+    <p>The dashboard is divided into three main areas:</p>
+    <h4>Top Bar</h4>
+    <p>
+      Contains the Peekaboo logo, domain indicator showing the current scan target,
+      scan control buttons (Pause, Current Findings, Terminate, New Scan, History, Help),
+      and a live status badge showing the current scan state.
+    </p>
+    <h4>Left Panel</h4>
+    <ul>
+      <li><strong>Stats Grid</strong> &mdash; Real-time counters for Total APIs, Domain APIs, Pages crawled, Hosts discovered, and Queue size, plus a scan timer.</li>
+      <li><strong>Live Preview</strong> &mdash; A thumbnail of the page the crawler is currently visiting. After the scan completes, this area shows a summary with a "Create Report" button.</li>
+      <li><strong>Activity Log</strong> &mdash; A scrolling log of crawler events and APK analysis progress (see <a href="#activity-log">Activity Log</a>).</li>
+    </ul>
+    <h4>Right Panel</h4>
+    <p>
+      Contains tabbed views for all discovered data. The primary tabs are
+      <strong>Web Endpoints</strong> and <strong>Subdomains</strong>. Additional tabs
+      (<strong>Mobile Endpoints</strong>, <strong>OpenAPI Specs</strong>) appear dynamically
+      when relevant data is discovered during the scan.
+    </p>
+  </section>
+
+  <!-- 4. Web Endpoints Tab -->
+  <section id="web-endpoints">
+    <h2>Web Endpoints Tab</h2>
+    <p>
+      This is the default tab and the primary view for discovered API endpoints. It has
+      three sub-views accessible via toggle buttons: <strong>APIs</strong>,
+      <strong>Service Mesh</strong>, and <strong>Headers</strong>.
+    </p>
+
+    <h3 id="api-table">API Table</h3>
+    <p>
+      The main table lists every intercepted API endpoint. Click any row to open the
+      detail drawer with full request/response information.
+    </p>
+    <h4>Columns</h4>
+    <table class="col-table">
+      <thead><tr><th>Column</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><strong>#</strong></td><td>Row number in the current page.</td></tr>
+        <tr><td><strong>Method</strong></td><td>HTTP method (GET, POST, PUT, PATCH, DELETE). Color-coded.</td></tr>
+        <tr><td><strong>Path</strong></td><td>The URL path of the endpoint. Long paths are truncated with a tooltip showing the full value.</td></tr>
+        <tr><td><strong>Host</strong></td><td>The hostname the request was sent to.</td></tr>
+        <tr><td><strong>Status</strong></td><td>HTTP response status code (e.g. 200, 404). Color-coded by range.</td></tr>
+        <tr><td><strong>Detected Via</strong></td><td>How the endpoint was discovered (e.g. network interception, source analysis, JS parsing).</td></tr>
+      </tbody>
+    </table>
+    <h4>Filters</h4>
+    <ul>
+      <li><strong>Domain</strong> &mdash; All / Subdomain / External.</li>
+      <li><strong>Method</strong> &mdash; Filter by HTTP method. Buttons appear dynamically as methods are discovered.</li>
+      <li><strong>API Type</strong> &mdash; All / API (confirmed) / Maybe / Not API.</li>
+      <li><strong>Status</strong> &mdash; All / 2xx / 3xx / 4xx / 5xx / No Status.</li>
+      <li><strong>Search</strong> &mdash; Free-text filter across path and host.</li>
+    </ul>
+    <h4>Detail Drawer</h4>
+    <p>
+      Click any table row to slide open the detail drawer on the right. It shows the
+      full URL, request/response headers, query parameters, body content, API classification
+      details, and detection metadata.
+    </p>
+
+    <h3 id="service-mesh">Service Mesh</h3>
+    <p>
+      A D3 force-directed graph that visualizes the relationships between the target domain
+      and all discovered services/hosts. Each node represents a host, and edges represent
+      API communication paths observed during the scan. You can drag nodes to rearrange the layout.
+    </p>
+    <div class="callout tip">
+      <div class="callout-label">Tip</div>
+      The service mesh updates in real time as new hosts are discovered. It&rsquo;s a great
+      way to understand the overall architecture of a web application at a glance.
+    </div>
+
+    <h3 id="headers-analysis">Headers Analysis</h3>
+    <p>
+      A heatmap view of HTTP security headers across all discovered hosts. Each row is a host,
+      and each column is a security header (e.g. Content-Security-Policy, Strict-Transport-Security,
+      X-Frame-Options). Cells are color-coded:
+    </p>
+    <ul>
+      <li><strong>Green</strong> &mdash; Header present with a secure configuration.</li>
+      <li><strong>Yellow</strong> &mdash; Header present but with a weak or partial configuration.</li>
+      <li><strong>Red</strong> &mdash; Header missing.</li>
+    </ul>
+    <p>Click any cell to see the finding details, including a link to the relevant MDN documentation.</p>
+
+    <h3 id="security-findings">Security Findings</h3>
+    <p>
+      The second sub-tab within Headers Analysis. Peekaboo automatically evaluates every
+      response from the target domain against a set of security rules and reports findings
+      grouped by severity.
+    </p>
+    <h4>Security Grade</h4>
+    <p>
+      A letter grade (A&ndash;F) is calculated based on the ratio of high-severity findings
+      to total endpoints analyzed. The grade and severity chip counts are displayed at the top
+      of the view.
+    </p>
+    <h4>Finding Cards</h4>
+    <p>Each finding card includes:</p>
+    <ul>
+      <li><strong>Severity badge</strong> &mdash; HIGH, MEDIUM, LOW, or INFO.</li>
+      <li><strong>Problem</strong> &mdash; What is wrong (e.g. &ldquo;This API doesn&rsquo;t enforce HTTPS connections&rdquo;).</li>
+      <li><strong>Impact</strong> &mdash; How an attacker could exploit it in plain language.</li>
+      <li><strong>Fix</strong> &mdash; The recommended remediation with the exact header to add.</li>
+      <li><strong>Attack flow diagram</strong> &mdash; A visual SVG diagram showing the attack chain step by step (click a card to expand).</li>
+      <li><strong>Affected endpoints</strong> &mdash; The list of endpoints where this issue was detected.</li>
+    </ul>
+    <h4>Rules Checked</h4>
+    <table class="col-table">
+      <thead><tr><th>Rule</th><th>Severity</th><th>What it detects</th></tr></thead>
+      <tbody>
+        <tr><td>Missing HSTS</td><td>High</td><td>No <code>Strict-Transport-Security</code> header &mdash; allows HTTP downgrade attacks.</td></tr>
+        <tr><td>CORS Wildcard</td><td>High</td><td><code>Access-Control-Allow-Origin: *</code> &mdash; any website can read API responses.</td></tr>
+        <tr><td>Insecure Cookies</td><td>High</td><td>Session cookies missing <code>Secure</code>, <code>HttpOnly</code>, or <code>SameSite</code> flags.</td></tr>
+        <tr><td>Missing X-Content-Type-Options</td><td>Medium</td><td>No <code>nosniff</code> directive &mdash; browsers may MIME-sniff responses into executable content.</td></tr>
+        <tr><td>Missing X-Frame-Options</td><td>Medium</td><td>Page can be embedded in iframes on any site &mdash; clickjacking risk.</td></tr>
+        <tr><td>Missing CSP</td><td>Medium</td><td>No <code>Content-Security-Policy</code> &mdash; no restrictions on script/resource loading.</td></tr>
+        <tr><td>Server Version Leakage</td><td>Medium</td><td><code>Server</code> header reveals exact software version (e.g. nginx/1.21.3).</td></tr>
+        <tr><td>Technology Stack Leakage</td><td>Medium</td><td><code>X-Powered-By</code> header exposes the backend framework.</td></tr>
+        <tr><td>No Cache Control</td><td>Low</td><td>No <code>Cache-Control</code> header &mdash; sensitive data may be cached by browsers or proxies.</td></tr>
+        <tr><td>No Rate Limiting</td><td>Info</td><td>No rate-limit headers detected &mdash; API may be vulnerable to brute-force abuse.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout tip">
+      <div class="callout-label">Tip</div>
+      Click any finding card to expand it and see the attack flow diagram along with
+      the full list of affected endpoints. This is useful for prioritizing remediation.
+    </div>
+  </section>
+
+  <!-- 5. Subdomains Tab -->
+  <section id="subdomains">
+    <h2>Subdomains Tab</h2>
+    <p>
+      Lists all subdomains discovered for the target domain. Subdomains are found via
+      DNS enumeration, certificate transparency logs, and network traffic analysis.
+    </p>
+
+    <h3 id="subdomain-table">Table View</h3>
+    <p>
+      The default view shows a card/table for each subdomain, including:
+    </p>
+    <ul>
+      <li><strong>Status</strong> &mdash; Whether the subdomain is reachable (resolved, timed out, etc.).</li>
+      <li><strong>Technology Detection</strong> &mdash; Identified web technologies and frameworks (pills).</li>
+      <li><strong>Security Pills</strong> &mdash; Quick-glance security indicators (SSL status, header issues, etc.).</li>
+      <li><strong>IP Address</strong> &mdash; Resolved IP address and ASN information.</li>
+    </ul>
+    <p>Click the toggle to switch between Table and Map views.</p>
+
+    <h3 id="subdomain-map">Map View</h3>
+    <p>
+      A world map (Leaflet) showing the geographic location of each discovered subdomain
+      based on IP geolocation. Markers are clustered and color-coded by status. Click a
+      marker to see details about that subdomain.
+    </p>
+
+    <h3 id="subdomain-drawers">Detail Drawers</h3>
+    <p>
+      Each subdomain has several detail drawers accessible via action buttons on the row:
+    </p>
+    <ul>
+      <li><strong>APIs</strong> &mdash; All API endpoints discovered on that subdomain.</li>
+      <li><strong>Security</strong> &mdash; Security insights including header analysis, SSL details, and vulnerability indicators.</li>
+      <li><strong>Open Ports</strong> &mdash; Port scan results showing open services (when available).</li>
+      <li><strong>Agentic</strong> &mdash; AI-powered deeper analysis of the subdomain&rsquo;s security posture.</li>
+      <li><strong>API Specs</strong> &mdash; Any OpenAPI/Swagger specifications found for that subdomain.</li>
+    </ul>
+  </section>
+
+  <!-- 6. Mobile Endpoints Tab -->
+  <section id="mobile-endpoints">
+    <h2>Mobile Endpoints Tab</h2>
+    <div class="callout note">
+      <div class="callout-label">Note</div>
+      This tab appears dynamically only when Android application packages (APKs) are
+      discovered during the scan.
+    </div>
+    <p>
+      When Peekaboo detects links to Android APKs on the target site, it automatically
+      downloads and analyzes them to extract embedded API endpoints.
+    </p>
+    <h4>Android App Detection</h4>
+    <p>
+      A toast notification appears when an APK is detected. The APK is downloaded, decompiled,
+      and analyzed for hardcoded API URLs, endpoints, and configuration data.
+    </p>
+    <h4>Endpoint Table</h4>
+    <p>
+      Similar to the Web Endpoints table, but specifically for mobile API endpoints. Filters include:
+    </p>
+    <ul>
+      <li><strong>Domain</strong> &mdash; Filter by target domain or external.</li>
+      <li><strong>App</strong> &mdash; Filter by which APK the endpoint was extracted from.</li>
+      <li><strong>Category</strong> &mdash; Endpoint category (API, CDN, Analytics, etc.).</li>
+      <li><strong>Status</strong> &mdash; HTTP status code filters (2xx, 3xx, 4xx, 5xx).</li>
+    </ul>
+    <h4>Traffic Testing</h4>
+    <p>
+      Peekaboo can send test requests to discovered mobile endpoints to verify they are live.
+      Results include:
+    </p>
+    <ul>
+      <li><strong>Status badges</strong> &mdash; Color-coded reachability indicators.</li>
+      <li><strong>Confidence score</strong> &mdash; How confident the tool is that the endpoint is a real API.</li>
+      <li><strong>Verification probes</strong> &mdash; Detailed probe results showing request/response data.</li>
+    </ul>
+    <h4>Detail Drawer</h4>
+    <p>
+      Click any row to open the detail drawer with full traffic test results. The drawer
+      includes a verification probes section that shows:
+    </p>
+    <ul>
+      <li><strong>WAF Detected</strong> &mdash; Indicates whether a Web Application Firewall was detected
+        protecting the endpoint (e.g. Cloudflare, AWS WAF, Akamai). Highlighted with a
+        distinct badge when present.</li>
+      <li><strong>OPTIONS Allowed</strong> &mdash; HTTP methods permitted by the server&rsquo;s OPTIONS response.</li>
+      <li><strong>OPTIONS CORS</strong> &mdash; CORS headers returned by the OPTIONS preflight request.</li>
+      <li><strong>Response Headers</strong> &mdash; A collapsible key-value table showing all HTTP response
+        headers returned by the endpoint during the traffic test. Click to expand.</li>
+    </ul>
+  </section>
+
+  <!-- 7. OpenAPI Specs Tab -->
+  <section id="openapi-specs">
+    <h2>OpenAPI Specs Tab</h2>
+    <div class="callout note">
+      <div class="callout-label">Note</div>
+      This tab appears dynamically only when OpenAPI/Swagger specifications are discovered
+      in public Git repositories associated with the target.
+    </div>
+    <p>
+      Peekaboo searches public Git repositories for API specification files
+      (OpenAPI 3.x, Swagger 2.0). When specs are found, they are parsed and displayed here.
+    </p>
+    <h4>Spec List</h4>
+    <p>
+      Shows each discovered spec file with its source repository, version, and the number
+      of endpoints defined. Click a spec to drill down into its endpoints.
+    </p>
+    <h4>Endpoint Drill-Down</h4>
+    <p>
+      Lists all operations defined in the spec (method + path). Click any endpoint for
+      a detail drawer showing parameters, request/response schemas, and authentication
+      requirements as defined in the spec.
+    </p>
+  </section>
+
+  <!-- 8. Scan Controls -->
+  <section id="scan-controls">
+    <h2>Scan Controls</h2>
+    <p>The top bar contains the following control buttons (some appear only during active scans):</p>
+    <div class="setting-list">
+      <div class="setting-item">
+        <span class="setting-name">Pause / Resume</span>
+        <span class="setting-desc">Pauses the dashboard UI updates. The underlying crawler continues running &mdash; this only affects the real-time display.</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">Current Findings</span>
+        <span class="setting-desc">Opens a summary modal showing all findings discovered so far in the current scan.</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">Terminate</span>
+        <span class="setting-desc">Stops the crawler immediately. Discovered data is preserved and the scan is saved to history.</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">New Scan</span>
+        <span class="setting-desc">Resets the dashboard and opens the start form to begin a fresh scan.</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">History</span>
+        <span class="setting-desc">Opens a modal listing past scans. Click any past scan to load and review its results.</span>
+      </div>
+      <div class="setting-item">
+        <span class="setting-name">Help</span>
+        <span class="setting-desc">Opens this help page in a new tab.</span>
+      </div>
+    </div>
+    <div class="callout warning">
+      <div class="callout-label">Warning</div>
+      Terminating a scan is irreversible for that session. The crawler stops and no further
+      endpoints will be discovered. However, all data found up to that point is saved.
+    </div>
+  </section>
+
+  <!-- 9. Activity Log -->
+  <section id="activity-log">
+    <h2>Activity Log</h2>
+    <p>
+      Located at the bottom of the left panel, the activity log has two tabs:
+    </p>
+    <h4>Activity Tab</h4>
+    <p>
+      A real-time stream of crawler events: pages visited, endpoints discovered, errors
+      encountered, and status updates. Each entry is timestamped and color-coded by type.
+    </p>
+    <h4>APK Analysis Tab</h4>
+    <p>
+      Shows the progress of Android APK analysis when mobile apps are detected. Includes
+      download status, decompilation progress, and endpoint extraction results.
+    </p>
+    <div class="callout tip">
+      <div class="callout-label">Tip</div>
+      The activity log auto-scrolls to the latest entry. You can scroll up to review
+      past events &mdash; auto-scroll pauses while you are reading.
+    </div>
+  </section>
+
+  <!-- 10. Scan Lifecycle -->
+  <section id="scan-lifecycle">
+    <h2>Scan Lifecycle</h2>
+    <p>A scan progresses through several stages:</p>
+    <ol>
+      <li>
+        <strong>Crawling</strong> &mdash; The browser navigates pages, intercepts network
+        traffic, and discovers endpoints in real time. The live preview shows the current
+        page and stats update continuously.
+      </li>
+      <li>
+        <strong>Crawl Complete</strong> &mdash; All pages within the configured limits have
+        been visited. The dashboard transitions from the live preview to a summary view.
+      </li>
+      <li>
+        <strong>Waiting for External Analysis</strong> &mdash; Background tasks (subdomain
+        resolution, port scanning, APK analysis, agentic analysis) may still be running.
+        The status indicator shows when these are in progress.
+      </li>
+      <li>
+        <strong>Done</strong> &mdash; All analysis is complete. The scan is automatically
+        saved to history and a report can be generated.
+      </li>
+    </ol>
+    <h4>Inactivity Timer</h4>
+    <p>
+      If no new endpoints or pages are discovered for 2 minutes, an inactivity bar appears
+      in the left panel. When the timer fills completely, the scan auto-finalizes to prevent
+      indefinite hanging on sites with no further content.
+    </p>
+    <h4>Scan Persistence</h4>
+    <p>
+      Completed scans are automatically saved and can be retrieved via the
+      <strong>History</strong> button. Each saved scan preserves all endpoints, subdomains,
+      mobile endpoints, and analysis results.
+    </p>
+  </section>
+
+</main>
+</div>
+
+</body>
+</html>

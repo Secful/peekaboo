@@ -230,6 +230,7 @@ class MobileTrafficRequest(BaseModel):
     redirect_url: str = ""
     confidence: int = 0
     verification: Optional[MobileTrafficVerification] = None
+    response_headers: Optional[dict] = None
 
 
 class MobileEndpointFinding(BaseModel):

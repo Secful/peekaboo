@@ -1207,6 +1207,13 @@ function openMobileDrawer(finding, pkg) {
     if (_trafficData.error) {
       html += `<div class="detail-section"><div class="detail-label">Error</div><div class="detail-value" style="color:var(--red)">${escHtml(_trafficData.error)}</div></div>`;
     }
+    if (_trafficData.response_headers && typeof _trafficData.response_headers === 'object' && Object.keys(_trafficData.response_headers).length > 0) {
+      let _rhRows = '';
+      for (const [_hk, _hv] of Object.entries(_trafficData.response_headers)) {
+        _rhRows += `<tr><td style="font-weight:500;white-space:nowrap">${escHtml(_hk)}</td><td style="word-break:break-all">${escHtml(String(_hv))}</td></tr>`;
+      }
+      html += `<div class="detail-section"><div class="detail-label" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed')">Response Headers ▾</div><table class="verification-table collapsed">${_rhRows}</table></div>`;
+    }
     if (_trafficData.response_body) {
       const _bodyPreview = _trafficData.response_body.length > 2000 ? _trafficData.response_body.slice(0, 2000) + '\n… (truncated)' : _trafficData.response_body;
       html += `<div class="detail-section"><div class="detail-label" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed')">Response Body ▾</div><pre class="drawer-body-pre collapsed">${escHtml(_bodyPreview)}</pre></div>`;
