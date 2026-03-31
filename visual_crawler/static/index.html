@@ -191,6 +191,9 @@
         <button class="control-btn hidden" id="newScanBtn" onclick="newScan()">
           New Scan
         </button>
+        <button class="control-btn hidden" id="addAppBtn" onclick="openManualAppDialog()">
+          Add Android App
+        </button>
         <button class="control-btn" id="historyTopBtn" onclick="openHistoryModal()">
           History
         </button>
@@ -530,6 +533,16 @@
     <span id="androidToastTitle">📱 Android Apps Detected</span>
   </div>
   <div class="android-toast-body" id="androidToastBody"></div>
+  <div class="android-toast-manual" id="androidManualSection">
+    <div class="android-toast-manual-label">Can't find your app? Paste a Google Play URL</div>
+    <div class="android-toast-manual-row">
+      <input type="text" id="manualPlayUrl" class="android-toast-manual-input"
+             placeholder="https://play.google.com/store/apps/details?id=..."
+             onkeydown="if(event.key==='Enter')addManualApp()">
+      <button class="android-toast-btn android-toast-add" onclick="addManualApp()">Add</button>
+    </div>
+    <div class="android-toast-manual-error" id="manualPlayError"></div>
+  </div>
   <div class="android-toast-actions">
     <button class="android-toast-btn android-toast-cancel" onclick="dismissAndroidToast()">Cancel</button>
     <button class="android-toast-btn android-toast-ok" onclick="confirmAndroidApps()">OK</button>

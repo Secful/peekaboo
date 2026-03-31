@@ -130,6 +130,7 @@ function _finalizeScan() {
     document.getElementById('pauseBtn').classList.add('hidden');
     document.getElementById('findingsBtn').classList.add('hidden');
     document.getElementById('stopBtn').classList.add('hidden');
+    document.getElementById('addAppBtn').classList.add('hidden');
     document.getElementById('newScanBtn').classList.remove('hidden');
     addLog('', 'Scan finalized — 2 minutes of inactivity', 'warning');
     showCurrentFindings();
@@ -234,6 +235,7 @@ function ensureWebSocket() {
       document.getElementById('pauseBtn').classList.add('hidden');
       document.getElementById('findingsBtn').classList.add('hidden');
       document.getElementById('stopBtn').classList.add('hidden');
+      document.getElementById('addAppBtn').classList.add('hidden');
       document.getElementById('newScanBtn').classList.remove('hidden');
       document.getElementById('domainIndicator').classList.add('hidden');
       const badge = document.getElementById('otherScans');
@@ -297,6 +299,7 @@ async function startScan(event) {
   document.getElementById('pauseBtn').classList.remove('hidden');
   document.getElementById('findingsBtn').classList.remove('hidden');
   document.getElementById('stopBtn').classList.remove('hidden');
+  document.getElementById('addAppBtn').classList.remove('hidden');
   document.getElementById('newScanBtn').classList.add('hidden');
   appState.uiPaused = false; // Reset pause state
 
@@ -367,6 +370,7 @@ function stopScan() {
   document.getElementById('pauseBtn').classList.add('hidden');
   document.getElementById('findingsBtn').classList.add('hidden');
   document.getElementById('stopBtn').classList.add('hidden');
+  document.getElementById('addAppBtn').classList.add('hidden');
   document.getElementById('newScanBtn').classList.remove('hidden');
   document.getElementById('domainIndicator').classList.add('hidden');
   addLog('', 'Scan terminated by user', '');
@@ -473,6 +477,8 @@ function newScan() {
   document.getElementById('liveDot').classList.remove('done');
   document.getElementById('statusText').textContent = 'Ready';
   document.getElementById('newScanBtn').classList.add('hidden');
+  document.getElementById('addAppBtn').classList.add('hidden');
+  _androidToastApps = [];
 
   // Reset domain filter buttons
   ['All', 'Subdomain', 'External'].forEach(f => {
@@ -835,6 +841,7 @@ function handleEvent(msg) {
       document.getElementById('pauseBtn').classList.add('hidden');
       document.getElementById('findingsBtn').classList.add('hidden');
       document.getElementById('stopBtn').classList.add('hidden');
+      document.getElementById('addAppBtn').classList.add('hidden');
       document.getElementById('newScanBtn').classList.remove('hidden');
       document.getElementById('statQueue').textContent = '0';
       const skippedMsg = msg.pages_skipped > 0 ? ` (${msg.pages_skipped} queued pages skipped)` : '';
@@ -1834,28 +1841,85 @@ let _androidToastApps = [];
 function _updateAndroidToastTitle() {
   const total = _androidToastApps.length;
   const checked = document.querySelectorAll('#androidToastBody input[type="checkbox"]:checked').length;
-  document.getElementById('androidToastTitle').textContent = `\u{1F4F1} Android Apps Detected (${checked}/${total})`;
+  document.getElementById('androidToastTitle').textContent = total > 0
+    ? `\u{1F4F1} Android Apps (${checked}/${total})`
+    : '\u{1F4F1} Add Android App';
 }
 
 function showAndroidToast(apps) {
   _androidToastApps = apps;
   const toast = document.getElementById('androidToast');
   const body = document.getElementById('androidToastBody');
-  // Reverse domain parts: example.com → com.example
-  const domainPrefix = (appState.targetDomain || '').split('.').reverse().join('.').toLowerCase();
-  // Sort: checked (relevant) entries first
-  const sorted = apps.map((a, i) => ({ app: a, idx: i, relevant: domainPrefix && (a.package_name || '').toLowerCase().includes(domainPrefix) }));
-  sorted.sort((a, b) => (b.relevant ? 1 : 0) - (a.relevant ? 1 : 0));
-  body.innerHTML = sorted.map(({ app: a, idx, relevant }) => {
-    return `<label class="android-toast-app">` +
-      `<input type="checkbox" ${relevant ? 'checked' : ''} data-idx="${idx}" onchange="_updateAndroidToastTitle()">` +
-      `<div class="app-info"><span class="app-name">${escHtml(a.app_name)}</span>` +
-      `<span class="app-pkg">${escHtml(a.package_name)}</span></div>` +
-      `<a class="app-play-link" href="${escHtml(a.play_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Google Play ↗</a>` +
-    `</label>`;
-  }).join('');
+  // Clear manual input and error
+  document.getElementById('manualPlayUrl').value = '';
+  document.getElementById('manualPlayError').textContent = '';
+
+  if (apps.length === 0) {
+    body.innerHTML = '<div class="android-toast-empty">No apps auto-detected. Add one below.</div>';
+  } else {
+    // Reverse domain parts: example.com → com.example
+    const domainPrefix = (appState.targetDomain || '').split('.').reverse().join('.').toLowerCase();
+    // Sort: checked (relevant) entries first
+    const sorted = apps.map((a, i) => ({ app: a, idx: i, relevant: domainPrefix && (a.package_name || '').toLowerCase().includes(domainPrefix) }));
+    sorted.sort((a, b) => (b.relevant ? 1 : 0) - (a.relevant ? 1 : 0));
+    body.innerHTML = sorted.map(({ app: a, idx, relevant }) => {
+      return `<label class="android-toast-app">` +
+        `<input type="checkbox" ${relevant ? 'checked' : ''} data-idx="${idx}" onchange="_updateAndroidToastTitle()">` +
+        `<div class="app-info"><span class="app-name">${escHtml(a.app_name)}</span>` +
+        `<span class="app-pkg">${escHtml(a.package_name)}</span></div>` +
+        `<a class="app-play-link" href="${escHtml(a.play_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Google Play ↗</a>` +
+      `</label>`;
+    }).join('');
+  }
   _updateAndroidToastTitle();
   toast.classList.add('show');
+}
+
+function openManualAppDialog() {
+  showAndroidToast(_androidToastApps);
+}
+
+function addManualApp() {
+  const input = document.getElementById('manualPlayUrl');
+  const errorEl = document.getElementById('manualPlayError');
+  const url = input.value.trim();
+  errorEl.textContent = '';
+
+  const match = url.match(/[?&]id=([a-zA-Z0-9_.]+)/);
+  if (!match) {
+    errorEl.textContent = 'Invalid Google Play URL — must contain ?id=package.name';
+    return;
+  }
+  const packageName = match[1];
+
+  // Check for duplicates
+  if (_androidToastApps.some(a => a.package_name === packageName)) {
+    errorEl.textContent = `Package "${packageName}" is already in the list`;
+    return;
+  }
+
+  const playUrl = `https://play.google.com/store/apps/details?id=${packageName}`;
+  const app = { package_name: packageName, app_name: packageName, play_url: playUrl };
+  const idx = _androidToastApps.length;
+  _androidToastApps.push(app);
+
+  // Remove empty-state placeholder if present
+  const body = document.getElementById('androidToastBody');
+  const empty = body.querySelector('.android-toast-empty');
+  if (empty) empty.remove();
+
+  // Append new row (pre-checked)
+  const row = document.createElement('label');
+  row.className = 'android-toast-app';
+  row.innerHTML =
+    `<input type="checkbox" checked data-idx="${idx}" onchange="_updateAndroidToastTitle()">` +
+    `<div class="app-info"><span class="app-name">${escHtml(app.app_name)}</span>` +
+    `<span class="app-pkg">${escHtml(app.package_name)}</span></div>` +
+    `<a class="app-play-link" href="${escHtml(app.play_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Google Play ↗</a>`;
+  body.appendChild(row);
+
+  _updateAndroidToastTitle();
+  input.value = '';
 }
 
 function confirmAndroidApps() {

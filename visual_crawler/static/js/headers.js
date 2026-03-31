@@ -38,7 +38,7 @@ const HEADER_SECURITY_RULES = [
     fix: 'Remove the version from the Server header (e.g. send "Server: nginx" instead of "Server: nginx/1.21.3")',
     check: (h) => {
       const sv = h['server'] || '';
-      return /\/\d/.test(sv); // e.g. nginx/1.21.3
+      return /\/\d/.test(sv);
     },
   },
   {

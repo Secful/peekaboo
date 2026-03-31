@@ -2195,6 +2195,22 @@
     background: var(--green); color: white; border-color: var(--green);
   }
   .android-toast-ok:hover { background: var(--green-dark); }
+  .android-toast-add { background: var(--purple); color: white; border-color: var(--purple); }
+  .android-toast-add:hover { background: var(--purple-light); }
+  .android-toast-manual { padding: 0.6rem 1.4rem 0.2rem; border-top: 1px solid var(--border); }
+  .android-toast-manual-label { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.4rem; }
+  .android-toast-manual-row { display: flex; gap: 0.5rem; }
+  .android-toast-manual-input {
+    flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 0.85rem; font-family: 'JetBrains Mono', monospace;
+    background: var(--surface2); color: var(--text);
+  }
+  .android-toast-manual-input:focus {
+    outline: none; border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(74, 29, 150, 0.15);
+  }
+  .android-toast-manual-error { font-size: 0.78rem; color: #dc2626; margin-top: 0.3rem; min-height: 1rem; }
+  .android-toast-empty { padding: 1.2rem 0; text-align: center; color: var(--text-muted); font-size: 0.88rem; }
 
   /* Mobile Endpoints */
   #mobileEndpointsView {
