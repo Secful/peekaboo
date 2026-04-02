@@ -249,9 +249,9 @@ async def websocket_endpoint(ws: WebSocket):
                 continue
 
             # Persist scan to history (triggered by frontend after inactivity timeout or stop)
+            # Keep _scan_context alive so the finally block can re-save with late data (e.g. mobile endpoints)
             if params.get('action') == 'save_scan':
                 await _save_final_scan(scan_id)
-                _scan_context.pop(scan_id, None)
                 continue
 
             # Handle publish_apk after crawl has finished (listener already canceled)
@@ -440,7 +440,6 @@ async def websocket_endpoint(ws: WebSocket):
                             )
                         elif data.get('action') == 'save_scan':
                             await _save_final_scan(scan_id)
-                            _scan_context.pop(scan_id, None)
                         elif data.get('action') == 'publish_apk':
                             selected = data.get('apps', [])
                             if selected:

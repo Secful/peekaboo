@@ -636,6 +636,7 @@ class APICrawler:
                 error_msg = str(nav_error)
 
                 logger.warning(f"Navigation failed for {page_url}: {error_type} - {error_msg}")
+                await self._emit("crawl_error", {"url": page_url, "error": error_msg})
 
                 # On start URL failure, always try www. prefix
                 # (covers timeouts, proxy 502s, DNS errors, protocol errors, etc.)
@@ -669,7 +670,7 @@ class APICrawler:
                     except Exception as www_error:
                         # www prefix also failed - try sitemap fallback
                         logger.error(f"www prefix also failed: {www_error}")
-                        await self._emit("crawl_error", {"url": www_url, "error": f"Both {self.domain} and {www_domain} failed"})
+                        await self._emit("crawl_error", {"url": www_url, "error": str(www_error)})
                         await self._emit("status", {"message": f"Could not connect to {self.domain} or {www_domain}"})
 
                         # Try sitemap.xml as last resort
@@ -891,6 +892,13 @@ class APICrawler:
             request_headers_dict = None
             response_headers_dict = None
 
+            # Capture headers for all classified endpoints (for header analysis)
+            try:
+                request_headers_dict = await request.all_headers()
+                response_headers_dict = await response.all_headers()
+            except Exception:
+                pass
+
             if api_confidence == "API":
                 try:
                     # Capture request body (for POST/PUT/PATCH)
@@ -912,10 +920,6 @@ class APICrawler:
                                 response_body += " [Truncated]"
                     except Exception:
                         pass  # Some responses can't be read
-
-                    # Capture headers (convert to dict)
-                    request_headers_dict = await request.all_headers()
-                    response_headers_dict = await response.all_headers()
 
                 except Exception as e:
                     logger.warning(f"Failed to capture payloads: {e}")

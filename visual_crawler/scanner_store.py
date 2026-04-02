@@ -63,7 +63,25 @@ class ScannerStore:
 
     def store_mobile_endpoints(self, domain: str, package_name: str, payload: dict) -> None:
         with self._lock:
-            self._get_or_create(domain).mobile_endpoints[package_name] = payload
+            data = self._get_or_create(domain)
+            existing = data.mobile_endpoints.get(package_name)
+            if existing:
+                # Merge new findings into existing, dedup by (method, url)
+                old_findings = existing.get("findings", [])
+                seen = {(f.get("method"), f.get("url")) for f in old_findings}
+                for f in payload.get("findings", []):
+                    if (f.get("method"), f.get("url")) not in seen:
+                        old_findings.append(f)
+                        seen.add((f.get("method"), f.get("url")))
+                existing["findings"] = old_findings
+                existing["findings_count"] = len(old_findings)
+                # Keep the richer metadata (non-zero values)
+                for k in ("decompiled_classes", "analyzed_classes",
+                          "app_version", "scan_duration_secs"):
+                    if payload.get(k):
+                        existing[k] = payload[k]
+            else:
+                data.mobile_endpoints[package_name] = payload
 
     def store_git_findings(self, domain: str, key: str, payload: dict) -> None:
         with self._lock:
