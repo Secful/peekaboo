@@ -690,8 +690,8 @@ function applyExtractedApis(subdomain) {
   // Store in subdomainApis so openApiDrawer works
   appState.subdomainApis[idx] = { subdomain, apis: dedupApis, jsUrls };
 
-  // Update the right zone
-  right.classList.remove('analyzing');
+  // Update the right zone (may be called multiple times as findings grow)
+  right.classList.remove('analyzing', 'no-apis', 'has-apis');
   if (dedupApis.length > 0) {
     right.classList.add('has-apis');
     right.textContent = `${dedupApis.length} APIs`;
