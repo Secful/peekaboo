@@ -84,13 +84,13 @@ def _parse_llm_response(llm_text: str) -> dict:
 class BedrockAPIAnalyzer:
     """Analyzes API endpoints using AWS Bedrock with Claude."""
 
-    def __init__(self, region_name: str = "us-east-1", model_id: str = "us.anthropic.claude-3-5-sonnet-20241022-v2:0") -> None:
+    def __init__(self, region_name: str = "us-east-1", model_id: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0") -> None:
         """
         Initialize Bedrock client.
 
         Args:
             region_name: AWS region for Bedrock
-            model_id: Claude model ID (using cross-region inference profile)
+            model_id: Claude model ID
         """
         self.bedrock_runtime = boto3.client(
             service_name='bedrock-runtime',
@@ -159,13 +159,77 @@ class BedrockAPIAnalyzer:
             content_text = response_body_json['content'][0]['text']
 
             # Parse the structured response
-            return _parse_llm_response(content_text)
+            parsed = _parse_llm_response(content_text)
+            # Add source indicator
+            parsed['source'] = 'bedrock'
+            return parsed
+
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_msg = e.response['Error']['Message']
+
+            if error_code == 'ResourceNotFoundException':
+                logger.error(f"Bedrock model not found: {self.model_id} - {error_msg}")
+                return {
+                    "error": f"Model Not Found: {self.model_id}",
+                    "source": "bedrock",
+                    "description": (
+                        "This usually means:\n"
+                        "• The model version has reached end of life\n"
+                        "• The model is not enabled in your AWS account\n"
+                        "• The model is not available in your region\n\n"
+                        "To fix this:\n"
+                        "1. Go to AWS Bedrock Console → Model access\n"
+                        "2. Enable 'Anthropic Claude 3.5 Sonnet' models\n"
+                        "3. Or update the model ID in bedrock_analyzer.py line 87\n\n"
+                        f"AWS Region: {self.bedrock_runtime.meta.region_name}\n\n"
+                        "Valid model IDs:\n"
+                        "• us.anthropic.claude-sonnet-4-5-20250929-v1:0 (current)\n"
+                        "• anthropic.claude-3-5-sonnet-20240620-v1:0\n"
+                        "• anthropic.claude-3-sonnet-20240229-v1:0"
+                    )
+                }
+            elif error_code == 'ValidationException':
+                logger.error(f"Bedrock validation error: {error_msg}")
+                return {
+                    "error": f"Invalid Model ID: {self.model_id}",
+                    "source": "bedrock",
+                    "description": (
+                        "The model identifier is not valid.\n\n"
+                        "Valid model IDs:\n"
+                        "• us.anthropic.claude-sonnet-4-5-20250929-v1:0 (current)\n"
+                        "• anthropic.claude-3-5-sonnet-20240620-v1:0\n"
+                        "• anthropic.claude-3-sonnet-20240229-v1:0\n\n"
+                        "Update the model ID in bedrock_analyzer.py line 87"
+                    )
+                }
+            elif error_code == 'AccessDeniedException':
+                logger.error(f"Bedrock access denied: {error_msg}")
+                return {
+                    "error": "AWS Permissions Error",
+                    "source": "bedrock",
+                    "description": (
+                        "The AWS credentials don't have permission to invoke Bedrock models.\n\n"
+                        "Required permissions:\n"
+                        "• bedrock:InvokeModel\n"
+                        "• bedrock:InvokeModelWithResponseStream\n\n"
+                        "Contact your AWS administrator to add these permissions."
+                    )
+                }
+            else:
+                logger.error(f"Bedrock API call failed [{error_code}]: {error_msg}")
+                return {
+                    "error": f"AWS Bedrock Error ({error_code})",
+                    "source": "bedrock",
+                    "description": error_msg
+                }
 
         except Exception as e:
-            logger.error(f"Bedrock API call failed: {e}")
+            logger.error(f"Unexpected error in Bedrock call: {e}", exc_info=True)
             return {
-                "error": str(e),
-                "description": "Failed to generate description"
+                "error": "Unexpected Error",
+                "source": "bedrock",
+                "description": f"Failed to generate description: {str(e)}"
             }
 
     async def describe_services(
@@ -217,13 +281,16 @@ class BedrockAPIAnalyzer:
                     return parsed
                 return {}
             except ClientError as e:
-                if e.response["Error"]["Code"] == "ThrottlingException" and attempt < max_retries - 1:
+                error_code = e.response["Error"]["Code"]
+                if error_code == "ThrottlingException" and attempt < max_retries - 1:
                     wait = 2 ** (attempt + 1)
                     logger.warning(f"Bedrock throttled, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
                     time.sleep(wait)
                     continue
-                logger.error(f"Bedrock describe_services call failed: {e}")
+                # Log detailed error but return empty dict for batch operations
+                error_msg = e.response["Error"]["Message"]
+                logger.error(f"Bedrock describe_services call failed [{error_code}]: {error_msg}")
                 return {}
             except Exception as e:
-                logger.error(f"Bedrock describe_services call failed: {e}")
+                logger.error(f"Bedrock describe_services call failed: {e}", exc_info=True)
                 return {}

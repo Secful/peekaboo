@@ -12,37 +12,75 @@ async function generateDescription(method, path, host, responseStatus) {
   btn.disabled = true;
   btn.textContent = '⏳ Generating...';
   btn.style.opacity = '0.6';
-  resultDiv.innerHTML = `
-    <div class="api-description-loading">
-      <div class="spinner"></div>
-      <div class="loading-text">Generating API Description</div>
-      <div class="loading-subtext">Analyzing request and response patterns...</div>
-    </div>
-  `;
+
+  let result;
+  let useBrowserLLM = browserLLM.available;
 
   try {
-    // Call the generate-description API
-    const response = await fetch('/api/generate-description', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        method: epData.method,
-        path: epData.path,
-        host: epData.host,
-        request_body: epData.request_body,
-        response_body: epData.response_body,
-        response_status: epData.response_status,
-        query_params: epData.query_params || []
-      })
-    });
+    if (useBrowserLLM) {
+      // Use browser LLM
+      resultDiv.innerHTML = `
+        <div class="api-description-loading">
+          <div class="spinner"></div>
+          <div class="loading-text">Generating API Description</div>
+          <div class="loading-subtext">Using Browser LLM (Gemini Nano)...</div>
+        </div>
+      `;
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      result = await browserLLM.generateDescription(epData);
+    } else {
+      // Use backend (AWS Bedrock)
+      resultDiv.innerHTML = `
+        <div class="api-description-loading">
+          <div class="spinner"></div>
+          <div class="loading-text">Generating API Description</div>
+          <div class="loading-subtext">Using Cloud LLM (AWS Bedrock)...</div>
+        </div>
+      `;
+
+      const response = await fetch('/api/generate-description', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          method: epData.method,
+          path: epData.path,
+          host: epData.host,
+          request_body: epData.request_body,
+          response_body: epData.response_body,
+          response_status: epData.response_status,
+          query_params: epData.query_params || []
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      result = await response.json();
     }
 
-    const result = await response.json();
+    // Check if result contains an error
+    if (result.error) {
+      // Add source badge to error display
+      const sourceBadge = result.source === 'browser'
+        ? '<span style="font-size: 0.7rem; padding: 0.2rem 0.5rem; background: #4CAF50; color: white; border-radius: 3px; margin-left: 0.5rem;">Browser LLM</span>'
+        : '<span style="font-size: 0.7rem; padding: 0.2rem 0.5rem; background: #2196F3; color: white; border-radius: 3px; margin-left: 0.5rem;">AWS Bedrock</span>';
+
+      resultDiv.innerHTML = `
+        <div class="api-description-section">
+          <div class="api-description-header">
+            <h4>📋 API Description${sourceBadge}</h4>
+          </div>
+          ${formatAPIDescription(result)}
+        </div>
+      `;
+      btn.disabled = false;
+      btn.textContent = 'Generate API Description';
+      btn.style.opacity = '1';
+      return;
+    }
 
     // Store the description in the endpoint object
     epData.llm_description = result;
@@ -57,11 +95,16 @@ async function generateDescription(method, path, host, responseStatus) {
       appState.endpoints[idx].llm_description = result;
     }
 
+    // Add source badge
+    const sourceBadge = result.source === 'browser'
+      ? '<span style="font-size: 0.7rem; padding: 0.2rem 0.5rem; background: #4CAF50; color: white; border-radius: 3px; margin-left: 0.5rem;">Browser LLM</span>'
+      : '<span style="font-size: 0.7rem; padding: 0.2rem 0.5rem; background: #2196F3; color: white; border-radius: 3px; margin-left: 0.5rem;">AWS Bedrock</span>';
+
     // Display the result
     resultDiv.innerHTML = `
       <div class="api-description-section">
         <div class="api-description-header" onclick="toggleDescription()">
-          <h4>📋 API Description</h4>
+          <h4>📋 API Description${sourceBadge}</h4>
           <button class="collapse-toggle" id="collapseToggle">▼</button>
         </div>
         <div class="api-description-content" id="apiDescriptionContent">
@@ -75,15 +118,22 @@ async function generateDescription(method, path, host, responseStatus) {
 
   } catch (error) {
     console.error('Failed to generate description:', error);
+
+    // Provide context-specific error message
+    const errorContext = useBrowserLLM
+      ? 'Browser LLM failed. Check browser console for details or try reloading the page.'
+      : 'Please check your AWS configuration and ensure Bedrock is enabled.';
+
     resultDiv.innerHTML = `
       <div class="api-description-error">
         ❌ Failed to generate description: ${escHtml(error.message)}
         <br><br>
-        <small>Please check your AWS configuration and ensure Bedrock is enabled.</small>
+        <small>${errorContext}</small>
       </div>
     `;
     btn.disabled = false;
     btn.textContent = 'Generate API Description';
+    btn.style.opacity = '1';
   }
 }
 
@@ -101,7 +151,15 @@ function formatAPIDescription(data) {
   }
 
   if (data.error) {
-    return `<p class="api-description-error">Error: ${escHtml(data.error)}</p>`;
+    // Format multi-line error messages properly
+    const errorTitle = escHtml(data.error);
+    const errorDesc = data.description ? escHtml(data.description).replace(/\n/g, '<br>') : '';
+    return `
+      <div class="api-description-error">
+        <div style="font-weight: bold; margin-bottom: 0.5rem;">❌ ${errorTitle}</div>
+        ${errorDesc ? `<div style="font-size: 0.9rem; line-height: 1.6; color: var(--text-secondary);">${errorDesc}</div>` : ''}
+      </div>
+    `;
   }
 
   if (data.raw_response) {

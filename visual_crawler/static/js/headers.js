@@ -59,7 +59,7 @@ const HEADER_SECURITY_RULES = [
     id: 'insecure-cookies', severity: 'high', category: 'Insecure Cookies',
     problem: "Session cookies are missing critical security flags",
     impact: "Missing Secure: cookies sent over HTTP. Missing HttpOnly: JavaScript can steal them. Missing SameSite: vulnerable to CSRF",
-    fix: 'Set all cookies with: Secure; HttpOnly; SameSite=Lax (or SameSite=Strict for sensitive cookies)',
+      fix: 'Set all cookies with: Secure; HttpOnly; SameSite=Lax (or SameSite=Strict for sensitive cookies)',
     check: (h) => {
       const sc = h['set-cookie'];
       if (!sc) return false;

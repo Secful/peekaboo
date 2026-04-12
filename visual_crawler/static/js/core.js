@@ -1964,6 +1964,20 @@ function dismissAndroidToast() {
   viewScanDetail(domain, scanId);
 })();
 
+// Detect browser LLM capability on page load
+(async () => {
+  try {
+    const detected = await browserLLM.detect();
+    if (detected) {
+      console.log('✓ Browser LLM available');
+    } else {
+      console.log('ℹ Browser LLM not available, will use backend');
+    }
+  } catch (error) {
+    console.warn('Browser LLM detection failed:', error);
+  }
+})();
+
 // Restore web drawer header when opening a web endpoint
 const _originalOpenDrawer = openDrawer;
 openDrawer = function(ep) {

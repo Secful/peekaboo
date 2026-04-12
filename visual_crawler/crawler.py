@@ -892,12 +892,13 @@ class APICrawler:
             request_headers_dict = None
             response_headers_dict = None
 
-            # Capture headers for all classified endpoints (for header analysis)
-            try:
-                request_headers_dict = await request.all_headers()
-                response_headers_dict = await response.all_headers()
-            except Exception:
-                pass
+            # Capture headers only for confirmed API calls on the target domain/subdomain
+            if is_target_domain and api_confidence == "API":
+                try:
+                    request_headers_dict = await request.all_headers()
+                    response_headers_dict = await response.all_headers()
+                except Exception:
+                    pass
 
             if api_confidence == "API":
                 try:
