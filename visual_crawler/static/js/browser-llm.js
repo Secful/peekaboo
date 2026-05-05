@@ -119,6 +119,19 @@ class BrowserLLM {
   }
 
   /**
+   * Trim payload to prevent "input is too large" errors
+   * @param {string} payload Raw payload string
+   * @param {number} maxChars Maximum characters (default 1500)
+   * @returns {string} Trimmed payload with indicator if truncated
+   */
+  _trimPayload(payload, maxChars = 1500) {
+    if (!payload || payload.length <= maxChars) {
+      return payload;
+    }
+    return payload.substring(0, maxChars) + '\n... [truncated for brevity]';
+  }
+
+  /**
    * Build prompt matching bedrock_analyzer.py format (lines 24-53)
    * @param {Object} epData Endpoint data
    * @returns {string} Formatted prompt
@@ -138,11 +151,13 @@ class BrowserLLM {
     }
 
     if (epData.request_body) {
-      prompt += `\n**Request Payload:**\n\`\`\`\n${epData.request_body}\n\`\`\`\n`;
+      const trimmedRequest = this._trimPayload(epData.request_body);
+      prompt += `\n**Request Payload:**\n\`\`\`\n${trimmedRequest}\n\`\`\`\n`;
     }
 
     if (epData.response_body) {
-      prompt += `\n**Response Payload:**\n\`\`\`\n${epData.response_body}\n\`\`\`\n`;
+      const trimmedResponse = this._trimPayload(epData.response_body);
+      prompt += `\n**Response Payload:**\n\`\`\`\n${trimmedResponse}\n\`\`\`\n`;
     }
 
     prompt += `

@@ -11,6 +11,13 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+def _trim_payload(payload: Optional[str], max_chars: int = 3000) -> Optional[str]:
+    """Trim payload to prevent token limit errors while preserving useful context."""
+    if not payload or len(payload) <= max_chars:
+        return payload
+    return payload[:max_chars] + "\n... [truncated for brevity]"
+
+
 def _build_prompt(
         method: str,
     path: str,
@@ -34,10 +41,12 @@ def _build_prompt(
         prompt += f"- Query Parameters: {', '.join(query_params)}\n"
 
     if request_body:
-        prompt += f"\n**Request Payload:**\n```\n{request_body}\n```\n"
+        trimmed_request = _trim_payload(request_body)
+        prompt += f"\n**Request Payload:**\n```\n{trimmed_request}\n```\n"
 
     if response_body:
-        prompt += f"\n**Response Payload:**\n```\n{response_body}\n```\n"
+        trimmed_response = _trim_payload(response_body)
+        prompt += f"\n**Response Payload:**\n```\n{trimmed_response}\n```\n"
 
     prompt += """
 Provide a concise analysis in JSON format. Be brief and direct:

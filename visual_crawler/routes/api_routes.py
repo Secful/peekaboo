@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest
+from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest, SwaggerExportRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -146,6 +146,56 @@ async def scan_history_detail(domain: str, scan_id: str):
     except Exception as e:
         logger.error(f"Failed to get scan detail: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get scan: {str(e)}")
+
+
+@router.post("/api/save-html-report")
+async def save_html_report(request: dict):
+    """Save HTML report to S3.
+
+    Request body:
+    {
+        "domain": str,
+        "scan_id": str,
+        "html_content": str  # Complete HTML document
+    }
+    """
+    from ..scan_logger import save_html_to_s3
+
+    domain = request.get("domain")
+    scan_id = request.get("scan_id")
+    html_content = request.get("html_content")
+
+    if not all([domain, scan_id, html_content]):
+        raise HTTPException(status_code=400, detail="Missing required fields")
+
+    success = await asyncio.to_thread(save_html_to_s3, domain, scan_id, html_content)
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to save HTML report")
+
+    return {"status": "success", "message": "HTML report saved"}
+
+
+@router.get("/api/scan-history/{domain}/{scan_id}/report")
+async def get_scan_html_report(domain: str, scan_id: str):
+    """Return HTML report for download."""
+    from ..scan_logger import get_html_report
+    from fastapi.responses import Response
+
+    html = await asyncio.to_thread(get_html_report, domain, scan_id)
+
+    if html is None:
+        raise HTTPException(status_code=404, detail="HTML report not found")
+
+    # Return with download headers
+    filename = f"salt-api-discovery-{domain}-{scan_id.split('_')[0]}.html"
+    return Response(
+        content=html,
+        media_type="text/html",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 
 @router.post("/api/security-insights")
@@ -890,5 +940,221 @@ async def git_findings(request: GitFindingsRequest):
         f"subdomains_ready={dict(_subdomains_ready)}"
     )
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+
+def looks_like_dynamic_parameter(segment: str) -> bool:
+    """
+    Check if a segment looks like a dynamic parameter value (not a semantic API name).
+    Returns True for values like: 123, BTCUSDT, I-SOL_INR, uuid, long-ids
+    Returns False for semantic names like: users, options, data, admin
+    """
+    if not segment or len(segment) == 0:
+        return False
+
+    # Pure numbers -> parameter
+    if segment.isdigit():
+        return True
+
+    # UUIDs (8-4-4-4-12 format) -> parameter
+    if len(segment) == 36 and segment.count('-') == 4:
+        import re
+        if re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', segment, re.IGNORECASE):
+            return True
+
+    # Very long alphanumeric IDs (20+ chars) -> parameter
+    if len(segment) >= 20 and segment.replace('_', '').replace('-', '').isalnum():
+        return True
+
+    # All uppercase with numbers (6+ chars) - trading symbols -> parameter
+    # Examples: BTCUSDT, ETHINR, SHIBINR
+    if len(segment) >= 6 and segment.isupper() and any(c.isdigit() or c.isalpha() for c in segment):
+        return True
+
+    # Trading pairs with hyphens/underscores (I-SOL_INR, KC-ETH_USDT) -> parameter
+    # Pattern: starts with 1-2 uppercase letters, has hyphen/underscore, uppercase tokens
+    if len(segment) >= 5 and '-' in segment or '_' in segment:
+        import re
+        if re.match(r'^[A-Z]{1,2}[-_][A-Z0-9]+(?:[-_][A-Z0-9]+)*$', segment):
+            return True
+
+    # Hex strings (32+ chars) -> parameter
+    if len(segment) >= 32:
+        try:
+            int(segment, 16)
+            return True
+        except ValueError:
+            pass
+
+    # Special case: looks like an ID field (ends with numeric or hash-like)
+    # Examples: "user123", "order456", "abc123def"
+    if len(segment) > 5:
+        import re
+        # Has both letters and numbers, with numbers at end
+        if re.match(r'^[a-z]+\d+$', segment, re.IGNORECASE):
+            return True
+
+    # Everything else is considered semantic/static
+    return False
+
+
+@router.post("/api/export-swagger")
+async def export_swagger(request: SwaggerExportRequest):
+    """Generate OpenAPI 3.0 spec with exact-match path parameterization."""
+    try:
+        # Build OpenAPI spec
+        spec = {
+            "openapi": "3.0.0",
+            "info": {
+                "title": f"API Discovery - {request.domain}",
+                "version": "1.0.0",
+                "description": f"APIs discovered on {request.scan_date} using Peekaboo"
+            },
+            "paths": {}
+        }
+
+        # Group endpoints by (method, pre-filtered path) for exact matching
+        # Key: (method, pre-filtered_path) -> Value: list of (original_path, source, parameter_mask, summary)
+        path_groups = {}
+
+        for ep in request.endpoints:
+            # Analyze path and mark parameter segments
+            segments = ep.path.strip('/').split('/')
+            preprocessed_segments = []
+            parameter_mask = []  # True if segment is a parameter
+
+            for seg in segments:
+                if looks_like_dynamic_parameter(seg):
+                    preprocessed_segments.append('<VAR>')
+                    parameter_mask.append(True)
+                else:
+                    preprocessed_segments.append(seg)
+                    parameter_mask.append(False)
+
+            # Create key for exact grouping
+            preprocessed_path = '/'.join(preprocessed_segments)
+            method = ep.method.upper()
+            group_key = (method, preprocessed_path)
+
+            if group_key not in path_groups:
+                path_groups[group_key] = []
+
+            path_groups[group_key].append((ep.path, ep.source, parameter_mask, ep.summary))
+
+        # Build OpenAPI paths from groups
+        for (method, preprocessed_path), group_data in path_groups.items():
+            # Collect sources, paths, and summaries
+            all_sources = set()
+            cluster_paths = []
+            summaries = []
+
+            for original_path, source, _, summary in group_data:
+                cluster_paths.append(original_path)
+                all_sources.add(source)
+                if summary:
+                    summaries.append(summary)
+
+            # Use the first path as a template to determine structure
+            first_path, _, parameter_mask, _ = group_data[0]
+            segments = first_path.strip('/').split('/')
+
+            # Build OpenAPI path and parameters
+            openapi_segments = []
+            parameters = []
+            param_index = 0
+
+            for i, seg in enumerate(segments):
+                if i < len(parameter_mask) and parameter_mask[i]:
+                    # This is a parameter position
+                    param_name = infer_param_name(segments, i, param_index)
+                    openapi_segments.append(f"{{{param_name}}}")
+
+                    # Collect examples from all paths in group
+                    examples = set()
+                    for path, _, _, _ in group_data:
+                        path_segments = path.strip('/').split('/')
+                        if i < len(path_segments):
+                            examples.add(path_segments[i])
+
+                    parameters.append({
+                        "name": param_name,
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                        "description": f"Examples: {', '.join(sorted(list(examples))[:5])}"
+                    })
+
+                    param_index += 1
+                else:
+                    # Static segment
+                    openapi_segments.append(seg)
+
+            openapi_path = '/' + '/'.join(openapi_segments)
+
+            # Initialize path if not exists
+            if openapi_path not in spec["paths"]:
+                spec["paths"][openapi_path] = {}
+
+            # Determine summary: use LLM description if available, else generic
+            if summaries:
+                # Get unique summaries
+                unique_summaries = list(dict.fromkeys(summaries))  # Preserve order, remove duplicates
+                if len(unique_summaries) == 1:
+                    summary = unique_summaries[0]
+                else:
+                    # Multiple different summaries - use the first one
+                    summary = unique_summaries[0]
+            else:
+                # No LLM descriptions available
+                summary = f"{method} {openapi_path}"
+
+            # Add operation
+            operation = {
+                "summary": summary,
+                "x-peekaboo-src": list(all_sources) if len(all_sources) > 1 else list(all_sources)[0]
+            }
+
+            if parameters:
+                operation["parameters"] = parameters
+
+            spec["paths"][openapi_path][method.lower()] = operation
+
+        return JSONResponse(content=spec)
+
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Failed to export swagger: {e}\n{error_details}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+def infer_param_name(segments: list[str], index: int, param_index: int) -> str:
+    """Infer a meaningful parameter name based on context."""
+    # Look at previous segment for context
+    if index > 0:
+        prev = segments[index - 1]
+        if prev and prev != '<*>':
+            # If previous segment looks like plural noun, use singular
+            if prev.endswith('s') and len(prev) > 3 and not prev.endswith('ss'):
+                return prev[:-1] + 'Id'
+            return prev + 'Id'
+
+    # Fallback to generic names
+    return 'id' if param_index == 0 else f'param{param_index}'
+
+
+def extract_parameter_values(path: str, template: str) -> list[str]:
+    """Extract actual parameter values from a path given its template."""
+    # Path is slash-separated: /blog/wp-json/data/BNBUSDT
+    # Template is space-separated: blog wp-json data <*>
+
+    path_segments = path.strip('/').split('/')
+    template_segments = template.split()  # Split on spaces
+
+    values = []
+    for i, template_seg in enumerate(template_segments):
+        if template_seg == '<*>' and i < len(path_segments):
+            values.append(path_segments[i])
+
+    return values
 
 

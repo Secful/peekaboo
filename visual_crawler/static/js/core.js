@@ -140,6 +140,43 @@ function _finalizeScan() {
 function _sendSaveScan() {
   if (appState.ws && appState.ws.readyState === WebSocket.OPEN) {
     appState.ws.send(JSON.stringify({ action: 'save_scan' }));
+
+    // Trigger HTML report generation (async, non-blocking)
+    _saveHTMLReport();
+  }
+}
+
+// Generate and save HTML report after scan completes
+async function _saveHTMLReport() {
+  if (!appState.myScanId || !appState.targetDomain) {
+    console.warn('Cannot save HTML report: missing scan_id or domain');
+    return;
+  }
+
+  try {
+    // Reuse existing report generation logic from report.js
+    const html = generateReportHTML();
+
+    // Send to backend
+    const response = await fetch('/api/save-html-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        domain: appState.targetDomain,
+        scan_id: appState.myScanId,
+        html_content: html
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to save HTML report: ${response.status}`);
+    }
+
+    console.log('HTML report saved successfully');
+  } catch (error) {
+    console.error('Failed to save HTML report:', error);
+    // Show notification to user
+    addLog('', 'HTML report generation failed, but scan data was saved', 'warning');
   }
 }
 
@@ -286,7 +323,8 @@ async function startScan(event) {
     api_filter: apiFilterValue,
     concurrent_pages: parseInt(document.getElementById('concurrentPages').value) || 5,
     fast_mode: document.getElementById('fastMode').checked,
-    use_proxy: document.getElementById('useProxy').checked
+    use_proxy: document.getElementById('useProxy').checked,
+    interaction_level: document.getElementById('interactionLevel')?.value || 'standard'
   };
 
   // Store target domain and settings for UI filtering

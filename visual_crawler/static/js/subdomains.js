@@ -671,8 +671,8 @@ function applyExtractedApis(subdomain) {
     };
   });
 
-  // Filter and deduplicate
-  const staticExts = /\.(js|css|html|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map|xml|json)(\?|#|$)/i;
+  // Filter and deduplicate (exclude actual static assets, but keep .json/.xml as they're API formats)
+  const staticExts = /\.(js|css|html|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map)(\?|#|$)/i;
   const dedupSeen = new Set();
   const dedupApis = findings.filter(a => {
     const url = a.url || '';

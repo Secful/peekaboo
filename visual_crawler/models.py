@@ -52,6 +52,15 @@ class GenerateDescriptionRequest(BaseModel):
     query_params: Optional[list[str]] = None
 
 
+class UpdateDescriptionRequest(BaseModel):
+    """Request body for updating endpoint description in backend."""
+    scan_id: str
+    method: str
+    path: str
+    host: str
+    llm_description: str
+
+
 class GeolocateIpsRequest(BaseModel):
     """Request body for IP geolocation."""
     ips: list[str]
@@ -320,3 +329,18 @@ class ApiSpecRequest(BaseModel):
     robots_api_paths: list[str] = []
     sitemap_api_urls: list[str] = []
     graphql: Optional[GraphQLResult] = None
+
+
+class EndpointData(BaseModel):
+    """Single endpoint data for Swagger export."""
+    method: str
+    path: str
+    source: str  # 'web-traffic', 'js', 'apk'
+    summary: Optional[str] = None  # LLM-generated description if available
+
+
+class SwaggerExportRequest(BaseModel):
+    """Request body for Swagger/OpenAPI export with Drain3 parameterization."""
+    domain: str
+    scan_date: str
+    endpoints: list[EndpointData]

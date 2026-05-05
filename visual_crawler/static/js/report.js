@@ -1,5 +1,7 @@
 /* HTML report export */
-function exportSummaryToHTML() {
+
+// Generate HTML report content from appState
+function generateReportHTML() {
   // Gather data
   const scanDate = new Date().toLocaleString();
   const totalEndpoints = document.getElementById('summaryEndpoints').textContent;
@@ -1325,6 +1327,13 @@ function exportSummaryToHTML() {
   </scr` + `ipt>
 </body>
 </html>`;
+
+  return html;
+}
+
+// Export and download HTML report
+function exportSummaryToHTML() {
+  const html = generateReportHTML();
 
   // Create and download the HTML file
   const blob = new Blob([html], { type: 'text/html' });

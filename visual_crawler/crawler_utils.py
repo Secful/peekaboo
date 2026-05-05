@@ -16,6 +16,8 @@ from .constants import (
     API_PATH_PATTERNS,
     API_CONTENT_TYPES,
     ID_PATTERNS,
+    SMART_FIELD_VALUES,
+    DANGEROUS_FORM_KEYWORDS,
 )
 
 
@@ -77,7 +79,7 @@ async def _interact(page: Page):
             pass
 
 
-async def _deep_interact(page: Page):
+async def _deep_interact(page: Page, level: str = "standard"):
     """Perform deep page interaction to discover more API calls.
 
     Used only for remote browser sessions. Scrolls the full page, clicks
@@ -85,24 +87,54 @@ async def _deep_interact(page: Page):
     and follows pagination — all to trigger lazy-loaded XHR/fetch calls.
     Each action is individually wrapped in try/except for fault tolerance.
     Total execution is capped at 30 seconds.
+
+    Args:
+        page: Playwright page object
+        level: Interaction intensity ("minimal", "standard", "aggressive")
     """
+
+    # Define interaction limits based on level
+    if level == "minimal":
+        scroll_max = 6000
+        max_buttons = 3
+        max_accordions = 2
+        max_load_more = 1
+        max_forms = 1
+        max_pagination = 1
+        max_selects = 2
+    elif level == "aggressive":
+        scroll_max = 40000
+        max_buttons = 15
+        max_accordions = 10
+        max_load_more = 5
+        max_forms = 5
+        max_pagination = 5
+        max_selects = 10
+    else:  # standard (default)
+        scroll_max = 20000
+        max_buttons = 8
+        max_accordions = 5
+        max_load_more = 3
+        max_forms = 3
+        max_pagination = 2
+        max_selects = 5
 
     async def _run():
         page_origin = urlparse(page.url).netloc
 
-        # -- 1a. Full-page scroll (capped at 20,000px) -----------------------
+        # -- 1a. Full-page scroll (capped by level) -----------------------
         try:
-            await page.evaluate("""async () => {
-                await new Promise(r => {
+            await page.evaluate(f"""async () => {{
+                await new Promise(r => {{
                     let t = 0; const s = 500;
-                    const maxH = Math.min(document.body.scrollHeight, 20000);
-                    const i = setInterval(() => {
+                    const maxH = Math.min(document.body.scrollHeight, {scroll_max});
+                    const i = setInterval(() => {{
                         window.scrollBy(0, s); t += s;
-                        if (t >= maxH) { clearInterval(i); r(); }
-                    }, 200);
-                });
+                        if (t >= maxH) {{ clearInterval(i); r(); }}
+                    }}, 200);
+                }});
                 window.scrollTo(0, 0);
-            }""")
+            }}""")
             await page.wait_for_timeout(500)
         except Exception:
             pass
@@ -120,16 +152,16 @@ async def _deep_interact(page: Page):
             except Exception:
                 pass
 
-        # -- 1b. Click buttons & tabs (up to 8) ------------------------------
+        # -- 1b. Click buttons & tabs ------------------------------
         for sel in ["button:visible", "[role='tab']:visible"]:
             try:
                 elements = await page.query_selector_all(sel)
-                for el in elements[:8]:
+                for el in elements[:max_buttons]:
                     await _safe_click(el)
             except Exception:
                 pass
 
-        # -- 1b cont. Accordions / collapsibles (up to 5) --------------------
+        # -- 1b cont. Accordions / collapsibles --------------------
         accordion_sels = [
             "details > summary",
             "[aria-expanded='false']",
@@ -138,24 +170,24 @@ async def _deep_interact(page: Page):
         ]
         clicked_accordion = 0
         for sel in accordion_sels:
-            if clicked_accordion >= 5:
+            if clicked_accordion >= max_accordions:
                 break
             try:
                 elements = await page.query_selector_all(sel)
                 for el in elements:
-                    if clicked_accordion >= 5:
+                    if clicked_accordion >= max_accordions:
                         break
                     await _safe_click(el)
                     clicked_accordion += 1
             except Exception:
                 pass
 
-        # -- 1b cont. "Load more" / "Show more" links (up to 3) --------------
+        # -- 1b cont. "Load more" / "Show more" links --------------
         try:
             candidates = await page.query_selector_all("a:visible, button:visible")
             load_more_count = 0
             for el in candidates:
-                if load_more_count >= 3:
+                if load_more_count >= max_load_more:
                     break
                 try:
                     text = (await el.inner_text()).strip()
@@ -167,23 +199,13 @@ async def _deep_interact(page: Page):
         except Exception:
             pass
 
-        # -- 1c. Fill and submit one search/filter form -----------------------
-        try:
-            forms = await page.query_selector_all("form:visible")
-            for form in forms:
-                text_input = await form.query_selector("input[type='search'], input[type='text']")
-                if text_input:
-                    try:
-                        await text_input.fill("test")
-                        await text_input.press("Enter")
-                        await page.wait_for_timeout(1500)
-                    except Exception:
-                        pass
-                    break  # only one form
-        except Exception:
-            pass
+        # -- 1c. Interact with select dropdowns -----------------------
+        await _interact_with_selects(page, max_selects=max_selects)
 
-        # -- 1d. Pagination (up to 2 clicks) ----------------------------------
+        # -- 1d. Fill and submit forms intelligently -----------------------
+        await _smart_form_fill(page, max_forms=max_forms)
+
+        # -- 1e. Pagination ----------------------------------
         pagination_sels = [
             ".pagination a",
             "nav[aria-label*='pag'] a",
@@ -191,12 +213,12 @@ async def _deep_interact(page: Page):
         ]
         pagination_clicks = 0
         for sel in pagination_sels:
-            if pagination_clicks >= 2:
+            if pagination_clicks >= max_pagination:
                 break
             try:
                 links = await page.query_selector_all(sel)
                 for link in links:
-                    if pagination_clicks >= 2:
+                    if pagination_clicks >= max_pagination:
                         break
                     try:
                         text = (await link.inner_text()).strip().lower()
@@ -208,7 +230,7 @@ async def _deep_interact(page: Page):
             except Exception:
                 pass
 
-        # -- 1e. Wait for network settle --------------------------------------
+        # -- 1f. Wait for network settle --------------------------------------
         try:
             await page.wait_for_load_state("networkidle", timeout=5000)
         except Exception:
@@ -540,3 +562,217 @@ def _classify(req_url: str, method: str, resource_type: str, response: Response)
         return "XHR/fetch request"
 
     return ""
+
+
+async def _interact_with_selects(page: Page, max_selects: int = 5):
+    """Interact with select/dropdown elements to trigger API calls.
+
+    Finds visible select elements, changes their values to trigger
+    change/input events that often fire API calls for filtering,
+    searching, or data loading.
+
+    Args:
+        page: Playwright page object
+        max_selects: Maximum number of select elements to interact with
+    """
+    try:
+        selects = await page.query_selector_all("select:visible")
+        interactions = 0
+
+        for select in selects[:max_selects]:
+            if interactions >= max_selects:
+                break
+
+            try:
+                options = await select.query_selector_all("option")
+                if len(options) <= 1:
+                    continue
+
+                current_value = await select.evaluate("el => el.value")
+
+                # Select first non-default option
+                for option in options[1:]:
+                    value = await option.get_attribute("value")
+                    if value and value != current_value:
+                        await select.select_option(value)
+                        await page.wait_for_timeout(800)
+
+                        # Explicitly trigger change events
+                        await select.evaluate("""el => {
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                        }""")
+
+                        await page.wait_for_timeout(1200)
+                        interactions += 1
+                        break
+            except Exception:
+                pass
+
+        logger.debug(f"Interacted with {interactions} select elements")
+    except Exception:
+        pass
+
+
+async def _smart_form_fill(page: Page, max_forms: int = 3):
+    """Fill forms intelligently based on field labels and types.
+
+    Detects field types, infers appropriate values from context,
+    fills multiple input types (text, email, tel, number, textarea,
+    checkbox, radio, select), and safely submits forms.
+
+    Args:
+        page: Playwright page object
+        max_forms: Maximum number of forms to fill and submit
+    """
+
+    def infer_field_value(field_type: str, field_name: str, field_label: str,
+                          placeholder: str) -> str:
+        """Infer appropriate value based on field context."""
+        context = f"{field_name} {field_label} {placeholder}".lower()
+
+        if field_type == "email" or "email" in context:
+            return SMART_FIELD_VALUES["email"][0]
+        if field_type == "tel" or any(t in context for t in ["phone", "tel"]):
+            return SMART_FIELD_VALUES["phone"][0]
+        if any(t in context for t in ["firstname", "first_name", "fname"]):
+            return SMART_FIELD_VALUES["first"][0]
+        if any(t in context for t in ["lastname", "last_name", "lname"]):
+            return SMART_FIELD_VALUES["last"][0]
+        if "city" in context:
+            return SMART_FIELD_VALUES["city"][0]
+        if "state" in context:
+            return SMART_FIELD_VALUES["state"][0]
+        if any(t in context for t in ["zip", "postal"]):
+            return SMART_FIELD_VALUES["zip"][0]
+        if field_type == "number":
+            return SMART_FIELD_VALUES["age"][0] if "age" in context else "10"
+        if field_type == "date" or "date" in context:
+            return SMART_FIELD_VALUES["date"][0]
+        if field_type == "search" or "search" in context:
+            return SMART_FIELD_VALUES["search"][0]
+
+        return SMART_FIELD_VALUES["default"][0]
+
+    try:
+        forms = await page.query_selector_all("form:visible")
+        forms_filled = 0
+
+        for form in forms[:max_forms]:
+            if forms_filled >= max_forms:
+                break
+
+            try:
+                # Safety check: skip dangerous forms
+                form_html = await form.evaluate("el => el.outerHTML")
+                if any(kw in form_html.lower() for kw in DANGEROUS_FORM_KEYWORDS):
+                    continue
+
+                filled_any = False
+
+                # Fill text inputs (text, email, tel, number, search, url)
+                text_inputs = await form.query_selector_all(
+                    "input[type='text'], input[type='email'], input[type='tel'], "
+                    "input[type='number'], input[type='search'], input[type='url'], "
+                    "input:not([type])"
+                )
+
+                for input_el in text_inputs:
+                    try:
+                        input_type = await input_el.get_attribute("type") or "text"
+                        input_name = await input_el.get_attribute("name") or ""
+                        input_id = await input_el.get_attribute("id") or ""
+                        placeholder = await input_el.get_attribute("placeholder") or ""
+
+                        label_text = ""
+                        if input_id:
+                            label = await form.query_selector(f"label[for='{input_id}']")
+                            if label:
+                                label_text = await label.inner_text()
+
+                        value = infer_field_value(input_type, input_name, label_text, placeholder)
+                        await input_el.fill(value)
+                        filled_any = True
+                        await page.wait_for_timeout(200)
+                    except Exception:
+                        pass
+
+                # Fill textareas
+                textareas = await form.query_selector_all("textarea:visible")
+                for textarea in textareas:
+                    try:
+                        await textarea.fill("This is a test message for API discovery.")
+                        filled_any = True
+                        await page.wait_for_timeout(200)
+                    except Exception:
+                        pass
+
+                # Check checkboxes (first unchecked one)
+                checkboxes = await form.query_selector_all("input[type='checkbox']:visible")
+                for checkbox in checkboxes[:2]:
+                    try:
+                        is_checked = await checkbox.is_checked()
+                        if not is_checked:
+                            await checkbox.check()
+                            filled_any = True
+                            await page.wait_for_timeout(300)
+                    except Exception:
+                        pass
+
+                # Select radio buttons (one per group)
+                radio_groups = {}
+                radios = await form.query_selector_all("input[type='radio']:visible")
+                for radio in radios:
+                    try:
+                        name = await radio.get_attribute("name")
+                        if name and name not in radio_groups:
+                            await radio.check()
+                            radio_groups[name] = True
+                            filled_any = True
+                            await page.wait_for_timeout(300)
+                    except Exception:
+                        pass
+
+                # Interact with select elements
+                selects = await form.query_selector_all("select:visible")
+                for select in selects[:2]:
+                    try:
+                        options = await select.query_selector_all("option")
+                        if len(options) > 1:
+                            value = await options[1].get_attribute("value")
+                            if value:
+                                await select.select_option(value)
+                                filled_any = True
+                                await page.wait_for_timeout(500)
+                    except Exception:
+                        pass
+
+                # Submit form if we filled anything
+                if filled_any:
+                    try:
+                        submit_btn = await form.query_selector(
+                            "button[type='submit'], input[type='submit'], button:not([type])"
+                        )
+
+                        if submit_btn:
+                            btn_text = await submit_btn.inner_text()
+                            # Safety check on submit button
+                            if not any(kw in btn_text.lower() for kw in
+                                      ["delete", "remove", "cancel", "destroy", "purchase", "buy"]):
+                                await submit_btn.click()
+                                await page.wait_for_timeout(2000)
+                                forms_filled += 1
+                        else:
+                            # Fallback: press Enter on first input
+                            if text_inputs:
+                                await text_inputs[0].press("Enter")
+                                await page.wait_for_timeout(2000)
+                                forms_filled += 1
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        logger.debug(f"Filled and submitted {forms_filled} forms")
+    except Exception:
+        pass

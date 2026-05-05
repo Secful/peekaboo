@@ -294,6 +294,9 @@ async def websocket_endpoint(ws: WebSocket):
             max_retries = params.get('max_retries', 3)
             rotate_identity = params.get('rotate_identity', True)
 
+            # Interaction level for deep interactions
+            interaction_level = params.get('interaction_level', 'standard')
+
             # Determine proxy configuration
             proxy_config = None
             proxy_pool = None
@@ -363,6 +366,7 @@ async def websocket_endpoint(ws: WebSocket):
                     max_retries=max_retries,
                     rotate_identity=rotate_identity,
                     scraping_browser_url=app.state.scraping_browser_url,
+                    interaction_level=interaction_level,
                 )
             except Exception as e:
                 await ws.send_json({

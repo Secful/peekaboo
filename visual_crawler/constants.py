@@ -120,3 +120,32 @@ ACCESS_DENIED_INDICATORS = [
     "access denied", "blocked", "forbidden", "not authorized",
     "authentication required", "rate limit", "too many requests",
 ]
+
+# Smart form field values for intelligent form filling
+SMART_FIELD_VALUES = {
+    "email": ["test@example.com", "user@test.com"],
+    "name": ["Test User", "John Doe"],
+    "first": ["John", "Test"],
+    "last": ["Doe", "User"],
+    "phone": ["555-0100", "555-1234"],
+    "tel": ["555-0100"],
+    "city": ["New York", "Los Angeles"],
+    "state": ["NY", "CA"],
+    "zip": ["10001", "90001"],
+    "postal": ["10001"],
+    "country": ["US", "USA"],
+    "date": ["2024-01-01"],
+    "age": ["25"],
+    "quantity": ["1"],
+    "search": ["test", "product"],
+    "query": ["test"],
+    "default": ["test", "sample"],
+}
+
+# Safety: Keywords to avoid when submitting forms
+DANGEROUS_FORM_KEYWORDS = [
+    "payment", "credit", "card", "cvv", "billing", "checkout", "purchase", "buy",
+    "delete", "remove", "destroy", "cancel", "terminate",
+    "password", "security", "verify", "confirm",
+    "ssn", "passport", "license",
+]

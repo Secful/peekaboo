@@ -1429,6 +1429,33 @@
     font-size: 0.75rem; cursor: pointer; margin-bottom: 1rem; transition: all 0.15s;
   }
   .history-back-btn:hover { border-color: var(--purple); color: var(--text); background: rgba(74, 29, 150, 0.08); }
+  .history-export-swagger-btn {
+    padding: 0.35rem 0.75rem; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text-muted); font-weight: 600;
+    font-size: 0.75rem; cursor: pointer; margin-bottom: 1rem; margin-left: 0.5rem;
+    transition: all 0.15s;
+  }
+  .history-export-swagger-btn:hover {
+    border-color: var(--green); color: var(--text); background: rgba(16, 185, 129, 0.08);
+  }
+  .history-export-swagger-btn:before {
+    content: '⬇ '; opacity: 0.7;
+  }
+  .history-export-html-btn {
+    padding: 0.35rem 0.75rem; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text-muted); font-weight: 600;
+    font-size: 0.75rem; cursor: pointer; margin-bottom: 1rem; margin-left: 0.5rem;
+    transition: all 0.15s;
+  }
+  .history-export-html-btn:hover {
+    border-color: var(--blue); color: var(--text); background: rgba(59, 130, 246, 0.08);
+  }
+  .history-export-html-btn:before {
+    content: '📄 '; opacity: 0.7;
+  }
+  .history-export-html-btn:disabled {
+    opacity: 0.5; cursor: not-allowed;
+  }
   .history-detail h4 {
     font-size: 1.15rem; font-weight: 800; margin-bottom: 1rem; letter-spacing: -0.02em;
     background: linear-gradient(135deg, var(--green), var(--purple-light));

@@ -183,6 +183,8 @@ function renderScanDetail(scan, prevHtml) {
 
   // ── Back button + header ──
   let html = `<button class="history-back-btn" id="historyBackBtn">&#x2190; Back to list</button>`;
+  html += `<button class="history-export-swagger-btn" onclick="exportHistoryAsSwagger()">Export as Swagger</button>`;
+  html += `<button class="history-export-html-btn" onclick="exportHistoryAsHTML()">Export as HTML Report</button>`;
   html += '<div class="history-detail">';
 
   // Domain title + date

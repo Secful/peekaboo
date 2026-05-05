@@ -185,3 +185,56 @@ def _to_int(val) -> int:
     if isinstance(val, Decimal):
         return int(val)
     return int(val)
+
+
+def save_html_to_s3(domain: str, scan_id: str, html_content: str) -> bool:
+    """Upload HTML report to S3.
+
+    Returns True if successful, False otherwise.
+    """
+    try:
+        html_s3_key = f"{domain}/{scan_id}.html"
+
+        _s3_client().put_object(
+            Bucket=PAYLOAD_BUCKET,
+            Key=html_s3_key,
+            Body=html_content.encode("utf-8"),
+            ContentType="text/html"
+        )
+
+        logger.info(f"HTML report uploaded: {html_s3_key}")
+
+        # Update DynamoDB record to include html_s3_key
+        try:
+            _dynamodb_table().update_item(
+                Key={"domain": domain, "started_at": _get_started_at_for_scan(scan_id)},
+                UpdateExpression="SET html_s3_key = :key",
+                ExpressionAttributeValues={":key": html_s3_key}
+            )
+        except Exception as db_exc:
+            logger.warning(f"Failed to update DynamoDB with html_s3_key: {db_exc}")
+
+        return True
+    except Exception as exc:
+        logger.error(f"Failed to upload HTML report: {exc}")
+        return False
+
+
+def _get_started_at_for_scan(scan_id: str) -> str:
+    """Extract started_at timestamp from scan_id format: YYYYMMDDTHHMMSS_uuid."""
+    from datetime import datetime
+    timestamp_part = scan_id.split("_")[0]  # e.g., "20250505T145230"
+    # Convert to ISO format for DynamoDB
+    dt = datetime.strptime(timestamp_part, "%Y%m%dT%H%M%S")
+    return dt.isoformat() + "Z"
+
+
+def get_html_report(domain: str, scan_id: str) -> Optional[str]:
+    """Fetch HTML report from S3 by domain + scan_id."""
+    try:
+        html_s3_key = f"{domain}/{scan_id}.html"
+        resp = _s3_client().get_object(Bucket=PAYLOAD_BUCKET, Key=html_s3_key)
+        return resp["Body"].read().decode("utf-8")
+    except Exception as exc:
+        logger.warning(f"Failed to get HTML report: {exc}")
+        return None

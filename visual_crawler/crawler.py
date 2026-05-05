@@ -54,7 +54,8 @@ class APICrawler:
                  proxy_pool: Optional[ProxyPool] = None,
                  max_retries: int = 3,
                  rotate_identity: bool = True,
-                 scraping_browser_url: Optional[str] = None) -> None:
+                 scraping_browser_url: Optional[str] = None,
+                 interaction_level: str = "standard") -> None:
         self.context = None
         self.browser = None
         self.domain = domain.lower().replace("https://", "").replace("http://", "").rstrip("/")
@@ -82,6 +83,9 @@ class APICrawler:
         # Remote browsers need longer timeouts (CDP hop + anti-bot solving)
         # BrightData recommends 120s; default UI timeout is 30s, so 4x = 120s
         self._remote_timeout_multiplier = 4
+
+        # Interaction level for deep interactions
+        self.interaction_level = interaction_level
 
         # State tracking
         self.pages_since_rotation = 0
@@ -780,7 +784,7 @@ class APICrawler:
             # Skip auto-scroll and interactions in fast mode
             if not self.fast_mode:
                 if self.using_remote_browser:
-                    await _deep_interact(page)
+                    await _deep_interact(page, level=self.interaction_level)
                 else:
                     await _auto_scroll(page)
                     await _interact(page)
