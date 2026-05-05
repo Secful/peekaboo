@@ -138,24 +138,97 @@ function _finalizeScan() {
 }
 
 function _sendSaveScan() {
+  console.log('[Save] Saving scan...', {
+    scanId: appState.myScanId,
+    domain: appState.targetDomain,
+    wsState: appState.ws ? appState.ws.readyState : 'null',
+    wsOpen: appState.ws && appState.ws.readyState === WebSocket.OPEN
+  });
+
+  // Send save_scan via WebSocket if connected
   if (appState.ws && appState.ws.readyState === WebSocket.OPEN) {
     appState.ws.send(JSON.stringify({ action: 'save_scan' }));
-
-    // Trigger HTML report generation (async, non-blocking)
-    _saveHTMLReport();
+    console.log('[Save] save_scan message sent via WebSocket');
+  } else {
+    console.warn('[Save] WebSocket not open, skipping WS save_scan message');
   }
+
+  // Always try HTML report generation via HTTP (independent of WebSocket state)
+  _saveHTMLReport();
 }
 
 // Generate and save HTML report after scan completes
 async function _saveHTMLReport() {
+  console.log('[HTML Report] Starting HTML report generation...', {
+    scanId: appState.myScanId,
+    domain: appState.targetDomain,
+    endpoints: appState.endpoints.length,
+    hosts: appState.hosts.size
+  });
+
   if (!appState.myScanId || !appState.targetDomain) {
-    console.warn('Cannot save HTML report: missing scan_id or domain');
+    console.error('[HTML Report] ❌ Cannot save HTML report: missing scan_id or domain', {
+      scanId: appState.myScanId,
+      domain: appState.targetDomain
+    });
     return;
   }
 
   try {
-    // Reuse existing report generation logic from report.js
-    const html = generateReportHTML();
+    // Compute stats from appState (don't rely on DOM which may not be populated yet)
+    const duration = appState.scanStartTime ? Math.round((Date.now() - appState.scanStartTime) / 1000) : 0;
+    const minutes = Math.floor(duration / 60);
+    const seconds = duration % 60;
+    const durationText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+    const totalEndpoints = appState.endpoints.length;
+    const confirmedApis = appState.endpoints.filter(ep => ep.api_confidence === 'API' || ep.method === 'GET*').length;
+    const apiCountText = `${confirmedApis} confirmed APIs`;
+
+    // Compute pages visited from _doneMsg or fall back to live count
+    const pagesVisited = _doneMsg ? _doneMsg.pages_visited : document.getElementById('statPagesVisited')?.textContent || '0';
+
+    // Separate subdomains from external domains
+    const hostArray = Array.from(appState.hosts).sort();
+    const subdomainHosts = [];
+    const externalDomains = [];
+    hostArray.forEach(h => {
+      const isSubdomain = h.toLowerCase() === appState.targetDomain.toLowerCase() ||
+                          h.toLowerCase().endsWith('.' + appState.targetDomain.toLowerCase());
+      if (isSubdomain) {
+        subdomainHosts.push(h);
+      } else {
+        externalDomains.push(h);
+      }
+    });
+
+    const reportData = {
+      scanDate: new Date().toLocaleString(),
+      totalEndpoints: totalEndpoints.toString(),
+      apiCount: apiCountText,
+      pagesVisited: pagesVisited.toString(),
+      duration: durationText,
+      hostsCount: appState.hosts.size.toString(),
+      breakdown: `${subdomainHosts.length} subdomains, ${externalDomains.length} external`,
+      subdomains: subdomainHosts,
+      externals: externalDomains
+    };
+
+    console.log('[HTML Report] Generating HTML from data...', {
+      totalEndpoints: reportData.totalEndpoints,
+      pagesVisited: reportData.pagesVisited,
+      subdomains: subdomainHosts.length,
+      externals: externalDomains.length
+    });
+
+    // Generate HTML with computed data
+    const html = generateReportHTML(reportData);
+
+    console.log('[HTML Report] HTML generated, sending to server...', {
+      htmlSize: html.length,
+      domain: appState.targetDomain,
+      scanId: appState.myScanId
+    });
 
     // Send to backend
     const response = await fetch('/api/save-html-report', {
@@ -169,12 +242,19 @@ async function _saveHTMLReport() {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to save HTML report: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Failed to save HTML report: ${response.status} ${errorText}`);
     }
 
-    console.log('HTML report saved successfully');
+    const result = await response.json();
+    console.log('[HTML Report] ✅ HTML report saved successfully to S3', result);
   } catch (error) {
-    console.error('Failed to save HTML report:', error);
+    console.error('[HTML Report] ❌ Failed to save HTML report:', {
+      error: error.message,
+      stack: error.stack,
+      domain: appState.targetDomain,
+      scanId: appState.myScanId
+    });
     // Show notification to user
     addLog('', 'HTML report generation failed, but scan data was saved', 'warning');
   }

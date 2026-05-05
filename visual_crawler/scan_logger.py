@@ -202,7 +202,7 @@ def save_html_to_s3(domain: str, scan_id: str, html_content: str) -> bool:
             ContentType="text/html"
         )
 
-        logger.info(f"HTML report uploaded: {html_s3_key}")
+        logger.info(f"✅ HTML report uploaded to S3: s3://{PAYLOAD_BUCKET}/{html_s3_key}")
 
         # Update DynamoDB record to include html_s3_key
         try:
@@ -211,12 +211,13 @@ def save_html_to_s3(domain: str, scan_id: str, html_content: str) -> bool:
                 UpdateExpression="SET html_s3_key = :key",
                 ExpressionAttributeValues={":key": html_s3_key}
             )
+            logger.info(f"DynamoDB updated with html_s3_key for {domain}/{scan_id}")
         except Exception as db_exc:
             logger.warning(f"Failed to update DynamoDB with html_s3_key: {db_exc}")
 
         return True
     except Exception as exc:
-        logger.error(f"Failed to upload HTML report: {exc}")
+        logger.error(f"❌ Failed to upload HTML report to s3://{PAYLOAD_BUCKET}/{domain}/{scan_id}.html: {exc}")
         return False
 
 
@@ -233,8 +234,11 @@ def get_html_report(domain: str, scan_id: str) -> Optional[str]:
     """Fetch HTML report from S3 by domain + scan_id."""
     try:
         html_s3_key = f"{domain}/{scan_id}.html"
+        logger.info(f"Fetching HTML report from s3://{PAYLOAD_BUCKET}/{html_s3_key}")
         resp = _s3_client().get_object(Bucket=PAYLOAD_BUCKET, Key=html_s3_key)
-        return resp["Body"].read().decode("utf-8")
+        content = resp["Body"].read().decode("utf-8")
+        logger.info(f"✅ HTML report retrieved: {len(content)} bytes")
+        return content
     except Exception as exc:
-        logger.warning(f"Failed to get HTML report: {exc}")
+        logger.warning(f"❌ HTML report not found or failed to retrieve s3://{PAYLOAD_BUCKET}/{domain}/{scan_id}.html: {exc}")
         return None

@@ -1,24 +1,24 @@
 /* HTML report export */
 
 // Generate HTML report content from appState
-function generateReportHTML() {
-  // Gather data
-  const scanDate = new Date().toLocaleString();
-  const totalEndpoints = document.getElementById('summaryEndpoints').textContent;
-  const apiCount = document.getElementById('summaryApiCount').textContent;
-  const pagesVisited = document.getElementById('summaryPages').textContent;
-  const duration = document.getElementById('summaryDuration').textContent;
-  const hostsCount = document.getElementById('summaryHosts').textContent;
-  const breakdown = document.getElementById('summarySubdomains').textContent;
+// data param: { scanDate, totalEndpoints, apiCount, pagesVisited, duration, hostsCount, breakdown, subdomains, externals }
+function generateReportHTML(data = null) {
+  // If no data provided, read from DOM (backward compat for live export button)
+  if (!data) {
+    data = {
+      scanDate: new Date().toLocaleString(),
+      totalEndpoints: document.getElementById('summaryEndpoints').textContent,
+      apiCount: document.getElementById('summaryApiCount').textContent,
+      pagesVisited: document.getElementById('summaryPages').textContent,
+      duration: document.getElementById('summaryDuration').textContent,
+      hostsCount: document.getElementById('summaryHosts').textContent,
+      breakdown: document.getElementById('summarySubdomains').textContent,
+      subdomains: Array.from(document.getElementById('summarySubdomainList').querySelectorAll('.summary-domain-tag')).map(tag => tag.textContent),
+      externals: Array.from(document.getElementById('summaryExternalList').querySelectorAll('.summary-domain-tag')).map(tag => tag.textContent)
+    };
+  }
 
-  // Get subdomain and external domain lists
-  const subdomainList = document.getElementById('summarySubdomainList');
-  const subdomainTags = Array.from(subdomainList.querySelectorAll('.summary-domain-tag'));
-  const subdomains = subdomainTags.map(tag => tag.textContent);
-
-  const externalList = document.getElementById('summaryExternalList');
-  const externalTags = Array.from(externalList.querySelectorAll('.summary-domain-tag'));
-  const externals = externalTags.map(tag => tag.textContent);
+  const { scanDate, totalEndpoints, apiCount, pagesVisited, duration, hostsCount, breakdown, subdomains, externals } = data;
 
   // Group endpoints by API confidence (GET* = hardcoded in source, treat as confirmed)
   const apiEndpoints = appState.endpoints.filter(ep => ep.api_confidence === 'API' || ep.method === 'GET*');

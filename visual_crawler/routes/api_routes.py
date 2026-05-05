@@ -166,13 +166,17 @@ async def save_html_report(request: dict):
     html_content = request.get("html_content")
 
     if not all([domain, scan_id, html_content]):
+        logger.error(f"HTML report save failed: missing fields (domain={domain}, scan_id={scan_id}, has_content={bool(html_content)})")
         raise HTTPException(status_code=400, detail="Missing required fields")
 
+    logger.info(f"Saving HTML report for {domain}/{scan_id} ({len(html_content)} bytes)")
     success = await asyncio.to_thread(save_html_to_s3, domain, scan_id, html_content)
 
     if not success:
+        logger.error(f"HTML report save failed for {domain}/{scan_id}")
         raise HTTPException(status_code=500, detail="Failed to save HTML report")
 
+    logger.info(f"✅ HTML report saved successfully for {domain}/{scan_id}")
     return {"status": "success", "message": "HTML report saved"}
 
 
