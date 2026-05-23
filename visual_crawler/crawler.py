@@ -11,7 +11,7 @@ import re
 from dataclasses import asdict
 from datetime import datetime
 from typing import Optional, Callable, Awaitable
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -626,6 +626,11 @@ class APICrawler:
                 self._on_response(res, page_url)
             ))
 
+            # WebSocket detection
+            page.on("websocket", lambda ws: asyncio.ensure_future(
+                self._on_websocket(ws, page_url)
+            ))
+
             logger.debug(f"Navigating to: {page_url}")
 
             # Remote browsers: use domcontentloaded (BrightData handles the rest)
@@ -961,6 +966,119 @@ class APICrawler:
             await self._emit("endpoint", asdict(ep))
         except Exception:
             pass
+
+    async def _on_websocket(self, ws, page_url: str) -> None:
+        """Handle WebSocket connection establishment."""
+        try:
+            url = ws.url
+            parsed = urlparse(url)
+            host = parsed.netloc.lower()
+
+            # Skip if out of scope
+            is_target_domain = (
+                host == self.domain or
+                host.endswith(f".{self.domain}") or
+                host in self._alias_domains
+            )
+
+            if self.api_filter == "subdomain" and not is_target_domain:
+                return
+            elif self.api_filter == "external" and is_target_domain:
+                return
+
+            # Deduplication signature
+            from .crawler_utils import _templatize
+            template_path = _templatize(parsed.path)
+            sig = f"WS|{host}|{template_path}"
+            if sig in self.seen_signatures:
+                return
+            self.seen_signatures.add(sig)
+
+            # Extract query params
+            query_params = [f"{k}={v}" for k, v in parse_qs(parsed.query).items()]
+
+            # Create endpoint entry with message sampling
+            endpoint = DiscoveredEndpoint(
+                method="WEBSOCKET",
+                path=parsed.path or "/",
+                host=host,
+                full_url=url,
+                query_params=query_params,
+                content_type=None,
+                response_status=None,
+                found_on_page=page_url,
+                detection_reason="WebSocket connection",
+                timestamp=datetime.now().isoformat(),
+                resource_type="websocket",
+                api_confidence="API",  # WebSockets are always real-time APIs
+                websocket_messages=[]  # Will be populated by frame listeners
+            )
+
+            self.endpoints.append(endpoint)
+            await self._emit("endpoint", asdict(endpoint))
+
+            logger.info(f"🔌 WebSocket: {url}")
+
+            # Capture all messages (no sampling)
+            capture_count = {'count': 0}
+            MAX_MESSAGES = 200  # Cap at 200 messages
+            MAX_PAYLOAD_SIZE = 1024  # 1KB truncate
+
+            def on_frame_sent(payload):
+                if capture_count['count'] >= MAX_MESSAGES:
+                    return
+                try:
+                    text = payload[:MAX_PAYLOAD_SIZE] if len(payload) > MAX_PAYLOAD_SIZE else payload
+                    truncated = len(payload) > MAX_PAYLOAD_SIZE
+                    msg = {
+                        'direction': 'sent',
+                        'payload': text,
+                        'truncated': truncated,
+                        'size': len(payload),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    endpoint.websocket_messages.append(msg)
+                    capture_count['count'] += 1
+                    logger.debug(f"WS sent: {len(payload)} bytes (captured {capture_count['count']})")
+                    # Emit live update
+                    asyncio.ensure_future(self._emit("ws_message", {
+                        'host': host,
+                        'path': parsed.path or "/",
+                        'message': msg
+                    }))
+                except Exception as e:
+                    logger.debug(f"WS frame sent error: {e}")
+
+            def on_frame_received(payload):
+                if capture_count['count'] >= MAX_MESSAGES:
+                    return
+                try:
+                    text = payload[:MAX_PAYLOAD_SIZE] if len(payload) > MAX_PAYLOAD_SIZE else payload
+                    truncated = len(payload) > MAX_PAYLOAD_SIZE
+                    msg = {
+                        'direction': 'received',
+                        'payload': text,
+                        'truncated': truncated,
+                        'size': len(payload),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    endpoint.websocket_messages.append(msg)
+                    capture_count['count'] += 1
+                    logger.debug(f"WS received: {len(payload)} bytes (captured {capture_count['count']})")
+                    # Emit live update
+                    asyncio.ensure_future(self._emit("ws_message", {
+                        'host': host,
+                        'path': parsed.path or "/",
+                        'message': msg
+                    }))
+                except Exception as e:
+                    logger.debug(f"WS frame received error: {e}")
+
+            ws.on("framesent", on_frame_sent)
+            ws.on("framereceived", on_frame_received)
+
+        except Exception as e:
+            logger.warning(f"WebSocket handler error: {e}")
 
     async def _extract_links(self, page: Page) -> list[str]:
         """Extract links from the page for further crawling."""

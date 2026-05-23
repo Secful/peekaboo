@@ -13,6 +13,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Remove unused browsers (Firefox, WebKit) to eliminate CVEs - only Chromium is used
+RUN rm -rf /ms-playwright/firefox* /ms-playwright/webkit* /root/.cache/ms-playwright/firefox* /root/.cache/ms-playwright/webkit*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

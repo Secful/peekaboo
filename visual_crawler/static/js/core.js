@@ -675,17 +675,21 @@ function switchEndpointSubView(subView) {
   const tableView = document.getElementById('endpointTableView');
   const meshView = document.getElementById('serviceMeshView');
   const headersSubView = document.getElementById('headersSubView');
+  const webSocketView = document.getElementById('webSocketView');
   const btnTable = document.getElementById('evtTable');
   const btnMesh = document.getElementById('evtMesh');
   const btnHeaders = document.getElementById('evtHeaders');
+  const btnWebSocket = document.getElementById('evtWebSocket');
 
   btnTable.classList.toggle('active', subView === 'table');
   btnMesh.classList.toggle('active', subView === 'mesh');
   if (btnHeaders) btnHeaders.classList.toggle('active', subView === 'headers');
+  if (btnWebSocket) btnWebSocket.classList.toggle('active', subView === 'websocket');
 
   tableView.style.display = 'none';
   meshView.style.display = 'none';
   if (headersSubView) headersSubView.style.display = 'none';
+  if (webSocketView) webSocketView.style.display = 'none';
 
   if (subView === 'mesh') {
     meshView.style.display = '';
@@ -693,6 +697,9 @@ function switchEndpointSubView(subView) {
   } else if (subView === 'headers' && headersSubView) {
     headersSubView.style.display = '';
     renderHeadersView();
+  } else if (subView === 'websocket' && webSocketView) {
+    webSocketView.style.display = '';
+    renderWebSocketView();
   } else {
     tableView.style.display = '';
   }
@@ -770,7 +777,31 @@ function handleEvent(msg) {
         document.getElementById('emptyState').style.display = 'none';
         addEndpointRow(msg, true);
         updateMethodFilters();
-        addLog('', `${msg.method} ${msg.host}${msg.path}`, 'endpoint');
+
+        // Show WebSocket tab if this is a WebSocket endpoint
+        if (msg.method === 'WEBSOCKET') {
+          const wsTab = document.getElementById('evtWebSocket');
+          if (wsTab && wsTab.style.display === 'none') {
+            wsTab.style.display = '';
+          }
+          // Update WebSocket view count
+          const wsView = document.getElementById('webSocketView');
+          if (wsView && wsView.style.display !== 'none') {
+            renderWebSocketView();
+          }
+        }
+
+        // Special logging for WebSocket with security indicator
+        if (msg.method === 'WEBSOCKET') {
+          const isSecure = msg.full_url.startsWith('wss://');
+          const protocol = isSecure ? 'WSS' : 'WS';
+          const securityClass = isSecure ? 'endpoint' : 'warning';
+          const icon = isSecure ? '🔌' : '⚠️';
+          const securityNote = isSecure ? '' : ' (INSECURE - no TLS)';
+          addLog(icon, `${protocol} ${msg.host}${msg.path}${securityNote}`, securityClass);
+        } else {
+          addLog('', `${msg.method} ${msg.host}${msg.path}`, 'endpoint');
+        }
       } else {
         appState.endpoints.push(msg);
         appState.hosts.add(msg.host);
@@ -896,6 +927,11 @@ function handleEvent(msg) {
 
     case 'mobile_traffic':
       handleMobileTraffic(msg);
+      break;
+
+    case 'ws_message':
+      handleWsMessage(msg);
+      break;
       break;
 
     case 'android_apps':
@@ -1675,6 +1711,78 @@ function _updateGitSpecsCount() {
   }
 }
 
+function handleWsMessage(msg) {
+  // msg = { host, path, message: { direction, payload, truncated, size, timestamp } }
+  const host = msg.host;
+  const path = msg.path;
+  const message = msg.message;
+
+  // Find matching endpoint in appState
+  const endpoint = appState.endpoints.find(ep =>
+    ep.method === 'WEBSOCKET' && ep.host === host && ep.path === path
+  );
+
+  if (!endpoint) return;
+
+  // Add message to endpoint
+  if (!endpoint.websocket_messages) endpoint.websocket_messages = [];
+  endpoint.websocket_messages.push(message);
+
+  // Update WebSocket tab count
+  const wsTab = document.getElementById('evtWebSocket');
+  if (wsTab) {
+    const wsCount = appState.endpoints.filter(ep => ep.method === 'WEBSOCKET').length;
+    wsTab.textContent = `WebSocket (${wsCount})`;
+  }
+
+  // If accordion is open for this endpoint, append new message
+  const tbody = document.getElementById('webSocketTbody');
+  if (!tbody) return;
+
+  // Find row for this endpoint
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const matchingRow = rows.find(tr => {
+    const nextRow = tr.nextElementSibling;
+    return tr.dataset.wsExpanded === 'true' &&
+           nextRow && nextRow.classList.contains('ws-chat-row');
+  });
+
+  if (!matchingRow) return;
+
+  // Check if this row matches endpoint
+  const rowCells = matchingRow.querySelectorAll('td');
+  const rowHost = rowCells[3]?.textContent.trim();
+  const rowPath = rowCells[2]?.textContent.trim();
+
+  if (rowHost !== host || rowPath !== path) return;
+
+  // Append message to accordion
+  const chatRow = matchingRow.nextElementSibling;
+  const chatContainer = chatRow.querySelector('div[style*="max-height"]');
+  if (!chatContainer) return;
+
+  const msgDiv = document.createElement('div');
+  msgDiv.className = `ws-message ws-message-${message.direction}`;
+
+  const time = new Date(message.timestamp).toLocaleTimeString();
+  const sizeStr = message.size >= 1024 ? `${(message.size/1024).toFixed(1)}KB` : `${message.size}B`;
+
+  msgDiv.innerHTML = `
+    <div class="ws-message-meta">
+      <span class="ws-message-direction">${message.direction === 'sent' ? '→ Sent' : '← Received'}</span>
+      <span>${time}</span>
+      <span>${sizeStr}</span>
+    </div>
+    <div class="ws-message-body">${escHtml(message.payload)}</div>
+    ${message.truncated ? '<div class="ws-message-truncated">⚠️ Truncated to 1KB</div>' : ''}
+  `;
+
+  chatContainer.appendChild(msgDiv);
+
+  // Auto-scroll to bottom
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
 function handleGitFindings(msg) {
   const findings = msg.findings || [];
   if (findings.length === 0) return;
@@ -2102,3 +2210,5 @@ openDrawer = function(ep) {
   _originalOpenDrawer(ep);
   document.querySelector('#detailDrawer .drawer-header h3').textContent = 'Endpoint Details';
 };
+
+// WebSocket modal functions moved to endpoints.js (loaded earlier)

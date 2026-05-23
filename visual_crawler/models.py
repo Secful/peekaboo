@@ -32,6 +32,9 @@ class DiscoveredEndpoint:
     # LLM-generated description
     llm_description: Optional[str] = None  # Auto-generated API description
 
+    # WebSocket message sampling
+    websocket_messages: Optional[list[dict]] = None  # Sampled WebSocket frames
+
 
 # Pydantic request models for API routes
 

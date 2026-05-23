@@ -1,9 +1,11 @@
 /* Endpoint table management: addEndpointRow, updateEndpointCounter, renderActiveScans, addLog */
 
 function updateEndpointCounter() {
-  const totalCount = appState.endpoints.length;
+  // Exclude WebSocket endpoints from main counter (they have dedicated tab)
+  const totalCount = appState.endpoints.filter(ep => ep.method !== 'WEBSOCKET').length;
   // Count confirmed APIs + GET* endpoints that belong to domain/subdomain
   const domainCount = appState.endpoints.filter(ep =>
+    ep.method !== 'WEBSOCKET' &&
     isDomainEndpoint(ep) &&
     (ep.api_confidence === 'API' || ep.method === 'GET*')
   ).length;
@@ -29,6 +31,11 @@ function updateEndpointCounter() {
 }
 
 function addEndpointRow(ep, flash=false) {
+  // Skip WebSocket endpoints - they only appear in WebSocket tab
+  if (ep.method === 'WEBSOCKET') {
+    return;
+  }
+
   const tbody = document.getElementById('tbody');
   const tr = document.createElement('tr');
   if (flash) tr.classList.add('flash');
@@ -131,3 +138,108 @@ function addLog(icon, message, cls) {
   // Keep log manageable
   while (log.children.length > 200) log.removeChild(log.lastChild);
 }
+
+function renderWebSocketView() {
+  const tbody = document.getElementById('webSocketTbody');
+  const emptyState = document.getElementById('webSocketEmptyState');
+  const wsTab = document.getElementById('evtWebSocket');
+
+  // Filter endpoints to only WebSocket
+  const wsEndpoints = appState.endpoints.filter(ep => ep.method === 'WEBSOCKET');
+
+  // Update tab label with count
+  if (wsTab) {
+    wsTab.textContent = `WebSocket (${wsEndpoints.length})`;
+  }
+
+  if (wsEndpoints.length === 0) {
+    tbody.innerHTML = '';
+    emptyState.style.display = 'flex';
+    return;
+  }
+
+  emptyState.style.display = 'none';
+  tbody.innerHTML = '';
+
+  wsEndpoints.forEach((ep, idx) => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.dataset.wsExpanded = 'false';
+    tr.onclick = () => toggleWsTraffic(tr, ep);
+
+    // Security check: ws: vs wss:
+    const isSecure = ep.full_url.startsWith('wss://');
+    const protocol = isSecure ? 'WSS' : 'WS';
+    const badgeClass = isSecure ? 'badge-websocket' : 'badge-websocket-insecure';
+    const securityIcon = isSecure ? '' : ' ⚠️';
+
+    const queryDisplay = ep.query_params && ep.query_params.length > 0
+      ? ep.query_params.slice(0, 2).join(', ') + (ep.query_params.length > 2 ? '...' : '')
+      : '—';
+
+    tr.innerHTML = `
+      <td style="text-align:center;color:var(--text-muted)">${idx + 1}</td>
+      <td><span class="badge ${badgeClass}">${protocol}${securityIcon}</span></td>
+      <td class="path-cell">${escHtml(ep.path)}</td>
+      <td class="host-cell">${escHtml(ep.host)}</td>
+      <td class="reason-cell">${escHtml(queryDisplay)}</td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+}
+
+function toggleWsTraffic(clickedRow, ep) {
+  const expanded = clickedRow.dataset.wsExpanded === 'true';
+
+  if (expanded) {
+    // Collapse: remove chat row
+    const chatRow = clickedRow.nextElementSibling;
+    if (chatRow && chatRow.classList.contains('ws-chat-row')) {
+      chatRow.remove();
+    }
+    clickedRow.dataset.wsExpanded = 'false';
+  } else {
+    // Expand: insert chat row below
+    const chatRow = document.createElement('tr');
+    chatRow.classList.add('ws-chat-row');
+    chatRow.innerHTML = `<td colspan="5" style="padding:0;background:var(--bg-secondary)"></td>`;
+
+    const chatContainer = document.createElement('div');
+    chatContainer.style.cssText = 'max-height:400px;overflow-y:auto;padding:1rem;';
+
+    const messages = ep.websocket_messages || [];
+
+    if (messages.length === 0) {
+      chatContainer.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem">No messages captured</div>';
+    } else {
+      messages.forEach(msg => {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `ws-message ws-message-${msg.direction}`;
+
+        const time = new Date(msg.timestamp).toLocaleTimeString();
+        const sizeStr = msg.size >= 1024 ? `${(msg.size/1024).toFixed(1)}KB` : `${msg.size}B`;
+
+        msgDiv.innerHTML = `
+          <div class="ws-message-meta">
+            <span class="ws-message-direction">${msg.direction === 'sent' ? '→ Sent' : '← Received'}</span>
+            <span>${time}</span>
+            <span>${sizeStr}</span>
+          </div>
+          <div class="ws-message-body">${escHtml(msg.payload)}</div>
+          ${msg.truncated ? '<div class="ws-message-truncated">⚠️ Truncated to 1KB</div>' : ''}
+        `;
+
+        chatContainer.appendChild(msgDiv);
+      });
+    }
+
+    chatRow.firstElementChild.appendChild(chatContainer);
+    clickedRow.insertAdjacentElement('afterend', chatRow);
+    clickedRow.dataset.wsExpanded = 'true';
+
+    // Scroll chat to bottom
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
+}
+

@@ -139,6 +139,25 @@ function openDrawer(ep) {
       </div>
       <pre class="detail-value drawer-body-pre">${ep.response_body ? escHtml(tryPrettyJson(ep.response_body)) : '<span style="color:var(--text-muted);font-style:italic">Not captured</span>'}</pre>
     </div>` : ''}
+
+    ${ep.method === 'WEBSOCKET' && ep.websocket_messages && ep.websocket_messages.length > 0 ? `
+    <div class="detail-section">
+      <div class="detail-label drawer-collapsible-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.querySelector('.chevron').textContent=this.nextElementSibling.classList.contains('collapsed')?'▶':'▼'">
+        WebSocket Messages (${ep.websocket_messages.length} sampled) <span class="chevron">▼</span>
+      </div>
+      <div class="detail-value drawer-body-pre" style="max-height:400px;overflow-y:auto">
+        ${ep.websocket_messages.map((msg, idx) => `
+          <div style="margin-bottom:1rem;padding:0.75rem;background:var(--bg-secondary);border-radius:4px;border-left:3px solid ${msg.direction === 'sent' ? '#3b82f6' : '#10b981'}">
+            <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;font-size:0.75rem;color:var(--text-muted)">
+              <span style="color:${msg.direction === 'sent' ? '#3b82f6' : '#10b981'};font-weight:600">${msg.direction === 'sent' ? '→ SENT' : '← RECEIVED'}</span>
+              <span>${new Date(msg.timestamp).toLocaleTimeString()}</span>
+              <span>${msg.size} bytes${msg.truncated ? ' (truncated to 1KB)' : ''}</span>
+            </div>
+            <pre style="margin:0;font-size:0.75rem;white-space:pre-wrap;word-break:break-all">${escHtml(msg.payload)}</pre>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : ''}
   `;
 
   drawer.classList.add('open');
