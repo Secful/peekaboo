@@ -241,6 +241,52 @@ class BedrockAPIAnalyzer:
                 "description": f"Failed to generate description: {str(e)}"
             }
 
+    async def explain_ws_payload(
+        self,
+        payload: str,
+        host: str,
+        path: str,
+    ) -> str:
+        """
+        Explain WebSocket payload using Claude via Bedrock.
+
+        Args:
+            payload: WebSocket message payload
+            host: WebSocket host
+            path: WebSocket path
+
+        Returns:
+            Plain text explanation (2-3 sentences)
+        """
+        prompt = f"""Analyze this WebSocket payload from {host}{path}:
+
+{payload}
+
+Provide a concise explanation (2-3 sentences) covering:
+1. What data this payload contains
+2. Its likely purpose in the WebSocket communication
+
+Response format: plain text, no JSON."""
+
+        request_body_bedrock = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 500,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+        }
+
+        try:
+            response = self.bedrock_runtime.invoke_model(
+                modelId=self.model_id,
+                body=json.dumps(request_body_bedrock)
+            )
+            response_body_json = json.loads(response['body'].read())
+            return response_body_json['content'][0]['text']
+
+        except Exception as e:
+            logger.error(f"Failed to explain WebSocket payload: {e}")
+            return f"Error: {str(e)}"
+
     async def describe_services(
         self,
         target_domain: str,

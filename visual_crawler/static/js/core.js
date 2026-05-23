@@ -1772,15 +1772,26 @@ function handleWsMessage(msg) {
       <span class="ws-message-direction">${message.direction === 'sent' ? '→ Sent' : '← Received'}</span>
       <span>${time}</span>
       <span>${sizeStr}</span>
+      <button class="ws-explain-btn" onclick="explainWsPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:3px;cursor:pointer;font-weight:500">Explain</button>
     </div>
     <div class="ws-message-body">${escHtml(message.payload)}</div>
     ${message.truncated ? '<div class="ws-message-truncated">⚠️ Truncated to 1KB</div>' : ''}
+    <div class="ws-explanation" style="display:none;margin-top:0.5rem;padding:0.75rem;background:var(--bg);border-radius:4px;border-left:3px solid var(--primary)"></div>
   `;
+
+  // Store raw payload data on button (not in HTML attribute to avoid escaping issues)
+  const btn = msgDiv.querySelector('.ws-explain-btn');
+  btn._payload = message.payload;
+  btn._host = host;
+  btn._path = path;
 
   chatContainer.appendChild(msgDiv);
 
-  // Auto-scroll to bottom
-  chatContainer.scrollTop = chatContainer.scrollHeight;
+  // Auto-scroll only if user was already at bottom (not reading old messages)
+  const isAtBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 100;
+  if (isAtBottom) {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
 }
 
 function handleGitFindings(msg) {

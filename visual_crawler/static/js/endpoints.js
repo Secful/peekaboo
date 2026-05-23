@@ -225,12 +225,20 @@ function toggleWsTraffic(clickedRow, ep) {
             <span class="ws-message-direction">${msg.direction === 'sent' ? '→ Sent' : '← Received'}</span>
             <span>${time}</span>
             <span>${sizeStr}</span>
+            <button class="ws-explain-btn" onclick="explainWsPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:3px;cursor:pointer;font-weight:500">Explain</button>
           </div>
           <div class="ws-message-body">${escHtml(msg.payload)}</div>
           ${msg.truncated ? '<div class="ws-message-truncated">⚠️ Truncated to 1KB</div>' : ''}
+          <div class="ws-explanation" style="display:none;margin-top:0.5rem;padding:0.75rem;background:var(--bg);border-radius:4px;border-left:3px solid var(--primary)"></div>
         `;
 
         chatContainer.appendChild(msgDiv);
+
+        // Store raw payload on button element (not HTML attribute to avoid escaping)
+        const btn = msgDiv.querySelector('.ws-explain-btn');
+        btn._payload = msg.payload;
+        btn._host = ep.host;
+        btn._path = ep.path;
       });
     }
 
@@ -238,8 +246,101 @@ function toggleWsTraffic(clickedRow, ep) {
     clickedRow.insertAdjacentElement('afterend', chatRow);
     clickedRow.dataset.wsExpanded = 'true';
 
-    // Scroll chat to bottom
+    // Scroll to bottom on initial open
     chatContainer.scrollTop = chatContainer.scrollHeight;
+
+    // Visual indicator when new messages arrive while scrolled up
+    chatContainer.addEventListener('scroll', function() {
+      const isAtBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 100;
+      chatContainer.dataset.atBottom = isAtBottom ? 'true' : 'false';
+    });
+  }
+}
+
+async function explainWsPayload(event) {
+  event.stopPropagation();
+  const btn = event.target;
+  const msgDiv = btn.closest('.ws-message');
+  const explanationDiv = msgDiv.querySelector('.ws-explanation');
+
+  // Get payload from JS property (not HTML attribute to preserve raw content)
+  const payload = btn._payload;
+  const host = btn._host;
+  const path = btn._path;
+
+  // Toggle if already expanded
+  if (explanationDiv.style.display !== 'none') {
+    explanationDiv.style.display = 'none';
+    btn.textContent = 'Explain';
+    return;
+  }
+
+  // Show loading
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  explanationDiv.style.display = 'block';
+  explanationDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted)">Analyzing payload...</div>';
+
+  let useBrowserLLM = browserLLM.available;
+
+  try {
+    let result;
+
+    if (useBrowserLLM) {
+      // Use browser LLM (Gemini Nano)
+      await browserLLM.createSession();
+
+      const prompt = `Analyze this WebSocket payload from ${host}${path}:
+
+${payload}
+
+Provide a concise explanation (2-3 sentences) covering:
+1. What data this payload contains
+2. Its likely purpose in the WebSocket communication
+
+Response format: plain text, no JSON.`;
+
+      const response = await browserLLM.session.prompt(prompt);
+      result = { explanation: response, source: 'browser' };
+
+    } else {
+      // Use backend (AWS Bedrock)
+      const response = await fetch('/api/explain-ws-payload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload, host, path })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      result = await response.json();
+    }
+
+    const sourceBadge = result.source === 'browser'
+      ? '<span style="font-size:0.65rem;padding:0.15rem 0.4rem;background:#4CAF50;color:white;border-radius:3px;margin-left:0.5rem">Browser LLM</span>'
+      : '<span style="font-size:0.65rem;padding:0.15rem 0.4rem;background:#2196F3;color:white;border-radius:3px;margin-left:0.5rem">Cloud LLM</span>';
+
+    explanationDiv.innerHTML = `
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.5rem">
+        💡 AI Explanation${sourceBadge}
+      </div>
+      <div style="font-size:0.8rem;line-height:1.5">${escHtml(result.explanation || result.error || 'No explanation available')}</div>
+    `;
+
+    btn.textContent = 'Hide';
+    btn.disabled = false;
+
+  } catch (error) {
+    console.error('Failed to explain payload:', error);
+    explanationDiv.innerHTML = `
+      <div style="color:var(--error);font-size:0.8rem">
+        ❌ ${escHtml(error.message)}
+      </div>
+    `;
+    btn.textContent = 'Explain';
+    btn.disabled = false;
   }
 }
 

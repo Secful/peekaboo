@@ -986,10 +986,10 @@ class APICrawler:
             elif self.api_filter == "external" and is_target_domain:
                 return
 
-            # Deduplication signature
+            # Deduplication signature (path only - ignore host)
             from .crawler_utils import _templatize
             template_path = _templatize(parsed.path)
-            sig = f"WS|{host}|{template_path}"
+            sig = f"WS|{template_path}"
             if sig in self.seen_signatures:
                 return
             self.seen_signatures.add(sig)

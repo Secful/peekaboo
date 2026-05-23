@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest, SwaggerExportRequest
@@ -62,6 +62,26 @@ async def generate_description(request: GenerateDescriptionRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate description: {str(e)}"
+        )
+
+
+@router.post("/api/explain-ws-payload")
+async def explain_ws_payload(request: Request):
+    """Explain WebSocket payload using AWS Bedrock with Claude."""
+    try:
+        body = await request.json()
+        payload = body.get("payload", "")
+        host = body.get("host", "")
+        path = body.get("path", "")
+
+        analyzer = BedrockAPIAnalyzer()
+        result = await analyzer.explain_ws_payload(payload, host, path)
+        return JSONResponse(content={"explanation": result, "source": "cloud"})
+    except Exception as e:
+        logger.error(f"Failed to explain WebSocket payload: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to explain payload: {str(e)}"
         )
 
 
