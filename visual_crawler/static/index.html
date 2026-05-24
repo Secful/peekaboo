@@ -98,22 +98,11 @@
       </div>
 
       <div class="form-group">
-        <label>Scan-Time API Filter</label>
-        <div class="radio-group">
-          <div class="radio-option">
-            <input type="radio" id="filterAll" name="apiFilter" value="all" checked>
-            <label for="filterAll">Collect All APIs</label>
-          </div>
-          <div class="radio-option">
-            <input type="radio" id="filterSubdomain" name="apiFilter" value="subdomain">
-            <label for="filterSubdomain">Only Target Domain APIs</label>
-          </div>
-          <div class="radio-option">
-            <input type="radio" id="filterExternal" name="apiFilter" value="external">
-            <label for="filterExternal">Only External APIs</label>
-          </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="detectWebSocket" name="detectWebSocket" checked>
+          <label for="detectWebSocket" style="margin:0">Detect WebSocket</label>
         </div>
-        <div class="hint">Which APIs to collect during scan (you can also filter in the table after scanning)</div>
+        <div class="hint">Monitor and capture WebSocket connections and messages</div>
       </div>
 
       <div class="form-group">

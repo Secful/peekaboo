@@ -286,6 +286,7 @@ async def websocket_endpoint(ws: WebSocket):
             concurrent_pages = params.get('concurrent_pages', 5)
             fast_mode = params.get('fast_mode', False)
             use_proxy = params.get('use_proxy', True)
+            detect_websocket = params.get('detect_websocket', True)
 
             # Stealth mode parameters
             stealth_mode = params.get('stealth_mode', True)
@@ -367,6 +368,7 @@ async def websocket_endpoint(ws: WebSocket):
                     rotate_identity=rotate_identity,
                     scraping_browser_url=app.state.scraping_browser_url,
                     interaction_level=interaction_level,
+                    detect_websocket=detect_websocket,
                 )
             except Exception as e:
                 await ws.send_json({

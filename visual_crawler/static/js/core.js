@@ -392,23 +392,22 @@ async function startScan(event) {
   // Start scan timer
   startTimer();
 
-  const apiFilterValue = document.querySelector('input[name="apiFilter"]:checked').value;
-
   const params = {
     domain: domain,
     max_pages: parseInt(document.getElementById('maxPages').value) || 50,
     max_depth: parseInt(document.getElementById('maxDepth').value) || 3,
     timeout: parseInt(document.getElementById('timeout').value) || 30000,
     include_subdomains: document.getElementById('includeSubdomains').checked,
-    api_filter: apiFilterValue,
+    api_filter: 'all',
     concurrent_pages: parseInt(document.getElementById('concurrentPages').value) || 5,
     fast_mode: document.getElementById('fastMode').checked,
     use_proxy: document.getElementById('useProxy').checked,
-    interaction_level: document.getElementById('interactionLevel')?.value || 'standard'
+    interaction_level: document.getElementById('interactionLevel')?.value || 'standard',
+    detect_websocket: document.getElementById('detectWebSocket')?.checked ?? true
   };
 
-  // Store target domain and settings for UI filtering
-  appState.targetDomain = domain.toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+  // Store target domain and settings for UI filtering (strip www. for subdomain matching)
+  appState.targetDomain = domain.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
   appState.includeSubdomains = params.include_subdomains;
 
   // Hide the overlay and show controls
@@ -747,6 +746,13 @@ function handleEvent(msg) {
       if (msg.scan_id && msg.scan_id === appState.myScanId) {
         document.getElementById('statPages').textContent = msg.pages_visited || 0;
         document.getElementById('statQueue').textContent = msg.queue_size || 0;
+      }
+      break;
+
+    case 'domain_changed':
+      // Backend redirected to www version, update for subdomain matching
+      if (msg.domain) {
+        appState.targetDomain = msg.domain.toLowerCase().replace(/^www\./, '');
       }
       break;
 
@@ -1767,23 +1773,45 @@ function handleWsMessage(msg) {
   const time = new Date(message.timestamp).toLocaleTimeString();
   const sizeStr = message.size >= 1024 ? `${(message.size/1024).toFixed(1)}KB` : `${message.size}B`;
 
+  // Binary payload indicator
+  const isBinary = message.payload_type === 'binary';
+  const typeBadge = isBinary
+    ? '<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(168,85,247,0.1);color:#a855f7;border:1px solid rgba(168,85,247,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Binary data (hex encoded)">BIN</span>'
+    : '';
+
+  // PII detection (skip for binary)
+  const piiMatches = isBinary ? [] : getPiiMatches(message.payload, false);
+  const piiBadge = piiMatches.length > 0
+    ? `<span class="api-pii-badge" title="PII: ${escHtml(piiMatches.join(', '))}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII</span>`
+    : '';
+
+  const explainBtn = isBinary
+    ? ''
+    : '<button class="ws-explain-btn" onclick="explainWsPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:3px;cursor:pointer;font-weight:500">Explain</button>';
+
   msgDiv.innerHTML = `
     <div class="ws-message-meta">
       <span class="ws-message-direction">${message.direction === 'sent' ? '→ Sent' : '← Received'}</span>
       <span>${time}</span>
       <span>${sizeStr}</span>
-      <button class="ws-explain-btn" onclick="explainWsPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:3px;cursor:pointer;font-weight:500">Explain</button>
+      ${typeBadge}
+      ${piiBadge}
+      ${explainBtn}
     </div>
-    <div class="ws-message-body">${escHtml(message.payload)}</div>
+    <div class="ws-message-body" style="font-family:${isBinary ? 'monospace' : 'inherit'};word-break:break-all">${escHtml(message.payload)}</div>
     ${message.truncated ? '<div class="ws-message-truncated">⚠️ Truncated to 1KB</div>' : ''}
     <div class="ws-explanation" style="display:none;margin-top:0.5rem;padding:0.75rem;background:var(--bg);border-radius:4px;border-left:3px solid var(--primary)"></div>
   `;
 
   // Store raw payload data on button (not in HTML attribute to avoid escaping issues)
-  const btn = msgDiv.querySelector('.ws-explain-btn');
-  btn._payload = message.payload;
-  btn._host = host;
-  btn._path = path;
+  if (!isBinary) {
+    const btn = msgDiv.querySelector('.ws-explain-btn');
+    if (btn) {
+      btn._payload = message.payload;
+      btn._host = host;
+      btn._path = path;
+    }
+  }
 
   chatContainer.appendChild(msgDiv);
 

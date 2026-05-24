@@ -169,9 +169,14 @@ function renderWebSocketView() {
 
     // Security check: ws: vs wss:
     const isSecure = ep.full_url.startsWith('wss://');
-    const protocol = isSecure ? 'WSS' : 'WS';
-    const badgeClass = isSecure ? 'badge-websocket' : 'badge-websocket-insecure';
-    const securityIcon = isSecure ? '' : ' ⚠️';
+    const securityIcon = isSecure ? '🔒' : '⚠️';
+    const securityTitle = isSecure ? 'Secure WebSocket (wss://)' : 'Insecure WebSocket (ws://)';
+
+    // External/internal check
+    const isDomain = isDomainHost(ep.host);
+    const hostBadge = isDomain
+      ? '<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(99,102,241,0.1);color:#6366f1;border:1px solid rgba(99,102,241,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Internal subdomain">INT</span>'
+      : '<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(107,114,128,0.1);color:#6b7280;border:1px solid rgba(107,114,128,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="External domain">EXT</span>';
 
     const queryDisplay = ep.query_params && ep.query_params.length > 0
       ? ep.query_params.slice(0, 2).join(', ') + (ep.query_params.length > 2 ? '...' : '')
@@ -179,9 +184,9 @@ function renderWebSocketView() {
 
     tr.innerHTML = `
       <td style="text-align:center;color:var(--text-muted)">${idx + 1}</td>
-      <td><span class="badge ${badgeClass}">${protocol}${securityIcon}</span></td>
+      <td style="text-align:center;font-size:1rem" title="${securityTitle}">${securityIcon}</td>
       <td class="path-cell">${escHtml(ep.path)}</td>
-      <td class="host-cell">${escHtml(ep.host)}</td>
+      <td class="host-cell">${escHtml(ep.host)}${hostBadge}</td>
       <td class="reason-cell">${escHtml(queryDisplay)}</td>
     `;
 
@@ -200,6 +205,21 @@ function toggleWsTraffic(clickedRow, ep) {
     }
     clickedRow.dataset.wsExpanded = 'false';
   } else {
+    // Close all other open WS chat panels
+    const tbody = document.getElementById('webSocketTbody');
+    if (tbody) {
+      const allRows = Array.from(tbody.querySelectorAll('tr'));
+      allRows.forEach(row => {
+        if (row.dataset.wsExpanded === 'true' && row !== clickedRow) {
+          const existingChat = row.nextElementSibling;
+          if (existingChat && existingChat.classList.contains('ws-chat-row')) {
+            existingChat.remove();
+          }
+          row.dataset.wsExpanded = 'false';
+        }
+      });
+    }
+
     // Expand: insert chat row below
     const chatRow = document.createElement('tr');
     chatRow.classList.add('ws-chat-row');
@@ -220,14 +240,32 @@ function toggleWsTraffic(clickedRow, ep) {
         const time = new Date(msg.timestamp).toLocaleTimeString();
         const sizeStr = msg.size >= 1024 ? `${(msg.size/1024).toFixed(1)}KB` : `${msg.size}B`;
 
+        // Binary payload indicator
+        const isBinary = msg.payload_type === 'binary';
+        const typeBadge = isBinary
+          ? '<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(168,85,247,0.1);color:#a855f7;border:1px solid rgba(168,85,247,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Binary data (hex encoded)">BIN</span>'
+          : '';
+
+        // PII detection (skip for binary)
+        const piiMatches = isBinary ? [] : getPiiMatches(msg.payload, false);
+        const piiBadge = piiMatches.length > 0
+          ? `<span class="api-pii-badge" title="PII: ${escHtml(piiMatches.join(', '))}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII</span>`
+          : '';
+
+        const explainBtn = isBinary
+          ? ''
+          : '<button class="ws-explain-btn" onclick="explainWsPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:3px;cursor:pointer;font-weight:500">Explain</button>';
+
         msgDiv.innerHTML = `
           <div class="ws-message-meta">
             <span class="ws-message-direction">${msg.direction === 'sent' ? '→ Sent' : '← Received'}</span>
             <span>${time}</span>
             <span>${sizeStr}</span>
-            <button class="ws-explain-btn" onclick="explainWsPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:3px;cursor:pointer;font-weight:500">Explain</button>
+            ${typeBadge}
+            ${piiBadge}
+            ${explainBtn}
           </div>
-          <div class="ws-message-body">${escHtml(msg.payload)}</div>
+          <div class="ws-message-body" style="font-family:${isBinary ? 'monospace' : 'inherit'};word-break:break-all">${escHtml(msg.payload)}</div>
           ${msg.truncated ? '<div class="ws-message-truncated">⚠️ Truncated to 1KB</div>' : ''}
           <div class="ws-explanation" style="display:none;margin-top:0.5rem;padding:0.75rem;background:var(--bg);border-radius:4px;border-left:3px solid var(--primary)"></div>
         `;
@@ -235,10 +273,14 @@ function toggleWsTraffic(clickedRow, ep) {
         chatContainer.appendChild(msgDiv);
 
         // Store raw payload on button element (not HTML attribute to avoid escaping)
-        const btn = msgDiv.querySelector('.ws-explain-btn');
-        btn._payload = msg.payload;
-        btn._host = ep.host;
-        btn._path = ep.path;
+        if (!isBinary) {
+          const btn = msgDiv.querySelector('.ws-explain-btn');
+          if (btn) {
+            btn._payload = msg.payload;
+            btn._host = ep.host;
+            btn._path = ep.path;
+          }
+        }
       });
     }
 

@@ -55,7 +55,8 @@ class APICrawler:
                  max_retries: int = 3,
                  rotate_identity: bool = True,
                  scraping_browser_url: Optional[str] = None,
-                 interaction_level: str = "standard") -> None:
+                 interaction_level: str = "standard",
+                 detect_websocket: bool = True) -> None:
         self.context = None
         self.browser = None
         self.domain = domain.lower().replace("https://", "").replace("http://", "").rstrip("/")
@@ -86,6 +87,9 @@ class APICrawler:
 
         # Interaction level for deep interactions
         self.interaction_level = interaction_level
+
+        # WebSocket detection toggle
+        self.detect_websocket = detect_websocket
 
         # State tracking
         self.pages_since_rotation = 0
@@ -626,10 +630,11 @@ class APICrawler:
                 self._on_response(res, page_url)
             ))
 
-            # WebSocket detection
-            page.on("websocket", lambda ws: asyncio.ensure_future(
-                self._on_websocket(ws, page_url)
-            ))
+            # WebSocket detection (if enabled)
+            if self.detect_websocket:
+                page.on("websocket", lambda ws: asyncio.ensure_future(
+                    self._on_websocket(ws, page_url)
+                ))
 
             logger.debug(f"Navigating to: {page_url}")
 
@@ -668,6 +673,9 @@ class APICrawler:
                         self.domain = www_domain
                         self._start_url = www_url
                         page_url = www_url
+
+                        # Notify frontend of domain change (for subdomain matching)
+                        await self._emit("domain_changed", {"domain": www_domain})
 
                         # Mark www URL as visited to avoid duplicate crawls
                         self.visited_pages.add(www_url)
@@ -1028,18 +1036,28 @@ class APICrawler:
                 if capture_count['count'] >= MAX_MESSAGES:
                     return
                 try:
-                    text = payload[:MAX_PAYLOAD_SIZE] if len(payload) > MAX_PAYLOAD_SIZE else payload
+                    # Detect binary vs text
+                    is_binary = isinstance(payload, bytes)
+                    if is_binary:
+                        # Convert to hex for display
+                        text = payload[:MAX_PAYLOAD_SIZE].hex() if len(payload) > MAX_PAYLOAD_SIZE else payload.hex()
+                        payload_type = 'binary'
+                    else:
+                        text = payload[:MAX_PAYLOAD_SIZE] if len(payload) > MAX_PAYLOAD_SIZE else payload
+                        payload_type = 'text'
+
                     truncated = len(payload) > MAX_PAYLOAD_SIZE
                     msg = {
                         'direction': 'sent',
                         'payload': text,
+                        'payload_type': payload_type,
                         'truncated': truncated,
                         'size': len(payload),
                         'timestamp': datetime.now().isoformat()
                     }
                     endpoint.websocket_messages.append(msg)
                     capture_count['count'] += 1
-                    logger.debug(f"WS sent: {len(payload)} bytes (captured {capture_count['count']})")
+                    logger.debug(f"WS sent: {len(payload)} bytes ({payload_type}, captured {capture_count['count']})")
                     # Emit live update
                     asyncio.ensure_future(self._emit("ws_message", {
                         'host': host,
@@ -1053,18 +1071,28 @@ class APICrawler:
                 if capture_count['count'] >= MAX_MESSAGES:
                     return
                 try:
-                    text = payload[:MAX_PAYLOAD_SIZE] if len(payload) > MAX_PAYLOAD_SIZE else payload
+                    # Detect binary vs text
+                    is_binary = isinstance(payload, bytes)
+                    if is_binary:
+                        # Convert to hex for display
+                        text = payload[:MAX_PAYLOAD_SIZE].hex() if len(payload) > MAX_PAYLOAD_SIZE else payload.hex()
+                        payload_type = 'binary'
+                    else:
+                        text = payload[:MAX_PAYLOAD_SIZE] if len(payload) > MAX_PAYLOAD_SIZE else payload
+                        payload_type = 'text'
+
                     truncated = len(payload) > MAX_PAYLOAD_SIZE
                     msg = {
                         'direction': 'received',
                         'payload': text,
+                        'payload_type': payload_type,
                         'truncated': truncated,
                         'size': len(payload),
                         'timestamp': datetime.now().isoformat()
                     }
                     endpoint.websocket_messages.append(msg)
                     capture_count['count'] += 1
-                    logger.debug(f"WS received: {len(payload)} bytes (captured {capture_count['count']})")
+                    logger.debug(f"WS received: {len(payload)} bytes ({payload_type}, captured {capture_count['count']})")
                     # Emit live update
                     asyncio.ensure_future(self._emit("ws_message", {
                         'host': host,
