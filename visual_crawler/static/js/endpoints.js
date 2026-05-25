@@ -182,10 +182,15 @@ function renderWebSocketView() {
       ? ep.query_params.slice(0, 2).join(', ') + (ep.query_params.length > 2 ? '...' : '')
       : '—';
 
+    const msgCount = (ep.websocket_messages || []).length;
+    const msgBadge = msgCount > 0
+      ? `<span style="display:inline-block;padding:0.15rem 0.4rem;background:rgba(99,102,241,0.1);color:#6366f1;border:1px solid rgba(99,102,241,0.25);border-radius:3px;font-size:0.7rem;font-weight:600;margin-left:0.5rem;" title="${msgCount} messages captured">${msgCount}</span>`
+      : '';
+
     tr.innerHTML = `
       <td style="text-align:center;color:var(--text-muted)">${idx + 1}</td>
       <td style="text-align:center;font-size:1rem" title="${securityTitle}">${securityIcon}</td>
-      <td class="path-cell">${escHtml(ep.path)}</td>
+      <td class="path-cell">${escHtml(ep.path)}${msgBadge}</td>
       <td class="host-cell">${escHtml(ep.host)}${hostBadge}</td>
       <td class="reason-cell">${escHtml(queryDisplay)}</td>
     `;
@@ -252,8 +257,8 @@ function toggleWsTraffic(clickedRow, ep) {
           ? `<span class="api-pii-badge" title="PII: ${escHtml(piiMatches.join(', '))}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII</span>`
           : '';
 
-        const explainBtn = isBinary
-          ? ''
+        const actionBtn = isBinary
+          ? '<button class="ws-decode-btn" onclick="decodeBinaryPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(168,85,247,0.6);color:#fff;border:1px solid rgba(168,85,247,0.4);border-radius:3px;cursor:pointer;font-weight:500">Decode</button>'
           : '<button class="ws-explain-btn" onclick="explainWsPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:3px;cursor:pointer;font-weight:500">Explain</button>';
 
         msgDiv.innerHTML = `
@@ -263,7 +268,7 @@ function toggleWsTraffic(clickedRow, ep) {
             <span>${sizeStr}</span>
             ${typeBadge}
             ${piiBadge}
-            ${explainBtn}
+            ${actionBtn}
           </div>
           <div class="ws-message-body" style="font-family:${isBinary ? 'monospace' : 'inherit'};word-break:break-all">${escHtml(msg.payload)}</div>
           ${msg.truncated ? '<div class="ws-message-truncated">⚠️ Truncated to 1KB</div>' : ''}
@@ -273,7 +278,12 @@ function toggleWsTraffic(clickedRow, ep) {
         chatContainer.appendChild(msgDiv);
 
         // Store raw payload on button element (not HTML attribute to avoid escaping)
-        if (!isBinary) {
+        if (isBinary) {
+          const btn = msgDiv.querySelector('.ws-decode-btn');
+          if (btn) {
+            btn._hexData = msg.payload;
+          }
+        } else {
           const btn = msgDiv.querySelector('.ws-explain-btn');
           if (btn) {
             btn._payload = msg.payload;
@@ -382,6 +392,81 @@ Response format: plain text, no JSON.`;
       </div>
     `;
     btn.textContent = 'Explain';
+    btn.disabled = false;
+  }
+}
+
+async function decodeBinaryPayload(event) {
+  event.stopPropagation();
+  const btn = event.target;
+  const msgDiv = btn.closest('.ws-message');
+  const explanationDiv = msgDiv.querySelector('.ws-explanation');
+
+  const hexData = btn._hexData;
+
+  // Toggle if already expanded
+  if (explanationDiv.style.display !== 'none') {
+    explanationDiv.style.display = 'none';
+    btn.textContent = 'Decode';
+    return;
+  }
+
+  // Show loading
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  explanationDiv.style.display = 'block';
+  explanationDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted)">Decoding binary data...</div>';
+
+  try {
+    const response = await fetch('/api/decode-binary-payload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hex_data: hexData })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+
+    // Format decodings
+    let html = '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.5rem">🔍 Decoded Formats</div>';
+
+    if (result.decodings && result.decodings.length > 0) {
+      result.decodings.forEach(dec => {
+        html += `<div style="margin-bottom:1rem;padding:0.75rem;background:var(--bg);border-radius:4px;border-left:3px solid var(--primary)">`;
+        html += `<div style="font-weight:600;font-size:0.75rem;margin-bottom:0.5rem;color:var(--primary)">${escHtml(dec.format)}</div>`;
+
+        if (Array.isArray(dec.content)) {
+          // ASCII strings
+          html += '<div style="font-size:0.8rem;font-family:monospace">';
+          dec.content.forEach(str => {
+            html += `<div style="padding:0.2rem 0">${escHtml(str)}</div>`;
+          });
+          html += '</div>';
+        } else if (typeof dec.content === 'object') {
+          // Structured data
+          html += '<pre style="margin:0;font-size:0.75rem;overflow-x:auto">' + escHtml(JSON.stringify(dec.content, null, 2)) + '</pre>';
+        }
+        html += '</div>';
+      });
+    } else {
+      html += '<div style="color:var(--text-muted);font-style:italic">No recognizable format detected</div>';
+    }
+
+    explanationDiv.innerHTML = html;
+    btn.textContent = 'Hide';
+    btn.disabled = false;
+
+  } catch (error) {
+    console.error('Failed to decode payload:', error);
+    explanationDiv.innerHTML = `
+      <div style="color:var(--error);font-size:0.8rem">
+        ❌ ${escHtml(error.message)}
+      </div>
+    `;
+    btn.textContent = 'Decode';
     btn.disabled = false;
   }
 }

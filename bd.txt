@@ -1,0 +1,4 @@
+host: brd.superproxy.io
+port: 9222(default) 9515(Selenium)
+Username: brd-customer-hl_a768be82-zone-scraping_browser1
+pass: 6kr8hi9ndynr

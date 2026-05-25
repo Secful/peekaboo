@@ -1745,22 +1745,41 @@ function handleWsMessage(msg) {
   const tbody = document.getElementById('webSocketTbody');
   if (!tbody) return;
 
-  // Find row for this endpoint
-  const rows = Array.from(tbody.querySelectorAll('tr'));
-  const matchingRow = rows.find(tr => {
-    const nextRow = tr.nextElementSibling;
-    return tr.dataset.wsExpanded === 'true' &&
-           nextRow && nextRow.classList.contains('ws-chat-row');
-  });
+  // Find row for this endpoint (check all rows, not just expanded)
+  const rows = Array.from(tbody.querySelectorAll('tr[data-ws-expanded]'));
+  let matchingRow = null;
+
+  for (const tr of rows) {
+    const cells = tr.querySelectorAll('td');
+    const rowHost = cells[3]?.textContent.replace(/INT|EXT/g, '').trim();
+    const rowPath = cells[2]?.textContent.split(/\d+$/)[0].trim(); // Strip count badge
+    if (rowHost === host && rowPath === path) {
+      matchingRow = tr;
+      break;
+    }
+  }
 
   if (!matchingRow) return;
 
-  // Check if this row matches endpoint
-  const rowCells = matchingRow.querySelectorAll('td');
-  const rowHost = rowCells[3]?.textContent.trim();
-  const rowPath = rowCells[2]?.textContent.trim();
+  // Update message count badge in path cell
+  const pathCell = matchingRow.querySelectorAll('td')[2];
+  if (pathCell) {
+    const msgCount = endpoint.websocket_messages.length;
+    // Remove old badge
+    const oldBadge = pathCell.querySelector('span[title*="messages captured"]');
+    if (oldBadge) oldBadge.remove();
+    // Add new badge
+    if (msgCount > 0) {
+      const badge = document.createElement('span');
+      badge.style.cssText = 'display:inline-block;padding:0.15rem 0.4rem;background:rgba(99,102,241,0.1);color:#6366f1;border:1px solid rgba(99,102,241,0.25);border-radius:3px;font-size:0.7rem;font-weight:600;margin-left:0.5rem;';
+      badge.title = `${msgCount} messages captured`;
+      badge.textContent = msgCount;
+      pathCell.appendChild(badge);
+    }
+  }
 
-  if (rowHost !== host || rowPath !== path) return;
+  // If accordion not expanded, done (just updated count)
+  if (matchingRow.dataset.wsExpanded !== 'true') return;
 
   // Append message to accordion
   const chatRow = matchingRow.nextElementSibling;
@@ -1785,8 +1804,8 @@ function handleWsMessage(msg) {
     ? `<span class="api-pii-badge" title="PII: ${escHtml(piiMatches.join(', '))}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII</span>`
     : '';
 
-  const explainBtn = isBinary
-    ? ''
+  const actionBtn = isBinary
+    ? '<button class="ws-decode-btn" onclick="decodeBinaryPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(168,85,247,0.6);color:#fff;border:1px solid rgba(168,85,247,0.4);border-radius:3px;cursor:pointer;font-weight:500">Decode</button>'
     : '<button class="ws-explain-btn" onclick="explainWsPayload(event)" style="margin-left:auto;padding:0.2rem 0.5rem;font-size:0.7rem;background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:3px;cursor:pointer;font-weight:500">Explain</button>';
 
   msgDiv.innerHTML = `
@@ -1796,7 +1815,7 @@ function handleWsMessage(msg) {
       <span>${sizeStr}</span>
       ${typeBadge}
       ${piiBadge}
-      ${explainBtn}
+      ${actionBtn}
     </div>
     <div class="ws-message-body" style="font-family:${isBinary ? 'monospace' : 'inherit'};word-break:break-all">${escHtml(message.payload)}</div>
     ${message.truncated ? '<div class="ws-message-truncated">⚠️ Truncated to 1KB</div>' : ''}
@@ -1804,7 +1823,12 @@ function handleWsMessage(msg) {
   `;
 
   // Store raw payload data on button (not in HTML attribute to avoid escaping issues)
-  if (!isBinary) {
+  if (isBinary) {
+    const btn = msgDiv.querySelector('.ws-decode-btn');
+    if (btn) {
+      btn._hexData = message.payload;
+    }
+  } else {
     const btn = msgDiv.querySelector('.ws-explain-btn');
     if (btn) {
       btn._payload = message.payload;

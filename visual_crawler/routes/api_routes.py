@@ -85,6 +85,27 @@ async def explain_ws_payload(request: Request):
         )
 
 
+@router.post("/api/decode-binary-payload")
+async def decode_binary_payload(request: Request):
+    """Decode binary WebSocket payload."""
+    try:
+        from ..binary_decoder import decode_binary_payload as decode_fn
+        body = await request.json()
+        hex_data = body.get("hex_data", "")
+
+        if not hex_data:
+            raise HTTPException(status_code=400, detail="hex_data required")
+
+        result = decode_fn(hex_data)
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.error(f"Failed to decode binary payload: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to decode: {str(e)}"
+        )
+
+
 @router.post("/api/describe-services")
 async def describe_services(request: DescribeServicesRequest):
     """Batch-describe external service domains using AWS Bedrock with Claude."""

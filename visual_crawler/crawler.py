@@ -994,10 +994,13 @@ class APICrawler:
             elif self.api_filter == "external" and is_target_domain:
                 return
 
-            # Deduplication signature (path only - ignore host)
+            # Deduplication signature (path + query params for WebSocket)
             from .crawler_utils import _templatize
             template_path = _templatize(parsed.path)
-            sig = f"WS|{template_path}"
+            # Include query param keys (not values) for WS uniqueness
+            query_keys = sorted(parse_qs(parsed.query).keys())
+            query_sig = ",".join(query_keys) if query_keys else ""
+            sig = f"WS|{host}|{template_path}|{query_sig}"
             if sig in self.seen_signatures:
                 return
             self.seen_signatures.add(sig)
@@ -1027,13 +1030,12 @@ class APICrawler:
 
             logger.info(f"🔌 WebSocket: {url}")
 
-            # Capture all messages (no sampling)
-            capture_count = {'count': 0}
-            MAX_MESSAGES = 200  # Cap at 200 messages
+            # Capture all messages (per-connection limit)
+            MAX_MESSAGES = 100  # Cap at 100 messages per connection
             MAX_PAYLOAD_SIZE = 1024  # 1KB truncate
 
             def on_frame_sent(payload):
-                if capture_count['count'] >= MAX_MESSAGES:
+                if len(endpoint.websocket_messages) >= MAX_MESSAGES:
                     return
                 try:
                     # Detect binary vs text
@@ -1056,8 +1058,7 @@ class APICrawler:
                         'timestamp': datetime.now().isoformat()
                     }
                     endpoint.websocket_messages.append(msg)
-                    capture_count['count'] += 1
-                    logger.debug(f"WS sent: {len(payload)} bytes ({payload_type}, captured {capture_count['count']})")
+                    logger.debug(f"WS sent: {len(payload)} bytes ({payload_type}, total {len(endpoint.websocket_messages)})")
                     # Emit live update
                     asyncio.ensure_future(self._emit("ws_message", {
                         'host': host,
@@ -1068,7 +1069,7 @@ class APICrawler:
                     logger.debug(f"WS frame sent error: {e}")
 
             def on_frame_received(payload):
-                if capture_count['count'] >= MAX_MESSAGES:
+                if len(endpoint.websocket_messages) >= MAX_MESSAGES:
                     return
                 try:
                     # Detect binary vs text
@@ -1091,8 +1092,7 @@ class APICrawler:
                         'timestamp': datetime.now().isoformat()
                     }
                     endpoint.websocket_messages.append(msg)
-                    capture_count['count'] += 1
-                    logger.debug(f"WS received: {len(payload)} bytes ({payload_type}, captured {capture_count['count']})")
+                    logger.debug(f"WS received: {len(payload)} bytes ({payload_type}, total {len(endpoint.websocket_messages)})")
                     # Emit live update
                     asyncio.ensure_future(self._emit("ws_message", {
                         'host': host,
