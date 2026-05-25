@@ -187,10 +187,14 @@ function renderWebSocketView() {
       ? `<span style="display:inline-block;padding:0.15rem 0.4rem;background:rgba(99,102,241,0.1);color:#6366f1;border:1px solid rgba(99,102,241,0.25);border-radius:3px;font-size:0.7rem;font-weight:600;margin-left:0.5rem;" title="${msgCount} messages captured">${msgCount}</span>`
       : '';
 
+    const urlTokenBadge = ep.url_token_detected
+      ? `<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Auth tokens detected in URL">⚠️ URL-AUTH</span>`
+      : '';
+
     tr.innerHTML = `
       <td style="text-align:center;color:var(--text-muted)">${idx + 1}</td>
       <td style="text-align:center;font-size:1rem" title="${securityTitle}">${securityIcon}</td>
-      <td class="path-cell">${escHtml(ep.path)}${msgBadge}</td>
+      <td class="path-cell">${escHtml(ep.path)}${msgBadge}${urlTokenBadge}</td>
       <td class="host-cell">${escHtml(ep.host)}${hostBadge}</td>
       <td class="reason-cell">${escHtml(queryDisplay)}</td>
     `;
@@ -251,10 +255,18 @@ function toggleWsTraffic(clickedRow, ep) {
           ? '<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(168,85,247,0.1);color:#a855f7;border:1px solid rgba(168,85,247,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Binary data (hex encoded)">BIN</span>'
           : '';
 
-        // PII detection (skip for binary)
-        const piiMatches = isBinary ? [] : getPiiMatches(msg.payload, false);
-        const piiBadge = piiMatches.length > 0
-          ? `<span class="api-pii-badge" title="PII: ${escHtml(piiMatches.join(', '))}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII</span>`
+        // Enhanced PII detection
+        const piiRegexMatches = isBinary ? [] : getPiiRegexMatches(msg.payload);
+        const piiKeywordMatches = isBinary ? [] : getPiiMatches(msg.payload, false);
+        const allPiiMatches = [...piiRegexMatches, ...piiKeywordMatches];
+        const piiBadge = allPiiMatches.length > 0
+          ? `<span class="api-pii-badge" title="PII: ${escHtml(allPiiMatches.join(', '))}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII (${allPiiMatches.length})</span>`
+          : '';
+
+        // Auth token detection
+        const authMatches = getAuthTokenMatches(msg.payload, isBinary);
+        const authBadge = authMatches.length > 0
+          ? `<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Auth tokens: ${escHtml(authMatches.join(', '))}">⚠️ AUTH</span>`
           : '';
 
         const actionBtn = isBinary
@@ -268,6 +280,7 @@ function toggleWsTraffic(clickedRow, ep) {
             <span>${sizeStr}</span>
             ${typeBadge}
             ${piiBadge}
+            ${authBadge}
             ${actionBtn}
           </div>
           <div class="ws-message-body" style="font-family:${isBinary ? 'monospace' : 'inherit'};word-break:break-all">${escHtml(msg.payload)}</div>

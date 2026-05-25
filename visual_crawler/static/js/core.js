@@ -1798,10 +1798,18 @@ function handleWsMessage(msg) {
     ? '<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(168,85,247,0.1);color:#a855f7;border:1px solid rgba(168,85,247,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Binary data (hex encoded)">BIN</span>'
     : '';
 
-  // PII detection (skip for binary)
-  const piiMatches = isBinary ? [] : getPiiMatches(message.payload, false);
-  const piiBadge = piiMatches.length > 0
-    ? `<span class="api-pii-badge" title="PII: ${escHtml(piiMatches.join(', '))}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII</span>`
+  // Enhanced PII detection
+  const piiRegexMatches = isBinary ? [] : getPiiRegexMatches(message.payload);
+  const piiKeywordMatches = isBinary ? [] : getPiiMatches(message.payload, false);
+  const allPiiMatches = [...piiRegexMatches, ...piiKeywordMatches];
+  const piiBadge = allPiiMatches.length > 0
+    ? `<span class="api-pii-badge" title="PII: ${escHtml(allPiiMatches.join(', '))}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII (${allPiiMatches.length})</span>`
+    : '';
+
+  // Auth token detection
+  const authMatches = getAuthTokenMatches(message.payload, isBinary);
+  const authBadge = authMatches.length > 0
+    ? `<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Auth tokens: ${escHtml(authMatches.join(', '))}">⚠️ AUTH</span>`
     : '';
 
   const actionBtn = isBinary
@@ -1815,6 +1823,7 @@ function handleWsMessage(msg) {
       <span>${sizeStr}</span>
       ${typeBadge}
       ${piiBadge}
+      ${authBadge}
       ${actionBtn}
     </div>
     <div class="ws-message-body" style="font-family:${isBinary ? 'monospace' : 'inherit'};word-break:break-all">${escHtml(message.payload)}</div>

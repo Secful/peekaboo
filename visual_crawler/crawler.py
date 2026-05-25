@@ -975,6 +975,38 @@ class APICrawler:
         except Exception:
             pass
 
+    def _detect_url_tokens(self, query_params_dict: dict) -> tuple[bool, list[str]]:
+        """Detect authentication tokens in URL query parameters.
+
+        Args:
+            query_params_dict: Dict from parse_qs(url.query)
+
+        Returns:
+            tuple: (has_token: bool, issue_details: list[str])
+        """
+        issues = []
+        suspicious_keys = ['token', 'apikey', 'api_key', 'authorization',
+                           'bearer', 'sid', 'session', 'key', 'auth']
+
+        for key, values in query_params_dict.items():
+            key_lower = key.lower()
+
+            # Check suspicious parameter names
+            if any(sk in key_lower for sk in suspicious_keys):
+                issues.append(f"auth_param:{key}")
+                continue
+
+            # Check for JWT format or high entropy values
+            for val in values:
+                if isinstance(val, list):
+                    val = val[0] if val else ""
+                if val.startswith('eyJ'):  # JWT
+                    issues.append(f"jwt_in_url:{key}")
+                elif len(val) >= 40 and val.replace('-', '').replace('_', '').isalnum():  # High entropy
+                    issues.append(f"high_entropy_param:{key}")
+
+        return (len(issues) > 0, issues)
+
     async def _on_websocket(self, ws, page_url: str) -> None:
         """Handle WebSocket connection establishment."""
         try:
@@ -1006,7 +1038,12 @@ class APICrawler:
             self.seen_signatures.add(sig)
 
             # Extract query params
-            query_params = [f"{k}={v}" for k, v in parse_qs(parsed.query).items()]
+            query_params_dict = parse_qs(parsed.query)
+            query_params = [f"{k}={v}" for k, v in query_params_dict.items()]
+
+            # Detect URL tokens
+            url_has_tokens, url_token_issues = self._detect_url_tokens(query_params_dict)
+            security_issues = url_token_issues if url_token_issues else None
 
             # Create endpoint entry with message sampling
             endpoint = DiscoveredEndpoint(
@@ -1022,7 +1059,9 @@ class APICrawler:
                 timestamp=datetime.now().isoformat(),
                 resource_type="websocket",
                 api_confidence="API",  # WebSockets are always real-time APIs
-                websocket_messages=[]  # Will be populated by frame listeners
+                websocket_messages=[],  # Will be populated by frame listeners
+                security_issues=security_issues,
+                url_token_detected=url_has_tokens
             )
 
             self.endpoints.append(endpoint)

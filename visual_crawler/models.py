@@ -35,6 +35,10 @@ class DiscoveredEndpoint:
     # WebSocket message sampling
     websocket_messages: Optional[list[dict]] = None  # Sampled WebSocket frames
 
+    # WebSocket security issues
+    security_issues: Optional[list[str]] = None  # Security issue types detected
+    url_token_detected: bool = False  # Auth tokens found in URL params
+
 
 # Pydantic request models for API routes
 
