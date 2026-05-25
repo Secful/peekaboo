@@ -985,25 +985,21 @@ class APICrawler:
             tuple: (has_token: bool, issue_details: list[str])
         """
         issues = []
-        suspicious_keys = ['token', 'apikey', 'api_key', 'authorization',
-                           'bearer', 'sid', 'session', 'key', 'auth']
 
         for key, values in query_params_dict.items():
-            key_lower = key.lower()
-
-            # Check suspicious parameter names
-            if any(sk in key_lower for sk in suspicious_keys):
-                issues.append(f"auth_param:{key}")
-                continue
-
-            # Check for JWT format or high entropy values
             for val in values:
                 if isinstance(val, list):
                     val = val[0] if val else ""
-                if val.startswith('eyJ'):  # JWT
+
+                # JWT format (high confidence)
+                if val.startswith('eyJ'):
                     issues.append(f"jwt_in_url:{key}")
-                elif len(val) >= 40 and val.replace('-', '').replace('_', '').isalnum():  # High entropy
-                    issues.append(f"high_entropy_param:{key}")
+                # Stripe/API key patterns (high confidence)
+                elif val.startswith(('sk_live_', 'pk_live_', 'rk_live_', 'sk_test_', 'pk_test_')):
+                    issues.append(f"api_key_in_url:{key}")
+                # Very long random-looking tokens (64+ chars, no separators)
+                elif len(val) >= 64 and '-' not in val and '_' not in val and val.isalnum():
+                    issues.append(f"long_token_in_url:{key}")
 
         return (len(issues) > 0, issues)
 
