@@ -257,16 +257,23 @@ function toggleWsTraffic(clickedRow, ep) {
 
         // Enhanced PII detection
         const piiRegexMatches = isBinary ? [] : getPiiRegexMatches(msg.payload);
-        const piiKeywordMatches = isBinary ? [] : getPiiMatches(msg.payload, false);
+        const piiKeywordMatches = isBinary ? [] : getPiiMatches(msg.payload, false).map(k => ({type: k, confidence: 'low', sample: ''}));
         const allPiiMatches = [...piiRegexMatches, ...piiKeywordMatches];
+
+        const piiTooltip = allPiiMatches.map(m =>
+          `${m.type} (${m.confidence})${m.sample ? ': ' + m.sample : ''}`
+        ).join('\n');
         const piiBadge = allPiiMatches.length > 0
-          ? `<span class="api-pii-badge" title="PII: ${escHtml(allPiiMatches.join(', '))}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII (${allPiiMatches.length})</span>`
+          ? `<span class="api-pii-badge" title="${escHtml(piiTooltip)}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII (${allPiiMatches.length})</span>`
           : '';
 
         // Auth token detection
         const authMatches = getAuthTokenMatches(msg.payload, isBinary);
+        const authTooltip = authMatches.map(m =>
+          `${m.type} (${m.confidence}): ${m.sample}`
+        ).join('\n');
         const authBadge = authMatches.length > 0
-          ? `<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Auth tokens: ${escHtml(authMatches.join(', '))}">⚠️ AUTH</span>`
+          ? `<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="${escHtml(authTooltip)}">⚠️ AUTH (${authMatches.length})</span>`
           : '';
 
         const actionBtn = isBinary

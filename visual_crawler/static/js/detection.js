@@ -27,19 +27,19 @@ function getPiiMatches(text, jsonKeysOnly) {
 
 // Enhanced PII detection with regex patterns
 const PII_REGEX_PATTERNS = [
-  { name: 'email', pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g },
-  { name: 'credit_card', pattern: /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b/g, validate: true },
-  { name: 'ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g },
-  { name: 'phone', pattern: /\b(?:\+1[-.]?)?\(?([0-9]{3})\)?[-.]?([0-9]{3})[-.]?([0-9]{4})\b/g }
+  { name: 'email', pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, confidence: 'high' },
+  { name: 'credit_card', pattern: /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b/g, validate: true, confidence: 'high' },
+  { name: 'ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g, confidence: 'high' },
+  { name: 'phone', pattern: /\b(?:\+1[-.]?)?\(?([0-9]{3})\)?[-.]?([0-9]{3})[-.]?([0-9]{4})\b/g, confidence: 'medium' }
 ];
 
 const AUTH_TOKEN_PATTERNS = [
-  { name: 'jwt', pattern: /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g },
-  { name: 'bearer', pattern: /Bearer\s+[A-Za-z0-9_\-\.]+/gi },
-  { name: 'api_key_stripe', pattern: /\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{24,}\b/g },
-  { name: 'api_key_openai', pattern: /\bsk-[A-Za-z0-9]{48}\b/g },
-  { name: 'basic_auth', pattern: /Authorization:\s*Basic\s+[A-Za-z0-9+\/=]+/gi },
-  { name: 'oauth_token', pattern: /(?:access_token|refresh_token)["']?\s*[:=]\s*["']?[A-Za-z0-9_\-\.]{32,}/gi }
+  { name: 'jwt', pattern: /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, confidence: 'high' },
+  { name: 'bearer', pattern: /Bearer\s+[A-Za-z0-9_\-\.]+/gi, confidence: 'high' },
+  { name: 'api_key_stripe', pattern: /\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{24,}\b/g, confidence: 'high' },
+  { name: 'api_key_openai', pattern: /\bsk-[A-Za-z0-9]{48}\b/g, confidence: 'high' },
+  { name: 'basic_auth', pattern: /Authorization:\s*Basic\s+[A-Za-z0-9+\/=]+/gi, confidence: 'high' },
+  { name: 'oauth_token', pattern: /(?:access_token|refresh_token)["']?\s*[:=]\s*["']?[A-Za-z0-9_\-\.]{32,}/gi, confidence: 'high' }
 ];
 
 function luhnCheck(cardNumber) {
@@ -62,9 +62,19 @@ function getPiiRegexMatches(text) {
     if (found) {
       if (pattern.validate) {
         const valid = found.filter(m => luhnCheck(m));
-        if (valid.length > 0) matches.push(pattern.name);
+        if (valid.length > 0) {
+          matches.push({
+            type: pattern.name,
+            confidence: pattern.confidence,
+            sample: valid[0].substring(0, 20) + (valid[0].length > 20 ? '...' : '')
+          });
+        }
       } else {
-        matches.push(pattern.name);
+        matches.push({
+          type: pattern.name,
+          confidence: pattern.confidence,
+          sample: found[0].substring(0, 20) + (found[0].length > 20 ? '...' : '')
+        });
       }
     }
   });
@@ -81,8 +91,13 @@ function getAuthTokenMatches(text, isBinary = false) {
   }
   const matches = [];
   AUTH_TOKEN_PATTERNS.forEach(pattern => {
-    if (searchText.match(pattern.pattern)) {
-      matches.push(pattern.name);
+    const found = searchText.match(pattern.pattern);
+    if (found) {
+      matches.push({
+        type: pattern.name,
+        confidence: pattern.confidence,
+        sample: found[0].substring(0, 30) + (found[0].length > 30 ? '...' : '')
+      });
     }
   });
   return matches;
