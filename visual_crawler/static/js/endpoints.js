@@ -255,16 +255,15 @@ function toggleWsTraffic(clickedRow, ep) {
           ? '<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(168,85,247,0.1);color:#a855f7;border:1px solid rgba(168,85,247,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Binary data (hex encoded)">BIN</span>'
           : '';
 
-        // Enhanced PII detection
+        // Enhanced PII detection (high confidence only)
         const piiRegexMatches = isBinary ? [] : getPiiRegexMatches(msg.payload);
-        const piiKeywordMatches = isBinary ? [] : getPiiMatches(msg.payload, false).map(k => ({type: k, confidence: 'low', sample: ''}));
-        const allPiiMatches = [...piiRegexMatches, ...piiKeywordMatches];
+        const highConfidencePii = piiRegexMatches.filter(m => m.confidence === 'high');
 
-        const piiTooltip = allPiiMatches.map(m =>
-          `${m.type} (${m.confidence})${m.sample ? ': ' + m.sample : ''}`
+        const piiTooltip = highConfidencePii.map(m =>
+          `${m.type}${m.key ? ' (' + m.key + ')' : ''}: ${m.sample}`
         ).join('\n');
-        const piiBadge = allPiiMatches.length > 0
-          ? `<span class="api-pii-badge" title="${escHtml(piiTooltip)}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII (${allPiiMatches.length})</span>`
+        const piiBadge = highConfidencePii.length > 0
+          ? `<span class="api-pii-badge" title="${escHtml(piiTooltip)}" style="font-size:0.6rem;vertical-align:middle;margin-left:0.5rem;">PII (${highConfidencePii.length})</span>`
           : '';
 
         // Auth token detection
