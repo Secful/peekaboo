@@ -57,27 +57,91 @@ function luhnCheck(cardNumber) {
 function getPiiRegexMatches(text) {
   if (!text) return [];
   const matches = [];
-  PII_REGEX_PATTERNS.forEach(pattern => {
-    const found = text.match(pattern.pattern);
-    if (found) {
-      if (pattern.validate) {
-        const valid = found.filter(m => luhnCheck(m));
-        if (valid.length > 0) {
-          matches.push({
-            type: pattern.name,
-            confidence: pattern.confidence,
-            sample: valid[0].substring(0, 20) + (valid[0].length > 20 ? '...' : '')
-          });
+
+  // Try parse as JSON for context-aware detection
+  let jsonObj = null;
+  try {
+    jsonObj = JSON.parse(text);
+  } catch { /* Not JSON, fall back to text matching */ }
+
+  if (jsonObj) {
+    // Context-aware: check key names + values
+    const keyHints = {
+      'email': ['email', 'mail', 'e_mail'],
+      'credit_card': ['card', 'cc', 'credit', 'payment', 'pan'],
+      'ssn': ['ssn', 'social', 'tax_id', 'national_id'],
+      'phone': ['phone', 'tel', 'mobile', 'cell', 'fax']
+    };
+
+    function walkJson(obj, path = '') {
+      if (!obj || typeof obj !== 'object') return;
+
+      for (const [key, value] of Object.entries(obj)) {
+        const keyLower = key.toLowerCase();
+
+        if (typeof value === 'string') {
+          // Check each pattern
+          for (const pattern of PII_REGEX_PATTERNS) {
+            const found = value.match(pattern.pattern);
+            if (found) {
+              // Validate key hints match
+              const hints = keyHints[pattern.name] || [];
+              const keyMatches = hints.some(hint => keyLower.includes(hint));
+
+              if (keyMatches) {
+                if (pattern.validate) {
+                  const valid = found.filter(m => luhnCheck(m));
+                  if (valid.length > 0) {
+                    matches.push({
+                      type: pattern.name,
+                      confidence: pattern.confidence,
+                      sample: valid[0].substring(0, 20) + (valid[0].length > 20 ? '...' : ''),
+                      key: key
+                    });
+                  }
+                } else {
+                  matches.push({
+                    type: pattern.name,
+                    confidence: pattern.confidence,
+                    sample: found[0].substring(0, 20) + (found[0].length > 20 ? '...' : ''),
+                    key: key
+                  });
+                }
+              }
+            }
+          }
+        } else if (typeof value === 'object') {
+          walkJson(value, path ? `${path}.${key}` : key);
         }
-      } else {
-        matches.push({
-          type: pattern.name,
-          confidence: pattern.confidence,
-          sample: found[0].substring(0, 20) + (found[0].length > 20 ? '...' : '')
-        });
       }
     }
-  });
+
+    walkJson(jsonObj);
+  } else {
+    // Fallback: text matching (lower confidence)
+    PII_REGEX_PATTERNS.forEach(pattern => {
+      const found = text.match(pattern.pattern);
+      if (found) {
+        if (pattern.validate) {
+          const valid = found.filter(m => luhnCheck(m));
+          if (valid.length > 0) {
+            matches.push({
+              type: pattern.name,
+              confidence: 'low',  // Lower confidence without context
+              sample: valid[0].substring(0, 20) + (valid[0].length > 20 ? '...' : '')
+            });
+          }
+        } else {
+          matches.push({
+            type: pattern.name,
+            confidence: 'low',
+            sample: found[0].substring(0, 20) + (found[0].length > 20 ? '...' : '')
+          });
+        }
+      }
+    });
+  }
+
   return matches;
 }
 
