@@ -255,8 +255,19 @@ function toggleWsTraffic(clickedRow, ep) {
           ? '<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(168,85,247,0.1);color:#a855f7;border:1px solid rgba(168,85,247,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Binary data (hex encoded)">BIN</span>'
           : '';
 
+        // Base64 detection and decoding
+        let displayPayload = msg.payload;
+        let base64Badge = '';
+        if (!isBinary) {
+          const b64Result = decodeBase64InJson(msg.payload);
+          if (b64Result && b64Result.hasBase64) {
+            displayPayload = b64Result.decoded;
+            base64Badge = '<span style="display:inline-block;padding:0.15rem 0.35rem;background:rgba(59,130,246,0.1);color:#3b82f6;border:1px solid rgba(59,130,246,0.25);border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.5rem;" title="Base64 decoded">B64</span>';
+          }
+        }
+
         // Enhanced PII detection (high confidence only)
-        const piiRegexMatches = isBinary ? [] : getPiiRegexMatches(msg.payload);
+        const piiRegexMatches = isBinary ? [] : getPiiRegexMatches(displayPayload);
         const highConfidencePii = piiRegexMatches.filter(m => m.confidence === 'high');
 
         const piiTooltip = highConfidencePii.map(m =>
@@ -267,7 +278,7 @@ function toggleWsTraffic(clickedRow, ep) {
           : '';
 
         // Auth token detection
-        const authMatches = getAuthTokenMatches(msg.payload, isBinary);
+        const authMatches = getAuthTokenMatches(displayPayload, isBinary);
         const authTooltip = authMatches.map(m =>
           `${m.type} (${m.confidence}): ${m.sample}`
         ).join('\n');
@@ -285,11 +296,12 @@ function toggleWsTraffic(clickedRow, ep) {
             <span>${time}</span>
             <span>${sizeStr}</span>
             ${typeBadge}
+            ${base64Badge}
             ${piiBadge}
             ${authBadge}
             ${actionBtn}
           </div>
-          <div class="ws-message-body" style="font-family:${isBinary ? 'monospace' : 'inherit'};word-break:break-all">${escHtml(msg.payload)}</div>
+          <div class="ws-message-body" style="font-family:${isBinary ? 'monospace' : 'inherit'};word-break:break-all">${escHtml(displayPayload)}</div>
           ${msg.truncated ? '<div class="ws-message-truncated">⚠️ Truncated to 1KB</div>' : ''}
           <div class="ws-explanation" style="display:none;margin-top:0.5rem;padding:0.75rem;background:var(--bg);border-radius:4px;border-left:3px solid var(--primary)"></div>
         `;

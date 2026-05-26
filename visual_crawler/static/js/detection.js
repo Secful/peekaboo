@@ -172,6 +172,66 @@ function decodeHexToString(hex) {
   return new TextDecoder('utf-8').decode(new Uint8Array(bytes));
 }
 
+function detectBase64(text) {
+  // Base64 pattern: 20+ chars, A-Za-z0-9+/= only, proper padding
+  const b64Pattern = /^[A-Za-z0-9+/]{20,}={0,2}$/;
+
+  // Check if looks like base64
+  if (!b64Pattern.test(text.trim())) return null;
+
+  try {
+    const decoded = atob(text.trim());
+    // Verify decoded is printable text (not binary)
+    const isPrintable = decoded.split('').every(c => {
+      const code = c.charCodeAt(0);
+      return code >= 32 || code === 10 || code === 13 || code === 9; // printable + newline/tab
+    });
+
+    if (isPrintable && decoded.length > 0) {
+      return decoded;
+    }
+  } catch { /* Not valid base64 */ }
+
+  return null;
+}
+
+function decodeBase64InJson(text) {
+  // Try parse JSON and decode base64 values
+  try {
+    const obj = JSON.parse(text);
+    let hasDecoded = false;
+    const decoded = {};
+
+    function walk(o, result) {
+      for (const [key, value] of Object.entries(o)) {
+        if (typeof value === 'string') {
+          const b64Decoded = detectBase64(value);
+          if (b64Decoded) {
+            result[key] = b64Decoded;
+            result[key + '_base64'] = true;
+            hasDecoded = true;
+          } else {
+            result[key] = value;
+          }
+        } else if (typeof value === 'object' && value !== null) {
+          result[key] = Array.isArray(value) ? [] : {};
+          walk(value, result[key]);
+        } else {
+          result[key] = value;
+        }
+      }
+    }
+
+    walk(obj, decoded);
+
+    if (hasDecoded) {
+      return { decoded: JSON.stringify(decoded, null, 2), hasBase64: true };
+    }
+  } catch { /* Not JSON */ }
+
+  return null;
+}
+
 function getAiMatches(text) {
   if (!text) return [];
   const lower = text.toLowerCase();
