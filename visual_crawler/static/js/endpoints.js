@@ -317,6 +317,11 @@ function toggleWsTraffic(clickedRow, ep) {
     clickedRow.insertAdjacentElement('afterend', chatRow);
     clickedRow.dataset.wsExpanded = 'true';
 
+    // Scroll clicked row into view so accordion has room
+    setTimeout(() => {
+      clickedRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+
     // Scroll to bottom on initial open
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
