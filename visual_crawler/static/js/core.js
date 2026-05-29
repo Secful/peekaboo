@@ -857,6 +857,7 @@ function handleEvent(msg) {
       break;
 
     case 'security_insights':
+      if (!appState.securityInsights) appState.securityInsights = {};
       appState.securityInsights[msg.subdomain] = msg;
       applySecurityPill(msg.subdomain);
       if (msg.findings_count > 0) {
@@ -867,6 +868,7 @@ function handleEvent(msg) {
       break;
 
     case 'js_resources':
+      if (!appState.jsResources) appState.jsResources = {};
       appState.jsResources[msg.subdomain] = msg;
       applyJsResources(msg.subdomain, msg.urls || []);
       if (msg.urls_count > 0) {
@@ -877,6 +879,7 @@ function handleEvent(msg) {
       break;
 
     case 'open_ports':
+      if (!appState.openPorts) appState.openPorts = {};
       appState.openPorts[msg.subdomain] = msg;
       applyOpenPortsPill(msg.subdomain);
       if (msg.open_ports_count > 0) {
@@ -885,6 +888,7 @@ function handleEvent(msg) {
       break;
 
     case 'js_secrets':
+      if (!appState.jsSecrets) appState.jsSecrets = {};
       appState.jsSecrets[msg.subdomain] = msg;
       applyJsSecretsPill(msg.subdomain);
       if (msg.findings_count > 0) {
@@ -895,6 +899,7 @@ function handleEvent(msg) {
       break;
 
     case 'agentic':
+      if (!appState.agentic) appState.agentic = {};
       appState.agentic[msg.subdomain] = msg;
       applyAgenticPill(msg.subdomain);
       if (msg.findings_count > 0) {
@@ -903,6 +908,7 @@ function handleEvent(msg) {
       break;
 
     case 'extracted_apis':
+      if (!appState.extractedApis) appState.extractedApis = {};
       appState.extractedApis[msg.subdomain] = msg;
       applyExtractedApis(msg.subdomain);
       if (msg.findings_count > 0) {
@@ -912,6 +918,7 @@ function handleEvent(msg) {
 
     case 'api_specs':
       if (msg.findings_count > 0) {
+        if (!appState.apiSpecs) appState.apiSpecs = {};
         appState.apiSpecs[msg.subdomain] = msg;
         applyApiSpecPill(msg.subdomain);
         addLog('', `API specs for ${msg.subdomain}: ${msg.findings_count} spec(s) found`, 'api_specs');
