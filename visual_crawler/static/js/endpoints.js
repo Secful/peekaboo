@@ -98,9 +98,10 @@ function addEndpointRow(ep, flash=false) {
           'Netlify': { bg: 'rgba(0,199,183,0.1)', color: '#00c7b7', border: 'rgba(0,199,183,0.3)' }
         };
 
-        techs.forEach(tech => {
-          const colors = techColors[tech] || { bg: 'rgba(107,114,128,0.1)', color: '#6b7280', border: 'rgba(107,114,128,0.3)' };
-          pathSuffixBadges += ` <span style="display:inline-block;padding:0.15rem 0.4rem;background:${colors.bg};color:${colors.color};border:1px solid ${colors.border};border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.25rem;" title="Technology: ${tech}">${tech}</span>`;
+        techs.forEach(t => {
+          const colors = techColors[t.tech] || { bg: 'rgba(107,114,128,0.1)', color: '#6b7280', border: 'rgba(107,114,128,0.3)' };
+          const tooltip = `${t.tech}\nHeader: ${t.header}\nValue: ${escHtml(t.value)}`;
+          pathSuffixBadges += ` <span style="display:inline-block;padding:0.15rem 0.4rem;background:${colors.bg};color:${colors.color};border:1px solid ${colors.border};border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.25rem;" title="${escHtml(tooltip)}">${t.tech}</span>`;
         });
       }
     }

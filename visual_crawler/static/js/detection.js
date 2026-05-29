@@ -320,7 +320,7 @@ const TECH_PATTERNS = {
 function detectTechnologiesFromHeaders(headers) {
   if (!headers || typeof headers !== 'object') return [];
 
-  const detected = new Set();
+  const detected = [];
   const headerKeys = Object.keys(headers).map(k => k.toLowerCase());
 
   // Special cases requiring value inspection
@@ -336,39 +336,41 @@ function detectTechnologiesFromHeaders(headers) {
         // Value-dependent detection
         if (patternLower === 'server') {
           if (tech === 'Apache' && serverValue.includes('apache')) {
-            detected.add(tech);
+            detected.push({ tech, header: 'server', value: serverValue });
             break;
           } else if (tech === 'IIS' && serverValue.includes('microsoft-iis')) {
-            detected.add(tech);
+            detected.push({ tech, header: 'server', value: serverValue });
             break;
           } else if (tech === 'Django' && serverValue.includes('wsgiserver')) {
-            detected.add(tech);
+            detected.push({ tech, header: 'server', value: serverValue });
             break;
           } else if (tech === 'Netlify' && serverValue.includes('netlify')) {
-            detected.add(tech);
+            detected.push({ tech, header: 'server', value: serverValue });
             break;
           }
         } else if (patternLower === 'via') {
           if (tech === 'Varnish' && viaValue.includes('varnish')) {
-            detected.add(tech);
+            detected.push({ tech, header: 'via', value: viaValue });
             break;
           } else if (tech === 'Heroku' && viaValue.includes('heroku')) {
-            detected.add(tech);
+            detected.push({ tech, header: 'via', value: viaValue });
             break;
           }
         } else if (patternLower === 'x-powered-by') {
           if (tech === 'Express' && poweredByValue.includes('express')) {
-            detected.add(tech);
+            detected.push({ tech, header: 'x-powered-by', value: poweredByValue });
             break;
           }
         } else {
-          // Direct header name match
-          detected.add(tech);
+          // Direct header name match - get actual value
+          const actualKey = Object.keys(headers).find(k => k.toLowerCase() === patternLower);
+          const value = actualKey ? headers[actualKey] : '';
+          detected.push({ tech, header: pattern, value: String(value).substring(0, 50) });
           break;
         }
       }
     }
   }
 
-  return Array.from(detected);
+  return detected;
 }
