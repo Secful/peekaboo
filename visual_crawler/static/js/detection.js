@@ -292,3 +292,83 @@ function getSubdomainStatusClass(status) {
   if (status >= 500) return 'subdomain-status-5xx';
   return 'subdomain-status-0';
 }
+
+// Technology detection from HTTP response headers
+const TECH_PATTERNS = {
+  "AWS": ["x-amz-request-id", "x-amz-id-2", "x-amzn-requestid", "x-amzn-trace-id", "x-amz-cf-id", "x-amz-cf-pop"],
+  "Cloudflare": ["cf-ray", "cf-cache-status", "cf-connecting-ip", "cf-ipcountry", "cf-worker"],
+  "GCP": ["x-cloud-trace-context", "x-google-cache-control", "x-goog-request-id"],
+  "Azure": ["x-ms-request-id", "x-ms-correlation-request-id", "x-ms-version", "x-ms-blob-type"],
+  "Fastly": ["x-served-by", "x-cache", "x-cache-hits", "x-timer", "surrogate-key"],
+  "Akamai": ["x-check-cacheable", "x-akamai-request-id", "x-akamai-edgescape", "true-client-ip"],
+  "GitHub": ["x-github-request-id", "x-ratelimit-limit", "x-oauth-scopes"],
+  "Stripe": ["stripe-version", "idempotency-key", "stripe-signature"],
+  "Vercel": ["x-vercel-id", "x-vercel-cache", "x-matched-path", "x-vercel-deployment-url"],
+  "Nginx": ["x-accel-redirect", "x-accel-buffering", "x-nginx-cache"],
+  "Rails": ["x-runtime", "x-request-id"],
+  "Apache": ["server"],
+  "Express": ["x-powered-by"],
+  "Django": ["x-django-version", "server"],
+  "Laravel": ["x-laravel-session", "x-laravel-cache"],
+  "ASP.NET": ["x-aspnet-version", "x-aspnetmvc-version"],
+  "IIS": ["server"],
+  "Varnish": ["via", "x-varnish"],
+  "Heroku": ["via"],
+  "Netlify": ["x-nf-request-id", "server"]
+};
+
+function detectTechnologiesFromHeaders(headers) {
+  if (!headers || typeof headers !== 'object') return [];
+
+  const detected = new Set();
+  const headerKeys = Object.keys(headers).map(k => k.toLowerCase());
+
+  // Special cases requiring value inspection
+  const serverValue = (headers['server'] || headers['Server'] || '').toLowerCase();
+  const viaValue = (headers['via'] || headers['Via'] || '').toLowerCase();
+  const poweredByValue = (headers['x-powered-by'] || headers['X-Powered-By'] || '').toLowerCase();
+
+  for (const [tech, patterns] of Object.entries(TECH_PATTERNS)) {
+    for (const pattern of patterns) {
+      const patternLower = pattern.toLowerCase();
+
+      if (headerKeys.includes(patternLower)) {
+        // Value-dependent detection
+        if (patternLower === 'server') {
+          if (tech === 'Apache' && serverValue.includes('apache')) {
+            detected.add(tech);
+            break;
+          } else if (tech === 'IIS' && serverValue.includes('microsoft-iis')) {
+            detected.add(tech);
+            break;
+          } else if (tech === 'Django' && serverValue.includes('wsgiserver')) {
+            detected.add(tech);
+            break;
+          } else if (tech === 'Netlify' && serverValue.includes('netlify')) {
+            detected.add(tech);
+            break;
+          }
+        } else if (patternLower === 'via') {
+          if (tech === 'Varnish' && viaValue.includes('varnish')) {
+            detected.add(tech);
+            break;
+          } else if (tech === 'Heroku' && viaValue.includes('heroku')) {
+            detected.add(tech);
+            break;
+          }
+        } else if (patternLower === 'x-powered-by') {
+          if (tech === 'Express' && poweredByValue.includes('express')) {
+            detected.add(tech);
+            break;
+          }
+        } else {
+          // Direct header name match
+          detected.add(tech);
+          break;
+        }
+      }
+    }
+  }
+
+  return Array.from(detected);
+}

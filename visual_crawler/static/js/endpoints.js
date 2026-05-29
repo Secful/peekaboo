@@ -70,6 +70,40 @@ function addEndpointRow(ep, flash=false) {
       if (matches.length) piiDetails.push(`${src.label}: ${matches.join(', ')}`);
     }
     if (piiDetails.length) pathSuffixBadges += ` <span class="api-pii-badge" title="PII — ${escHtml(piiDetails.join(' | '))}" style="font-size:0.6rem;vertical-align:middle;">PII</span>`;
+
+    // Technology detection from response headers
+    if (ep.response_headers) {
+      const techs = detectTechnologiesFromHeaders(ep.response_headers);
+      if (techs.length > 0) {
+        const techColors = {
+          'AWS': { bg: 'rgba(255,153,0,0.1)', color: '#ff9900', border: 'rgba(255,153,0,0.3)' },
+          'GCP': { bg: 'rgba(66,133,244,0.1)', color: '#4285f4', border: 'rgba(66,133,244,0.3)' },
+          'Azure': { bg: 'rgba(0,120,215,0.1)', color: '#0078d7', border: 'rgba(0,120,215,0.3)' },
+          'Cloudflare': { bg: 'rgba(246,130,31,0.1)', color: '#f6821f', border: 'rgba(246,130,31,0.3)' },
+          'Fastly': { bg: 'rgba(255,0,102,0.1)', color: '#ff0066', border: 'rgba(255,0,102,0.3)' },
+          'Akamai': { bg: 'rgba(0,149,218,0.1)', color: '#0095da', border: 'rgba(0,149,218,0.3)' },
+          'Vercel': { bg: 'rgba(0,0,0,0.1)', color: '#000', border: 'rgba(0,0,0,0.3)' },
+          'GitHub': { bg: 'rgba(36,41,47,0.1)', color: '#24292f', border: 'rgba(36,41,47,0.3)' },
+          'Stripe': { bg: 'rgba(99,91,255,0.1)', color: '#635bff', border: 'rgba(99,91,255,0.3)' },
+          'Nginx': { bg: 'rgba(0,150,57,0.1)', color: '#009639', border: 'rgba(0,150,57,0.3)' },
+          'Rails': { bg: 'rgba(204,0,0,0.1)', color: '#cc0000', border: 'rgba(204,0,0,0.3)' },
+          'Apache': { bg: 'rgba(210,33,40,0.1)', color: '#d22128', border: 'rgba(210,33,40,0.3)' },
+          'Express': { bg: 'rgba(53,53,53,0.1)', color: '#353535', border: 'rgba(53,53,53,0.3)' },
+          'Django': { bg: 'rgba(12,75,51,0.1)', color: '#0c4b33', border: 'rgba(12,75,51,0.3)' },
+          'Laravel': { bg: 'rgba(255,45,32,0.1)', color: '#ff2d20', border: 'rgba(255,45,32,0.3)' },
+          'ASP.NET': { bg: 'rgba(81,43,212,0.1)', color: '#512bd4', border: 'rgba(81,43,212,0.3)' },
+          'IIS': { bg: 'rgba(0,120,215,0.1)', color: '#0078d7', border: 'rgba(0,120,215,0.3)' },
+          'Varnish': { bg: 'rgba(54,186,255,0.1)', color: '#36baff', border: 'rgba(54,186,255,0.3)' },
+          'Heroku': { bg: 'rgba(67,0,152,0.1)', color: '#430098', border: 'rgba(67,0,152,0.3)' },
+          'Netlify': { bg: 'rgba(0,199,183,0.1)', color: '#00c7b7', border: 'rgba(0,199,183,0.3)' }
+        };
+
+        techs.forEach(tech => {
+          const colors = techColors[tech] || { bg: 'rgba(107,114,128,0.1)', color: '#6b7280', border: 'rgba(107,114,128,0.3)' };
+          pathSuffixBadges += ` <span style="display:inline-block;padding:0.15rem 0.4rem;background:${colors.bg};color:${colors.color};border:1px solid ${colors.border};border-radius:3px;font-size:0.65rem;font-weight:600;margin-left:0.25rem;" title="Technology: ${tech}">${tech}</span>`;
+        });
+      }
+    }
   }
 
   // Method with tooltip
