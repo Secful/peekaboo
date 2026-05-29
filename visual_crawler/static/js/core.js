@@ -514,6 +514,7 @@ function newScan() {
   appState.subdomainResults = null;
   appState.securityInsights = {};
   appState.jsResources = {};
+  appState.jsSecrets = {};
   appState.openPorts = {};
   appState.agentic = {};
   appState.extractedApis = {};
@@ -880,6 +881,16 @@ function handleEvent(msg) {
       applyOpenPortsPill(msg.subdomain);
       if (msg.open_ports_count > 0) {
         addLog('', `Open ports for ${msg.subdomain}: ${msg.open_ports_count} ports`, '');
+      }
+      break;
+
+    case 'js_secrets':
+      appState.jsSecrets[msg.subdomain] = msg;
+      applyJsSecretsPill(msg.subdomain);
+      if (msg.findings_count > 0) {
+        addLog('', `JS secrets for ${msg.subdomain}: ${msg.findings_count} secrets found`, 'error');
+      } else {
+        addLog('', `${msg.subdomain}: no secrets in JS`, '');
       }
       break;
 

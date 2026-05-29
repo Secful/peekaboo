@@ -1641,6 +1641,29 @@
     cursor: default;
   }
 
+  /* JS secrets pill on subdomain rows */
+  .js-secrets-pill {
+    display: inline-block; padding: 0.15rem 0.55rem; border-radius: 10px;
+    font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    user-select: none; margin-left: 0.35rem; vertical-align: middle;
+    order: 99;
+  }
+  .js-secrets-pill-clean {
+    background: rgba(5, 150, 105, 0.08); color: var(--green);
+    border: 1px solid rgba(5, 150, 105, 0.25);
+    cursor: default;
+  }
+  .js-secrets-pill-error {
+    background: rgba(239, 68, 68, 0.15); color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  .js-secrets-pill-error:hover { background: rgba(239, 68, 68, 0.25); }
+  .js-secrets-pill-loading {
+    background: rgba(107, 114, 128, 0.08); color: var(--text-muted);
+    border: 1px solid rgba(107, 114, 128, 0.25);
+    cursor: default;
+  }
+
   /* Severity bar */
   .severity-bar {
     display: flex; height: 8px; border-radius: 4px; overflow: hidden;

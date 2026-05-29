@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest, SwaggerExportRequest
+from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest, SwaggerExportRequest, JsSecretsRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -283,6 +283,52 @@ async def security_insights(request: SecurityInsightsRequest):
         f"request.domain={request.domain!r}, "
         f"client_domains={dict(_client_domains)}, "
         f"subdomains_ready={dict(_subdomains_ready)}"
+    )
+    return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
+
+
+@router.post("/api/jssecrets")
+async def js_secrets(request: JsSecretsRequest):
+    """Receive JS secrets scanner results and push to connected UI clients."""
+    from .ws_routes import _client_domains, _connected_clients, _subdomains_ready
+    from ..scanner_store import scanner_store
+
+    # Extract domain from subdomain
+    domain = '.'.join(request.subdomain.split('.')[-2:]) if '.' in request.subdomain else request.subdomain
+
+    logger.warning(f"Got {request.findings_count} JS secrets for subdomain {request.subdomain}")
+
+    payload = {
+        "type": "js_secrets",
+        "subdomain": request.subdomain,
+        "url": request.url,
+        "js_files_analyzed": request.js_files_analyzed,
+        "js_files_total": request.js_files_total,
+        "scan_duration_secs": request.scan_duration_secs,
+        "findings_count": request.findings_count,
+        "findings": [f.model_dump() for f in request.findings],
+    }
+
+    scanner_store.store_js_secrets(domain, request.subdomain, payload)
+
+    pushed_to = 0
+    for scan_id, client_domain in list(_client_domains.items()):
+        if _normalize_domain(client_domain) != _normalize_domain(domain):
+            continue
+        ws = _connected_clients.get(scan_id)
+        if ws is None:
+            continue
+        if _subdomains_ready.get(scan_id):
+            try:
+                await ws.send_json(payload)
+                pushed_to += 1
+            except Exception:
+                logger.warning(f"Failed to push JS secrets to scan {scan_id}")
+
+    logger.warning(
+        f"js_secrets for {request.subdomain}: "
+        f"pushed_to={pushed_to}, "
+        f"domain={domain!r}"
     )
     return JSONResponse(content={"status": "ok", "pushed_to": pushed_to})
 

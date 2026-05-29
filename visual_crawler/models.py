@@ -114,6 +114,29 @@ class SecurityInsightsRequest(BaseModel):
     findings: list[SecurityFinding] = []
 
 
+class JsSecretFinding(BaseModel):
+    """A single secret found in JavaScript files."""
+    rule_id: str
+    description: str
+    secret: str
+    match: str
+    file: str
+    entropy: float
+    line: int
+    start_column: int
+
+
+class JsSecretsRequest(BaseModel):
+    """Request body for JS secrets scanner results."""
+    subdomain: str
+    url: str
+    js_files_analyzed: int = 0
+    js_files_total: int = 0
+    scan_duration_secs: float = 0.0
+    findings_count: int = 0
+    findings: list[JsSecretFinding] = []
+
+
 class MCPServerInfo(BaseModel):
     """MCP server identity returned by initialize."""
     name: str

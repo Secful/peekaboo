@@ -22,6 +22,7 @@ class _DomainData:
     api_specs: dict[str, dict] = field(default_factory=dict)
     mobile_endpoints: dict[str, dict] = field(default_factory=dict)
     git_findings: dict[str, dict] = field(default_factory=dict)
+    js_secrets: dict[str, dict] = field(default_factory=dict)
 
 
 class ScannerStore:
@@ -52,6 +53,10 @@ class ScannerStore:
     def store_agentic(self, domain: str, subdomain: str, payload: dict) -> None:
         with self._lock:
             self._get_or_create(domain).agentic[subdomain] = payload
+
+    def store_js_secrets(self, domain: str, subdomain: str, payload: dict) -> None:
+        with self._lock:
+            self._get_or_create(domain).js_secrets[subdomain] = payload
 
     def store_extracted_apis(self, domain: str, subdomain: str, payload: dict) -> None:
         with self._lock:
@@ -116,6 +121,11 @@ class ScannerStore:
         with self._lock:
             data = self._data.get(domain)
             return dict(data.api_specs) if data else {}
+
+    def get_js_secrets(self, domain: str) -> dict[str, dict]:
+        with self._lock:
+            data = self._data.get(domain)
+            return dict(data.js_secrets) if data else {}
 
     def get_mobile_endpoints(self, domain: str) -> dict[str, dict]:
         with self._lock:

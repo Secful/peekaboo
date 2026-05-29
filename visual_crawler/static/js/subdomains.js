@@ -729,6 +729,53 @@ function toggleJsPillFiles(idx) {
 
 /* Security Insights — pill + drawer */
 
+function applyJsSecretsPill(subdomain) {
+  const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
+  if (!span) { console.warn(`[js-secrets-pill] No DOM element for subdomain: ${subdomain}`); return; }
+
+  const data = appState.jsSecrets[subdomain];
+
+  if (!data) {
+    // No data yet — show loading spinner if no pill exists
+    if (!span.querySelector('.js-secrets-pill')) {
+      const spinner = document.createElement('span');
+      spinner.className = 'js-secrets-pill js-secrets-pill-loading';
+      spinner.innerHTML = '<span class="js-pill-spin">⟳</span>';
+      spinner.title = 'JS secrets scan in progress...';
+      span.appendChild(document.createTextNode(' '));
+      span.appendChild(spinner);
+    }
+    return;
+  }
+
+  // Data arrived — remove loading spinner if present
+  const loading = span.querySelector('.js-secrets-pill-loading');
+  if (loading) {
+    if (loading.previousSibling && loading.previousSibling.nodeType === 3 && loading.previousSibling.textContent.trim() === '') loading.previousSibling.remove();
+    loading.remove();
+  }
+
+  // Real pill already exists — skip
+  if (span.querySelector('.js-secrets-pill')) return;
+
+  const findings = data.findings || [];
+  const pill = document.createElement('span');
+
+  if (findings.length === 0) {
+    pill.className = 'js-secrets-pill js-secrets-pill-clean';
+    pill.textContent = '✓';
+    pill.title = 'No secrets found in JavaScript files';
+  } else {
+    pill.className = 'js-secrets-pill js-secrets-pill-error';
+    const label = findings.length === 1 ? '1 secret' : `${findings.length} secrets`;
+    pill.textContent = label;
+    pill.title = `Found ${findings.length} exposed secret(s) in JS files`;
+  }
+
+  span.appendChild(document.createTextNode(' '));
+  span.appendChild(pill);
+}
+
 function applySecurityPill(subdomain) {
   const span = document.querySelector(`.subdomain-table span[data-subdomain="${CSS.escape(subdomain)}"]`);
   if (!span) { console.warn(`[security-pill] No DOM element for subdomain: ${subdomain}`); return; }
