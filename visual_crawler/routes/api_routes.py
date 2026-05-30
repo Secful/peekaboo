@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 import httpx
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -1251,22 +1252,37 @@ def extract_parameter_values(path: str, template: str) -> list[str]:
 
 @router.post("/api/fetch-js-snippet")
 async def fetch_js_snippet(request: FetchJsSnippetRequest):
-    """Fetch JS file and extract snippet around secret location.
+    """Fetch JS file using Playwright (bypasses bot detection) and extract snippet.
 
     Handles minified files (1-liners) by using character offsets.
     Returns context_chars before and after secret position.
     """
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Accept': 'application/javascript, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': request.url.rsplit('/', 1)[0] + '/'  # Use parent path as referer
-        }
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(request.url, headers=headers)
-            resp.raise_for_status()
-            content = resp.text
+        # Use Playwright to fetch - bypasses Cloudflare, WAFs, bot detection
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            )
+            page = await context.new_page()
+
+            try:
+                # Navigate to JS file directly
+                response = await page.goto(request.url, timeout=30000, wait_until='domcontentloaded')
+                if not response or response.status >= 400:
+                    raise HTTPException(status_code=response.status if response else 500, detail=f"HTTP {response.status if response else 'error'}")
+
+                # Get content
+                content = await page.content()
+
+                # If content is HTML wrapper (not raw JS), try getting body text
+                if content.strip().startswith('<'):
+                    body_text = await page.evaluate('() => document.body.textContent')
+                    if body_text and len(body_text) > len(content):
+                        content = body_text
+
+            finally:
+                await browser.close()
 
         # Convert line:column to absolute char position
         lines = content.split('\n')
@@ -1291,9 +1307,11 @@ async def fetch_js_snippet(request: FetchJsSnippetRequest):
             "char_offset": char_offset
         })
 
-    except httpx.HTTPError as exc:
-        logger.warning(f"Failed to fetch JS file {request.url}: {type(exc).__name__} - {exc}")
-        raise HTTPException(status_code=502, detail=f"Failed to fetch: {type(exc).__name__}")
+    except PlaywrightTimeout:
+        logger.warning(f"Playwright timeout fetching {request.url}")
+        raise HTTPException(status_code=504, detail="Fetch timeout")
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as exc:
         logger.error(f"Error fetching JS snippet from {request.url}: {type(exc).__name__} - {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error: {type(exc).__name__}")
