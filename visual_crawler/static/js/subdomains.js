@@ -799,14 +799,30 @@ function openJsSecretsDrawer(subdomain) {
     const fileLink = fileUrl ? `<a href="${escHtml(fileUrl)}" target="_blank" rel="noopener">${escHtml(f.file || '')}</a>` : escHtml(f.file || '');
     const location = f.line ? `:${f.line}:${f.start_column || 0}` : '';
 
+    // Extract code snippet: 50 chars before secret, secret (highlighted), 50 chars after
+    let snippetHtml = '';
+    if (f.match && f.secret) {
+      const secretIdx = f.match.indexOf(f.secret);
+      if (secretIdx !== -1) {
+        const before = f.match.substring(Math.max(0, secretIdx - 50), secretIdx);
+        const secret = f.match.substring(secretIdx, secretIdx + f.secret.length);
+        const after = f.match.substring(secretIdx + f.secret.length, secretIdx + f.secret.length + 50);
+
+        snippetHtml = `<div class="security-finding-desc" style="background:var(--surface2);padding:0.75rem;border-radius:4px;overflow-x:auto;margin-top:0.5rem;">
+          <code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
+            <span style="color:var(--text-muted);">${escHtml(before)}</span><span style="background:rgba(239,68,68,0.2);color:#ef4444;font-weight:600;padding:0.1rem 0.2rem;border-radius:2px;">${escHtml(secret)}</span><span style="color:var(--text-muted);">${escHtml(after)}</span>
+          </code>
+        </div>`;
+      }
+    }
+
     cardsHtml += `<div class="security-finding-card security-card-high">
       <div class="security-finding-top">
         <span class="severity-badge severity-critical">SECRET</span>
         <span class="security-finding-name">${escHtml(f.description || f.rule_id || 'Secret detected')}</span>
       </div>
       <div class="security-finding-template">${escHtml(f.rule_id || '')}</div>
-      ${f.match ? `<div class="security-finding-desc"><strong>Match:</strong> <code>${escHtml(f.match)}</code></div>` : ''}
-      ${f.secret ? `<div class="security-finding-desc"><strong>Secret:</strong> <code>${escHtml(f.secret)}</code></div>` : ''}
+      ${snippetHtml}
       ${f.entropy !== undefined ? `<div class="security-finding-desc"><strong>Entropy:</strong> ${f.entropy.toFixed(2)}</div>` : ''}
       <div class="security-finding-match">
         <span class="security-match-label">File:</span> ${fileLink}${location}
