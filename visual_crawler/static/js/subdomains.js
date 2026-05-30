@@ -759,25 +759,23 @@ function applyJsSecretsPill(subdomain) {
   if (span.querySelector('.js-secrets-pill')) return;
 
   const findings = data.findings || [];
+
+  // Backend only sends if secrets found — no green pill needed
+  if (findings.length === 0) return;
+
   const pill = document.createElement('span');
 
-  if (findings.length === 0) {
-    pill.className = 'js-secrets-pill js-secrets-pill-clean';
-    pill.textContent = '✓';
-    pill.title = 'No secrets found in JavaScript files';
-  } else {
-    // Determine severity: red if any high-risk, yellow if all likely public
-    const hasHighRisk = findings.some(f => !f.is_likely_public);
-    const pillClass = hasHighRisk ? 'js-secrets-pill-error' : 'js-secrets-pill-warning';
+  // Determine severity: red if any high-risk, yellow if all likely public
+  const hasHighRisk = findings.some(f => !f.is_likely_public);
+  const pillClass = hasHighRisk ? 'js-secrets-pill-error' : 'js-secrets-pill-warning';
 
-    pill.className = `js-secrets-pill ${pillClass}`;
-    const label = findings.length === 1 ? '1 secret' : `${findings.length} secrets`;
-    pill.textContent = label;
+  pill.className = `js-secrets-pill ${pillClass}`;
+  const label = findings.length === 1 ? '1 secret' : `${findings.length} secrets`;
+  pill.textContent = label;
 
-    const severityText = hasHighRisk ? 'high-risk secret(s)' : 'likely public key(s) — verify';
-    pill.title = `Found ${findings.length} ${severityText}`;
-    pill.setAttribute('onclick', `event.stopPropagation(); openJsSecretsDrawer('${subdomain.replace(/'/g, "\\'")}')`);
-  }
+  const severityText = hasHighRisk ? 'high-risk secret(s)' : 'likely public key(s) — verify';
+  pill.title = `Found ${findings.length} ${severityText}`;
+  pill.setAttribute('onclick', `event.stopPropagation(); openJsSecretsDrawer('${subdomain.replace(/'/g, "\\'")}')`);
 
   span.appendChild(document.createTextNode(' '));
   span.appendChild(pill);
