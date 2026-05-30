@@ -1,5 +1,25 @@
 /* Endpoint detail drawer */
 
+function decodePayloadIfBase64(payload) {
+  if (!payload || typeof payload !== 'string') return payload;
+
+  // Check if looks like base64: alphanumeric + / + = and no spaces
+  const base64Regex = /^[A-Za-z0-9+/]+=*$/;
+  if (!base64Regex.test(payload) || payload.length < 20) return payload;
+
+  try {
+    const decoded = atob(payload);
+    // Check if decoded contains mostly printable ASCII
+    const printable = /^[\x20-\x7E\n\r\t]*$/.test(decoded);
+    if (printable) {
+      return `[Base64 decoded]\n${decoded}`;
+    }
+    return payload; // Binary data, show original
+  } catch (e) {
+    return payload; // Not valid base64
+  }
+}
+
 function openDrawer(ep) {
   const drawer = document.getElementById('detailDrawer');
   const content = document.getElementById('drawerContent');
@@ -153,7 +173,7 @@ function openDrawer(ep) {
               <span>${new Date(msg.timestamp).toLocaleTimeString()}</span>
               <span>${msg.size} bytes${msg.truncated ? ' (truncated to 1KB)' : ''}</span>
             </div>
-            <pre style="margin:0;font-size:0.75rem;white-space:pre-wrap;word-break:break-all">${escHtml(msg.payload)}</pre>
+            <pre style="margin:0;font-size:0.75rem;white-space:pre-wrap;word-break:break-all">${escHtml(decodePayloadIfBase64(msg.payload))}</pre>
           </div>
         `).join('')}
       </div>
