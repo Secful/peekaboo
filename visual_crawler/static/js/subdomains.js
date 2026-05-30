@@ -871,9 +871,13 @@ function openJsSecretsDrawer(subdomain) {
         }
       } catch (err) {
         console.warn(`Failed to fetch snippet for ${fileUrl}:`, err);
+        // Show secret even if fetch fails
         const el = document.getElementById(snippetId);
         if (el) {
-          el.innerHTML = `<code style="font-family:monospace;font-size:0.85rem;color:var(--text-muted);font-style:italic;">Failed to load snippet</code>`;
+          el.innerHTML = `<code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
+            <span style="color:var(--text-muted);font-style:italic;">Failed to fetch file — showing detected secret:</span><br>
+            <span style="background:rgba(239,68,68,0.2);color:#ef4444;font-weight:600;padding:0.1rem 0.2rem;border-radius:2px;">${escHtml(f.secret)}</span>
+          </code>`;
         }
       }
     })();

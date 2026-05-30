@@ -1292,10 +1292,10 @@ async def fetch_js_snippet(request: FetchJsSnippetRequest):
         })
 
     except httpx.HTTPError as exc:
-        logger.warning(f"Failed to fetch JS file {request.url}: {exc}")
-        raise HTTPException(status_code=502, detail=f"Failed to fetch JS file: {exc}")
+        logger.warning(f"Failed to fetch JS file {request.url}: {type(exc).__name__} - {exc}")
+        raise HTTPException(status_code=502, detail=f"Failed to fetch: {type(exc).__name__}")
     except Exception as exc:
-        logger.error(f"Error fetching JS snippet: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error(f"Error fetching JS snippet from {request.url}: {type(exc).__name__} - {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error: {type(exc).__name__}")
 
 
