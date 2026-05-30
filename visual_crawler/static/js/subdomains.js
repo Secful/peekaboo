@@ -766,10 +766,16 @@ function applyJsSecretsPill(subdomain) {
     pill.textContent = '✓';
     pill.title = 'No secrets found in JavaScript files';
   } else {
-    pill.className = 'js-secrets-pill js-secrets-pill-error';
+    // Determine severity: red if any high-risk, yellow if all likely public
+    const hasHighRisk = findings.some(f => !f.is_likely_public);
+    const pillClass = hasHighRisk ? 'js-secrets-pill-error' : 'js-secrets-pill-warning';
+
+    pill.className = `js-secrets-pill ${pillClass}`;
     const label = findings.length === 1 ? '1 secret' : `${findings.length} secrets`;
     pill.textContent = label;
-    pill.title = `Found ${findings.length} exposed secret(s) in JS files`;
+
+    const severityText = hasHighRisk ? 'high-risk secret(s)' : 'likely public key(s) — verify';
+    pill.title = `Found ${findings.length} ${severityText}`;
     pill.setAttribute('onclick', `event.stopPropagation(); openJsSecretsDrawer('${subdomain.replace(/'/g, "\\'")}')`);
   }
 

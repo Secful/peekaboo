@@ -1658,6 +1658,11 @@
     border: 1px solid rgba(239, 68, 68, 0.3);
   }
   .js-secrets-pill-error:hover { background: rgba(239, 68, 68, 0.25); }
+  .js-secrets-pill-warning {
+    background: rgba(245, 158, 11, 0.15); color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+  .js-secrets-pill-warning:hover { background: rgba(245, 158, 11, 0.25); }
   .js-secrets-pill-loading {
     background: rgba(107, 114, 128, 0.08); color: var(--text-muted);
     border: 1px solid rgba(107, 114, 128, 0.25);
