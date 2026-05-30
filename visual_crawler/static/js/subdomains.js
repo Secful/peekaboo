@@ -755,8 +755,8 @@ function applyJsSecretsPill(subdomain) {
     loading.remove();
   }
 
-  // Real pill already exists — skip
-  if (span.querySelector('.js-secrets-pill')) return;
+  // Real pill already exists (including loading state) — skip
+  if (span.querySelector('.js-secrets-pill:not(.js-secrets-pill-loading)')) return;
 
   const findings = data.findings || [];
 
