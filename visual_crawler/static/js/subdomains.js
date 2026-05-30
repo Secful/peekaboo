@@ -770,10 +770,52 @@ function applyJsSecretsPill(subdomain) {
     const label = findings.length === 1 ? '1 secret' : `${findings.length} secrets`;
     pill.textContent = label;
     pill.title = `Found ${findings.length} exposed secret(s) in JS files`;
+    pill.setAttribute('onclick', `event.stopPropagation(); openJsSecretsDrawer('${subdomain.replace(/'/g, "\\'")}')`);
   }
 
   span.appendChild(document.createTextNode(' '));
   span.appendChild(pill);
+}
+
+function openJsSecretsDrawer(subdomain) {
+  const data = appState.jsSecrets[subdomain];
+  if (!data) return;
+
+  const drawer = document.getElementById('securityDrawer');
+  const title = document.getElementById('securityDrawerTitle');
+  const subtitle = document.getElementById('securityDrawerSubtitle');
+  const content = document.getElementById('securityDrawerContent');
+
+  title.textContent = `${subdomain} — JS Secrets`;
+  const duration = data.scan_duration_secs ? `${data.scan_duration_secs.toFixed(1)}s` : '—';
+  subtitle.textContent = `${data.findings_count || data.findings.length} secret${(data.findings_count || data.findings.length) !== 1 ? 's' : ''} found — ${data.js_files_analyzed || 0}/${data.js_files_total || 0} JS files analyzed — scan duration: ${duration}`;
+
+  const findings = data.findings || [];
+
+  // Secret cards
+  let cardsHtml = '';
+  for (const f of findings) {
+    const fileUrl = f.file ? (f.file.startsWith('http') ? f.file : `https://${subdomain}${f.file}`) : '';
+    const fileLink = fileUrl ? `<a href="${escHtml(fileUrl)}" target="_blank" rel="noopener">${escHtml(f.file || '')}</a>` : escHtml(f.file || '');
+    const location = f.line ? `:${f.line}:${f.start_column || 0}` : '';
+
+    cardsHtml += `<div class="security-finding-card security-card-high">
+      <div class="security-finding-top">
+        <span class="severity-badge severity-critical">SECRET</span>
+        <span class="security-finding-name">${escHtml(f.description || f.rule_id || 'Secret detected')}</span>
+      </div>
+      <div class="security-finding-template">${escHtml(f.rule_id || '')}</div>
+      ${f.match ? `<div class="security-finding-desc"><strong>Match:</strong> <code>${escHtml(f.match)}</code></div>` : ''}
+      ${f.secret ? `<div class="security-finding-desc"><strong>Secret:</strong> <code>${escHtml(f.secret)}</code></div>` : ''}
+      ${f.entropy !== undefined ? `<div class="security-finding-desc"><strong>Entropy:</strong> ${f.entropy.toFixed(2)}</div>` : ''}
+      <div class="security-finding-match">
+        <span class="security-match-label">File:</span> ${fileLink}${location}
+      </div>
+    </div>`;
+  }
+
+  content.innerHTML = cardsHtml;
+  drawer.classList.add('open');
 }
 
 function applySecurityPill(subdomain) {
