@@ -125,6 +125,7 @@ class JsSecretFinding(BaseModel):
     line: int
     start_column: int
     classification: str = "uncertain"  # "private", "public", "uncertain"
+    vendor: str = ""  # e.g., "AWS Access Key", "Sentry DSN", "UUID"
 
 
 class JsSecretsRequest(BaseModel):

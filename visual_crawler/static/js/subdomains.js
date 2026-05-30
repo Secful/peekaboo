@@ -866,7 +866,7 @@ function openJsSecretsDrawer(subdomain) {
     cardsHtml += `<div class="security-finding-card ${cardClass}">
       <div class="security-finding-top">
         <span class="severity-badge ${badgeClass}">${badgeText}</span>
-        <span class="security-finding-name">${escHtml(f.description || f.rule_id || 'Secret detected')}</span>
+        <span class="security-finding-name">${escHtml(f.vendor || f.description || f.rule_id || 'Secret detected')}</span>
       </div>
       <div class="security-finding-template">${escHtml(f.rule_id || '')}</div>
       ${contextHint}
