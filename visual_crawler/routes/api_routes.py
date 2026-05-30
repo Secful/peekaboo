@@ -1267,19 +1267,13 @@ async def fetch_js_snippet(request: FetchJsSnippetRequest):
             page = await context.new_page()
 
             try:
-                # Navigate to JS file directly
+                # Navigate to JS file directly and capture response body
                 response = await page.goto(request.url, timeout=30000, wait_until='domcontentloaded')
                 if not response or response.status >= 400:
                     raise HTTPException(status_code=response.status if response else 500, detail=f"HTTP {response.status if response else 'error'}")
 
-                # Get content
-                content = await page.content()
-
-                # If content is HTML wrapper (not raw JS), try getting body text
-                if content.strip().startswith('<'):
-                    body_text = await page.evaluate('() => document.body.textContent')
-                    if body_text and len(body_text) > len(content):
-                        content = body_text
+                # Get raw response body (not DOM content)
+                content = await response.text()
 
             finally:
                 await browser.close()
