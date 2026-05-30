@@ -825,22 +825,48 @@ function openJsSecretsDrawer(subdomain) {
     const fileLink = fileUrl ? `<a href="${escHtml(fileUrl)}" target="_blank" rel="noopener">${escHtml(f.file || '')}</a>` : escHtml(f.file || '');
     const location = f.line ? `<span style="color:var(--text-muted);font-weight:normal;"> (Line ${f.line}, Col ${f.start_column || 0})</span>` : '';
 
-    // Extract code snippet: 50 chars before secret, secret (highlighted), 50 chars after
-    let snippetHtml = '';
-    if (f.match && f.secret) {
-      const secretIdx = f.match.indexOf(f.secret);
-      if (secretIdx !== -1) {
-        const before = f.match.substring(Math.max(0, secretIdx - 50), secretIdx);
-        const secret = f.match.substring(secretIdx, secretIdx + f.secret.length);
-        const after = f.match.substring(secretIdx + f.secret.length, secretIdx + f.secret.length + 50);
+    // Code snippet: fetch from backend for accurate context (handles minified 1-liners)
+    const snippetId = `snippet-${i}`;
+    let snippetHtml = `<div id="${snippetId}" class="security-finding-desc" style="background:var(--surface2);padding:0.75rem;border-radius:4px;overflow-x:auto;margin-top:0.5rem;">
+      <code style="font-family:monospace;font-size:0.85rem;color:var(--text-muted);">Loading snippet...</code>
+    </div>`;
 
-        snippetHtml = `<div class="security-finding-desc" style="background:var(--surface2);padding:0.75rem;border-radius:4px;overflow-x:auto;margin-top:0.5rem;">
-          <code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
+    // Async fetch snippet after render
+    (async () => {
+      try {
+        const resp = await fetch('/api/fetch-js-snippet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: fileUrl,
+            line: f.line,
+            start_column: f.start_column,
+            context_chars: 300
+          })
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        // Highlight secret in snippet
+        const before = data.snippet.substring(0, data.secret_position);
+        const secretLen = f.secret.length;
+        const secret = data.snippet.substring(data.secret_position, data.secret_position + secretLen);
+        const after = data.snippet.substring(data.secret_position + secretLen);
+
+        const el = document.getElementById(snippetId);
+        if (el) {
+          el.innerHTML = `<code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
             <span style="color:var(--text-muted);">${escHtml(before)}</span><span style="background:rgba(239,68,68,0.2);color:#ef4444;font-weight:600;padding:0.1rem 0.2rem;border-radius:2px;">${escHtml(secret)}</span><span style="color:var(--text-muted);">${escHtml(after)}</span>
-          </code>
-        </div>`;
+          </code>`;
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch snippet for ${fileUrl}:`, err);
+        const el = document.getElementById(snippetId);
+        if (el) {
+          el.innerHTML = `<code style="font-family:monospace;font-size:0.85rem;color:var(--text-muted);font-style:italic;">Failed to load snippet</code>`;
+        }
       }
-    }
+    })();
 
     // Badge styling based on classification
     const classification = f.classification || 'uncertain';

@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest, SwaggerExportRequest, JsSecretsRequest
+from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest, SwaggerExportRequest, JsSecretsRequest, FetchJsSnippetRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -1247,5 +1247,49 @@ def extract_parameter_values(path: str, template: str) -> list[str]:
             values.append(path_segments[i])
 
     return values
+
+
+@router.post("/api/fetch-js-snippet")
+async def fetch_js_snippet(request: FetchJsSnippetRequest):
+    """Fetch JS file and extract snippet around secret location.
+
+    Handles minified files (1-liners) by using character offsets.
+    Returns context_chars before and after secret position.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(request.url)
+            resp.raise_for_status()
+            content = resp.text
+
+        # Convert line:column to absolute char position
+        lines = content.split('\n')
+        if request.line < 1 or request.line > len(lines):
+            raise HTTPException(status_code=400, detail="Invalid line number")
+
+        # Char offset = sum of all lines before + column position
+        char_offset = sum(len(lines[i]) + 1 for i in range(request.line - 1)) + request.start_column
+
+        # Extract snippet: context_chars before/after
+        start = max(0, char_offset - request.context_chars)
+        end = min(len(content), char_offset + request.context_chars)
+        snippet = content[start:end]
+
+        # Calculate relative position of secret in snippet
+        secret_pos = char_offset - start
+
+        return JSONResponse({
+            "snippet": snippet,
+            "secret_position": secret_pos,
+            "total_chars": len(content),
+            "char_offset": char_offset
+        })
+
+    except httpx.HTTPError as exc:
+        logger.warning(f"Failed to fetch JS file {request.url}: {exc}")
+        raise HTTPException(status_code=502, detail=f"Failed to fetch JS file: {exc}")
+    except Exception as exc:
+        logger.error(f"Error fetching JS snippet: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
