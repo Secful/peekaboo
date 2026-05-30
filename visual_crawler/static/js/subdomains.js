@@ -831,21 +831,23 @@ function openJsSecretsDrawer(subdomain) {
       <code style="font-family:monospace;font-size:0.85rem;color:var(--text-muted);">Loading snippet...</code>
     </div>`;
 
-    // Async fetch snippet after render
+    // Async fetch snippet after render - retry up to 3 times
     (async () => {
-      try {
-        const resp = await fetch('/api/fetch-js-snippet', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: fileUrl,
-            line: f.line,
-            start_column: f.start_column,
-            context_chars: 300
-          })
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
+      let lastError;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const resp = await fetch('/api/fetch-js-snippet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: fileUrl,
+              line: f.line,
+              start_column: f.start_column,
+              context_chars: 300
+            })
+          });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const data = await resp.json();
 
         // Highlight secret in snippet - search for actual secret value
         const secretIdx = data.snippet.indexOf(f.secret);
@@ -863,15 +865,25 @@ function openJsSecretsDrawer(subdomain) {
           after = data.snippet.substring(data.secret_position + f.secret.length);
         }
 
-        const el = document.getElementById(snippetId);
-        if (el) {
-          el.innerHTML = `<code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
-            <span style="color:var(--text-muted);">${escHtml(before)}</span><span style="background:rgba(239,68,68,0.2);color:#ef4444;font-weight:600;padding:0.1rem 0.2rem;border-radius:2px;">${escHtml(secret)}</span><span style="color:var(--text-muted);">${escHtml(after)}</span>
-          </code>`;
+          const el = document.getElementById(snippetId);
+          if (el) {
+            el.innerHTML = `<code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
+              <span style="color:var(--text-muted);">${escHtml(before)}</span><span style="background:rgba(239,68,68,0.2);color:#ef4444;font-weight:600;padding:0.1rem 0.2rem;border-radius:2px;">${escHtml(secret)}</span><span style="color:var(--text-muted);">${escHtml(after)}</span>
+            </code>`;
+          }
+          break; // Success - exit retry loop
+        } catch (err) {
+          lastError = err;
+          if (attempt < 3) {
+            // Wait before retry: 500ms, 1000ms
+            await new Promise(resolve => setTimeout(resolve, attempt * 500));
+          }
         }
-      } catch (err) {
-        console.warn(`Failed to fetch snippet for ${fileUrl}:`, err);
-        // Show secret even if fetch fails
+      }
+
+      // All retries failed - always show secret
+      if (lastError) {
+        console.warn(`Failed to fetch snippet after 3 attempts for ${fileUrl}:`, lastError);
         const el = document.getElementById(snippetId);
         if (el) {
           el.innerHTML = `<code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
