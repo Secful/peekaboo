@@ -124,7 +124,7 @@ class JsSecretFinding(BaseModel):
     entropy: float
     line: int
     start_column: int
-    is_likely_public: bool = False
+    classification: str = "uncertain"  # "private", "public", "uncertain"
 
 
 class JsSecretsRequest(BaseModel):

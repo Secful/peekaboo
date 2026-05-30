@@ -765,15 +765,15 @@ function applyJsSecretsPill(subdomain) {
 
   const pill = document.createElement('span');
 
-  // Determine severity: red if any high-risk, yellow if all likely public
-  const hasHighRisk = findings.some(f => !f.is_likely_public);
-  const pillClass = hasHighRisk ? 'js-secrets-pill-error' : 'js-secrets-pill-warning';
+  // Pill color: red if any private, yellow otherwise (public + uncertain)
+  const hasPrivate = findings.some(f => f.classification === 'private');
+  const pillClass = hasPrivate ? 'js-secrets-pill-error' : 'js-secrets-pill-warning';
 
   pill.className = `js-secrets-pill ${pillClass}`;
   const label = findings.length === 1 ? '1 secret' : `${findings.length} secrets`;
   pill.textContent = label;
 
-  const severityText = hasHighRisk ? 'high-risk secret(s)' : 'likely public key(s) — verify';
+  const severityText = hasPrivate ? 'private secret(s)' : 'public/uncertain key(s) — verify';
   pill.title = `Found ${findings.length} ${severityText}`;
   pill.setAttribute('onclick', `event.stopPropagation(); openJsSecretsDrawer('${subdomain.replace(/'/g, "\\'")}')`);
 
@@ -794,26 +794,32 @@ function openJsSecretsDrawer(subdomain) {
   const duration = data.scan_duration_secs ? `${data.scan_duration_secs.toFixed(1)}s` : '—';
 
   const findings = data.findings || [];
-  const highRisk = findings.filter(f => !f.is_likely_public);
-  const likelyPublic = findings.filter(f => f.is_likely_public);
+  const privateSecrets = findings.filter(f => f.classification === 'private');
+  const publicSecrets = findings.filter(f => f.classification === 'public');
+  const uncertainSecrets = findings.filter(f => f.classification === 'uncertain' || !f.classification);
 
-  subtitle.textContent = `${highRisk.length} high-risk, ${likelyPublic.length} likely public — ${data.js_files_analyzed || 0}/${data.js_files_total || 0} JS files analyzed — scan duration: ${duration}`;
+  subtitle.textContent = `${privateSecrets.length} private, ${publicSecrets.length} public, ${uncertainSecrets.length} uncertain — ${data.js_files_analyzed || 0}/${data.js_files_total || 0} JS files analyzed — scan duration: ${duration}`;
 
-  // Secret cards - high-risk first, then likely public
+  // Secret cards - private first, then uncertain, then public
   let cardsHtml = '';
-  if (highRisk.length > 0) {
-    cardsHtml += '<div style="margin-bottom:1rem;font-weight:600;color:#ef4444;">High-Risk Secrets</div>';
+  if (privateSecrets.length > 0) {
+    cardsHtml += '<div style="margin-bottom:1rem;font-weight:600;color:#ef4444;">Private Secrets</div>';
   }
-  const sortedFindings = [...highRisk, ...likelyPublic];
+  const sortedFindings = [...privateSecrets, ...uncertainSecrets, ...publicSecrets];
 
-  let renderedHighRisk = false;
+  let renderedUncertain = false;
+  let renderedPublic = false;
   for (let i = 0; i < sortedFindings.length; i++) {
     const f = sortedFindings[i];
 
-    // Add "Likely Public" header after high-risk section
-    if (!renderedHighRisk && f.is_likely_public && likelyPublic.length > 0) {
-      cardsHtml += '<div style="margin:1.5rem 0 1rem 0;font-weight:600;color:#f59e0b;">Likely Public Keys (Verify)</div>';
-      renderedHighRisk = true;
+    // Add section headers as we transition between classifications
+    if (!renderedUncertain && f.classification === 'uncertain' && uncertainSecrets.length > 0) {
+      cardsHtml += '<div style="margin:1.5rem 0 1rem 0;font-weight:600;color:#f59e0b;">Uncertain (Verify)</div>';
+      renderedUncertain = true;
+    }
+    if (!renderedPublic && f.classification === 'public' && publicSecrets.length > 0) {
+      cardsHtml += '<div style="margin:1.5rem 0 1rem 0;font-weight:600;color:#f59e0b;">Public Keys</div>';
+      renderedPublic = true;
     }
     const fileUrl = f.file ? (f.file.startsWith('http') ? f.file : `https://${subdomain}${f.file}`) : '';
     const fileLink = fileUrl ? `<a href="${escHtml(fileUrl)}" target="_blank" rel="noopener">${escHtml(f.file || '')}</a>` : escHtml(f.file || '');
@@ -836,13 +842,26 @@ function openJsSecretsDrawer(subdomain) {
       }
     }
 
-    // Badge styling based on is_likely_public
-    const badgeClass = f.is_likely_public ? 'severity-medium' : 'severity-critical';
-    const badgeText = f.is_likely_public ? 'LIKELY PUBLIC' : 'SECRET';
-    const cardClass = f.is_likely_public ? 'security-card-medium' : 'security-card-high';
-    const contextHint = f.is_likely_public
-      ? `<div class="security-finding-desc" style="color:#f59e0b;font-style:italic;">⚠️ This may be a public/test key — verify if sensitive</div>`
-      : '';
+    // Badge styling based on classification
+    const classification = f.classification || 'uncertain';
+    let badgeClass, badgeText, cardClass, contextHint;
+
+    if (classification === 'private') {
+      badgeClass = 'severity-critical';
+      badgeText = 'PRIVATE';
+      cardClass = 'security-card-high';
+      contextHint = '';
+    } else if (classification === 'public') {
+      badgeClass = 'severity-medium';
+      badgeText = 'PUBLIC';
+      cardClass = 'security-card-medium';
+      contextHint = `<div class="security-finding-desc" style="color:#f59e0b;font-style:italic;">⚠️ Public key detected — verify if intentionally exposed</div>`;
+    } else { // uncertain
+      badgeClass = 'severity-medium';
+      badgeText = 'UNCERTAIN';
+      cardClass = 'security-card-medium';
+      contextHint = `<div class="security-finding-desc" style="color:#f59e0b;font-style:italic;">⚠️ Classification uncertain — manual review recommended</div>`;
+    }
 
     cardsHtml += `<div class="security-finding-card ${cardClass}">
       <div class="security-finding-top">
