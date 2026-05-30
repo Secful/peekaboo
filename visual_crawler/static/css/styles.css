@@ -1669,6 +1669,29 @@
     cursor: default;
   }
 
+  /* LLM Verification Button */
+  .verify-llm-btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.5rem 0.75rem; background: linear-gradient(135deg, #6b2fc7, #4a1d96);
+    color: #fff; border: none; border-radius: 6px;
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; font-family: inherit;
+  }
+  .verify-llm-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7c3aed, #6b2fc7);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(107, 47, 199, 0.3);
+  }
+  .verify-llm-btn:disabled {
+    opacity: 0.6; cursor: not-allowed;
+  }
+  .verify-llm-icon {
+    font-size: 1rem; line-height: 1;
+  }
+  .llm-verification-result {
+    /* Container for result display */
+  }
+
   /* Severity bar */
   .severity-bar {
     display: flex; height: 8px; border-radius: 4px; overflow: hidden;

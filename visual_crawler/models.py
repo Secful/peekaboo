@@ -127,6 +127,7 @@ class JsSecretFinding(BaseModel):
     classification: str = "uncertain"  # "private", "public", "uncertain"
     vendor: str = ""  # e.g., "AWS Access Key", "Sentry DSN", "UUID"
     snippet: str = ""  # X chars before + secret + X chars after
+    llm_reason: str = ""  # LLM explanation why this is sensitive
 
 
 class JsSecretsRequest(BaseModel):
@@ -377,3 +378,12 @@ class SwaggerExportRequest(BaseModel):
     domain: str
     scan_date: str
     endpoints: list[EndpointData]
+
+
+class VerifySecretRequest(BaseModel):
+    """Request body for LLM secret verification."""
+    secret_value: str
+    code_snippet: str
+    vendor: str
+    classification: str
+    file_url: str

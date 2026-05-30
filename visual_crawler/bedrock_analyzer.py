@@ -349,3 +349,113 @@ Response format: plain text, no JSON."""
             except Exception as e:
                 logger.error(f"Bedrock describe_services call failed: {e}", exc_info=True)
                 return {}
+
+    async def verify_secret_risk(
+        self,
+        secret_value: str,
+        code_snippet: str,
+        vendor: str,
+        classification: str,
+        file_url: str,
+    ) -> dict:
+        """
+        Verify if detected secret is truly sensitive using LLM analysis of context.
+
+        Args:
+            secret_value: The detected secret
+            code_snippet: Code context around secret
+            vendor: Secret type (e.g., "AWS Access Key", "Generic API Key")
+            classification: Current classification ("private", "public", "uncertain")
+            file_url: Source file URL
+
+        Returns:
+            dict with: is_sensitive (bool), confidence (high/medium/low), reasoning (str), recommended_action (str)
+        """
+        prompt = f"""You are a security analyst. Analyze if this detected secret is truly sensitive.
+
+Secret Type: {vendor}
+Current Classification: {classification}
+Value: {secret_value[:20]}...
+File: {file_url}
+
+Code Context:
+```
+{code_snippet[:1000]}
+```
+
+Determine:
+- True Secret: Private credential that should NOT be in client-side code
+- Public Key: Intentionally public identifier (analytics, tracking, client IDs)
+- False Positive: Not a real secret
+
+Common public keys: Google Analytics, PostHog (phc_*), Sentry DSN, Stripe public keys (pk_*)
+
+CRITICAL: You MUST respond with ONLY valid JSON. No markdown, no explanation, no code blocks. Just the JSON object below:
+
+{{"is_sensitive": true, "confidence": "high", "reasoning": "Brief explanation", "recommended_action": "rotate immediately"}}
+
+OR
+
+{{"is_sensitive": false, "confidence": "high", "reasoning": "Brief explanation", "recommended_action": "safe to expose"}}
+
+JSON response:"""
+
+        try:
+            start = time.time()
+            response = self.bedrock_runtime.invoke_model(
+                modelId=self.model_id,
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 800,
+                    "temperature": 0.3,
+                    "messages": [{"role": "user", "content": prompt}]
+                })
+            )
+            duration = time.time() - start
+
+            response_body = json.loads(response['body'].read())
+            content = response_body['content'][0]['text'].strip()
+
+            logger.info(f"Secret verification took {duration:.2f}s")
+            logger.info(f"LLM raw response: {content!r}")
+
+            # Try parsing JSON - handle markdown wrappers
+            json_str = content
+            if content.startswith('```'):
+                # Strip markdown code blocks
+                lines = content.split('\n')
+                json_str = '\n'.join(lines[1:-1]) if len(lines) > 2 else content
+                json_str = json_str.replace('```json', '').replace('```', '').strip()
+
+            result = json.loads(json_str)
+            return result
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Bedrock secret verification response: {e}")
+            logger.error(f"Raw content that failed: {content!r}")
+            return {
+                "is_sensitive": classification == "private",  # Fallback to original classification
+                "confidence": "low",
+                "reasoning": "LLM response parsing failed",
+                "recommended_action": "manual review required"
+            }
+        except ClientError as e:
+            error_code = e.response["Error"]["Code"]
+            error_msg = e.response["Error"]["Message"]
+            logger.error(f"Bedrock secret verification failed [{error_code}]: {error_msg}")
+            return {
+                "is_sensitive": classification == "private",
+                "confidence": "low",
+                "reasoning": "LLM analysis unavailable",
+                "recommended_action": "manual review required"
+            }
+        except Exception as e:
+            logger.error(f"Bedrock secret verification failed: {e}", exc_info=True)
+            return {
+                "is_sensitive": classification == "private",
+                "confidence": "low",
+                "reasoning": "Verification error",
+                "recommended_action": "manual review required"
+            }

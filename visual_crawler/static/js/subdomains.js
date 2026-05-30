@@ -764,17 +764,9 @@ function applyJsSecretsPill(subdomain) {
   if (findings.length === 0) return;
 
   const pill = document.createElement('span');
-
-  // Pill color: red if any private, yellow otherwise (public + uncertain)
-  const hasPrivate = findings.some(f => f.classification === 'private');
-  const pillClass = hasPrivate ? 'js-secrets-pill-error' : 'js-secrets-pill-warning';
-
-  pill.className = `js-secrets-pill ${pillClass}`;
-  const label = findings.length === 1 ? '1 secret' : `${findings.length} secrets`;
-  pill.textContent = label;
-
-  const severityText = hasPrivate ? 'private secret(s)' : 'public/uncertain key(s) — verify';
-  pill.title = `Found ${findings.length} ${severityText}`;
+  pill.className = 'js-secrets-pill js-secrets-pill-warning';
+  pill.textContent = 'Possible Secret';
+  pill.title = `${findings.length} potential secret${findings.length !== 1 ? 's' : ''} detected`;
   pill.setAttribute('onclick', `event.stopPropagation(); openJsSecretsDrawer('${subdomain.replace(/'/g, "\\'")}')`);
 
   span.appendChild(document.createTextNode(' '));
@@ -794,33 +786,12 @@ function openJsSecretsDrawer(subdomain) {
   const duration = data.scan_duration_secs ? `${data.scan_duration_secs.toFixed(1)}s` : '—';
 
   const findings = data.findings || [];
-  const privateSecrets = findings.filter(f => f.classification === 'private');
-  const publicSecrets = findings.filter(f => f.classification === 'public');
-  const uncertainSecrets = findings.filter(f => f.classification === 'uncertain' || !f.classification);
+  subtitle.textContent = `${findings.length} sensitive secret${findings.length !== 1 ? 's' : ''} — ${data.js_files_analyzed || 0}/${data.js_files_total || 0} JS files analyzed — scan duration: ${duration}`;
 
-  subtitle.textContent = `${privateSecrets.length} private, ${publicSecrets.length} public, ${uncertainSecrets.length} uncertain — ${data.js_files_analyzed || 0}/${data.js_files_total || 0} JS files analyzed — scan duration: ${duration}`;
-
-  // Secret cards - private first, then uncertain, then public
+  // All secrets verified as sensitive by backend
   let cardsHtml = '';
-  if (privateSecrets.length > 0) {
-    cardsHtml += '<div style="margin-bottom:1rem;font-weight:600;color:#ef4444;">Private Secrets</div>';
-  }
-  const sortedFindings = [...privateSecrets, ...uncertainSecrets, ...publicSecrets];
-
-  let renderedUncertain = false;
-  let renderedPublic = false;
-  for (let i = 0; i < sortedFindings.length; i++) {
-    const f = sortedFindings[i];
-
-    // Add section headers as we transition between classifications
-    if (!renderedUncertain && f.classification === 'uncertain' && uncertainSecrets.length > 0) {
-      cardsHtml += '<div style="margin:1.5rem 0 1rem 0;font-weight:600;color:#f59e0b;">Uncertain (Verify)</div>';
-      renderedUncertain = true;
-    }
-    if (!renderedPublic && f.classification === 'public' && publicSecrets.length > 0) {
-      cardsHtml += '<div style="margin:1.5rem 0 1rem 0;font-weight:600;color:#f59e0b;">Public Keys</div>';
-      renderedPublic = true;
-    }
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
     const fileUrl = f.file ? (f.file.startsWith('http') ? f.file : `https://${subdomain}${f.file}`) : '';
     const fileLink = fileUrl ? `<a href="${escHtml(fileUrl)}" target="_blank" rel="noopener">${escHtml(f.file || '')}</a>` : escHtml(f.file || '');
     const location = f.line ? `<span style="color:var(--text-muted);font-weight:normal;"> (Line ${f.line}, Col ${f.start_column || 0})</span>` : '';
@@ -857,26 +828,22 @@ function openJsSecretsDrawer(subdomain) {
       </div>`;
     }
 
-    // Badge styling based on classification
-    const classification = f.classification || 'uncertain';
-    let badgeClass, badgeText, cardClass, contextHint;
+    // All secrets verified as sensitive by backend
+    const badgeClass = 'severity-critical';
+    const badgeText = 'SENSITIVE';
+    const cardClass = 'security-card-high';
 
-    if (classification === 'private') {
-      badgeClass = 'severity-critical';
-      badgeText = 'PRIVATE';
-      cardClass = 'security-card-high';
-      contextHint = '';
-    } else if (classification === 'public') {
-      badgeClass = 'severity-medium';
-      badgeText = 'PUBLIC';
-      cardClass = 'security-card-medium';
-      contextHint = `<div class="security-finding-desc" style="color:#f59e0b;font-style:italic;">⚠️ Public key detected — verify if intentionally exposed</div>`;
-    } else { // uncertain
-      badgeClass = 'severity-medium';
-      badgeText = 'UNCERTAIN';
-      cardClass = 'security-card-medium';
-      contextHint = `<div class="security-finding-desc" style="color:#f59e0b;font-style:italic;">⚠️ Classification uncertain — manual review recommended</div>`;
-    }
+    // LLM verification reason from backend
+    const llmReasonHtml = f.llm_reason ? `
+      <div style="margin-top:0.75rem;padding:0.75rem;background:rgba(239,68,68,0.08);border-radius:4px;border-left:3px solid #ef4444;">
+        <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.5rem;">
+          <span style="font-size:0.9rem;">🤖</span>
+          <span style="font-size:0.75rem;font-weight:700;color:#ef4444;text-transform:uppercase;">AI Verification</span>
+          ${f.vendor ? `<span style="font-size:0.7rem;color:var(--text-muted);background:rgba(107,114,128,0.1);padding:0.15rem 0.4rem;border-radius:3px;">${escHtml(f.vendor)}</span>` : ''}
+        </div>
+        <div style="font-size:0.85rem;color:var(--text);line-height:1.4;">${escHtml(f.llm_reason)}</div>
+      </div>
+    ` : '';
 
     cardsHtml += `<div class="security-finding-card ${cardClass}">
       <div class="security-finding-top">
@@ -884,12 +851,12 @@ function openJsSecretsDrawer(subdomain) {
         <span class="security-finding-name">${escHtml(f.vendor || f.description || f.rule_id || 'Secret detected')}</span>
       </div>
       <div class="security-finding-template">${escHtml(f.rule_id || '')}</div>
-      ${contextHint}
       ${snippetHtml}
       ${f.entropy !== undefined ? `<div class="security-finding-desc"><strong>Entropy:</strong> ${f.entropy.toFixed(2)}</div>` : ''}
       <div class="security-finding-match">
         <span class="security-match-label">File:</span> ${fileLink}${location}
       </div>
+      ${llmReasonHtml}
     </div>`;
   }
 

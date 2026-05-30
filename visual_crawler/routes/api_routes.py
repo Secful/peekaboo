@@ -1255,3 +1255,8 @@ def extract_parameter_values(path: str, template: str) -> list[str]:
 
 
 
+
+
+
+# Removed /api/verify-secret endpoint - LLM verification moved to backend scanner
+
