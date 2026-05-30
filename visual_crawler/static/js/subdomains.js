@@ -823,7 +823,7 @@ function openJsSecretsDrawer(subdomain) {
     }
     const fileUrl = f.file ? (f.file.startsWith('http') ? f.file : `https://${subdomain}${f.file}`) : '';
     const fileLink = fileUrl ? `<a href="${escHtml(fileUrl)}" target="_blank" rel="noopener">${escHtml(f.file || '')}</a>` : escHtml(f.file || '');
-    const location = f.line ? `:${f.line}:${f.start_column || 0}` : '';
+    const location = f.line ? `<span style="color:var(--text-muted);font-weight:normal;"> (Line ${f.line}, Col ${f.start_column || 0})</span>` : '';
 
     // Extract code snippet: 50 chars before secret, secret (highlighted), 50 chars after
     let snippetHtml = '';
