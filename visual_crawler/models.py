@@ -126,6 +126,7 @@ class JsSecretFinding(BaseModel):
     start_column: int
     classification: str = "uncertain"  # "private", "public", "uncertain"
     vendor: str = ""  # e.g., "AWS Access Key", "Sentry DSN", "UUID"
+    snippet: str = ""  # X chars before + secret + X chars after
 
 
 class JsSecretsRequest(BaseModel):
@@ -376,11 +377,3 @@ class SwaggerExportRequest(BaseModel):
     domain: str
     scan_date: str
     endpoints: list[EndpointData]
-
-
-class FetchJsSnippetRequest(BaseModel):
-    """Request body for fetching JS file snippet around a secret."""
-    url: str
-    line: int
-    start_column: int
-    context_chars: int = 300  # chars before/after secret location

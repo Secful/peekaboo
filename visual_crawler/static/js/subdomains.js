@@ -825,74 +825,30 @@ function openJsSecretsDrawer(subdomain) {
     const fileLink = fileUrl ? `<a href="${escHtml(fileUrl)}" target="_blank" rel="noopener">${escHtml(f.file || '')}</a>` : escHtml(f.file || '');
     const location = f.line ? `<span style="color:var(--text-muted);font-weight:normal;"> (Line ${f.line}, Col ${f.start_column || 0})</span>` : '';
 
-    // Code snippet: fetch from backend for accurate context (handles minified 1-liners)
-    const snippetId = `snippet-${i}`;
-    let snippetHtml = `<div id="${snippetId}" class="security-finding-desc" style="background:var(--surface2);padding:0.75rem;border-radius:4px;overflow-x:auto;margin-top:0.5rem;">
-      <code style="font-family:monospace;font-size:0.85rem;color:var(--text-muted);">Loading snippet...</code>
-    </div>`;
+    // Code snippet from backend (already extracted by scanner)
+    let snippetHtml = '';
+    if (f.snippet) {
+      // Backend provides snippet - highlight secret within it
+      const secretIdx = f.snippet.indexOf(f.secret);
+      if (secretIdx !== -1) {
+        const before = f.snippet.substring(0, secretIdx);
+        const secret = f.snippet.substring(secretIdx, secretIdx + f.secret.length);
+        const after = f.snippet.substring(secretIdx + f.secret.length);
 
-    // Async fetch snippet after render - retry up to 3 times
-    (async () => {
-      let lastError;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const resp = await fetch('/api/fetch-js-snippet', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              url: fileUrl,
-              line: f.line,
-              start_column: f.start_column,
-              context_chars: 300
-            })
-          });
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          const data = await resp.json();
-
-        // Highlight secret in snippet - search for actual secret value
-        const secretIdx = data.snippet.indexOf(f.secret);
-        let before, secret, after;
-
-        if (secretIdx !== -1) {
-          // Secret found in snippet - highlight it
-          before = data.snippet.substring(0, secretIdx);
-          secret = data.snippet.substring(secretIdx, secretIdx + f.secret.length);
-          after = data.snippet.substring(secretIdx + f.secret.length);
-        } else {
-          // Secret not found - use position fallback
-          before = data.snippet.substring(0, data.secret_position);
-          secret = data.snippet.substring(data.secret_position, data.secret_position + f.secret.length);
-          after = data.snippet.substring(data.secret_position + f.secret.length);
-        }
-
-          const el = document.getElementById(snippetId);
-          if (el) {
-            el.innerHTML = `<code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
-              <span style="color:var(--text-muted);">${escHtml(before)}</span><span style="background:rgba(239,68,68,0.2);color:#ef4444;font-weight:600;padding:0.1rem 0.2rem;border-radius:2px;">${escHtml(secret)}</span><span style="color:var(--text-muted);">${escHtml(after)}</span>
-            </code>`;
-          }
-          break; // Success - exit retry loop
-        } catch (err) {
-          lastError = err;
-          if (attempt < 3) {
-            // Wait before retry: 500ms, 1000ms
-            await new Promise(resolve => setTimeout(resolve, attempt * 500));
-          }
-        }
-      }
-
-      // All retries failed - always show secret
-      if (lastError) {
-        console.warn(`Failed to fetch snippet after 3 attempts for ${fileUrl}:`, lastError);
-        const el = document.getElementById(snippetId);
-        if (el) {
-          el.innerHTML = `<code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
-            <span style="color:var(--text-muted);font-style:italic;">Failed to fetch file — showing detected secret:</span><br>
+        snippetHtml = `<div class="security-finding-desc" style="background:var(--surface2);padding:0.75rem;border-radius:4px;overflow-x:auto;margin-top:0.5rem;">
+          <code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
+            <span style="color:var(--text-muted);">${escHtml(before)}</span><span style="background:rgba(239,68,68,0.2);color:#ef4444;font-weight:600;padding:0.1rem 0.2rem;border-radius:2px;">${escHtml(secret)}</span><span style="color:var(--text-muted);">${escHtml(after)}</span>
+          </code>
+        </div>`;
+      } else {
+        // Snippet doesn't contain secret - show secret alone
+        snippetHtml = `<div class="security-finding-desc" style="background:var(--surface2);padding:0.75rem;border-radius:4px;overflow-x:auto;margin-top:0.5rem;">
+          <code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
             <span style="background:rgba(239,68,68,0.2);color:#ef4444;font-weight:600;padding:0.1rem 0.2rem;border-radius:2px;">${escHtml(f.secret)}</span>
-          </code>`;
-        }
+          </code>
+        </div>`;
       }
-    })();
+    }
 
     // Badge styling based on classification
     const classification = f.classification || 'uncertain';

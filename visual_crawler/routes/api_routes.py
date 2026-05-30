@@ -4,11 +4,10 @@ import asyncio
 import logging
 
 import httpx
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest, SwaggerExportRequest, JsSecretsRequest, FetchJsSnippetRequest
+from ..models import GenerateDescriptionRequest, DescribeServicesRequest, GeolocateIpsRequest, SecurityInsightsRequest, JsResourcesRequest, OpenPortsRequest, AgenticRequest, ExtractedApiRequest, ApiSpecRequest, MobileEndpointsRequest, MobileTrafficRequest, ApkAnalyzerStatusRequest, GitFindingsRequest, SwaggerExportRequest, JsSecretsRequest
 from ..bedrock_analyzer import BedrockAPIAnalyzer
 from ..scan_logger import list_scans, list_recent_scans, get_scan
 
@@ -1249,65 +1248,5 @@ def extract_parameter_values(path: str, template: str) -> list[str]:
 
     return values
 
-
-@router.post("/api/fetch-js-snippet")
-async def fetch_js_snippet(request: FetchJsSnippetRequest):
-    """Fetch JS file using Playwright (bypasses bot detection) and extract snippet.
-
-    Handles minified files (1-liners) by using character offsets.
-    Returns context_chars before and after secret position.
-    """
-    try:
-        # Use Playwright to fetch - bypasses Cloudflare, WAFs, bot detection
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-            )
-            page = await context.new_page()
-
-            try:
-                # Navigate to JS file directly and capture response body
-                response = await page.goto(request.url, timeout=30000, wait_until='domcontentloaded')
-                if not response or response.status >= 400:
-                    raise HTTPException(status_code=response.status if response else 500, detail=f"HTTP {response.status if response else 'error'}")
-
-                # Get raw response body (not DOM content)
-                content = await response.text()
-
-            finally:
-                await browser.close()
-
-        # Convert line:column to absolute char position
-        lines = content.split('\n')
-        if request.line < 1 or request.line > len(lines):
-            raise HTTPException(status_code=400, detail="Invalid line number")
-
-        # Char offset = sum of all lines before + column position
-        char_offset = sum(len(lines[i]) + 1 for i in range(request.line - 1)) + request.start_column
-
-        # Extract snippet: context_chars before/after
-        start = max(0, char_offset - request.context_chars)
-        end = min(len(content), char_offset + request.context_chars)
-        snippet = content[start:end]
-
-        # Calculate relative position of secret in snippet
-        secret_pos = char_offset - start
-
-        return JSONResponse({
-            "snippet": snippet,
-            "secret_position": secret_pos,
-            "total_chars": len(content),
-            "char_offset": char_offset
-        })
-
-    except PlaywrightTimeout:
-        logger.warning(f"Playwright timeout fetching {request.url}")
-        raise HTTPException(status_code=504, detail="Fetch timeout")
-    except HTTPException:
-        raise  # Re-raise HTTP exceptions as-is
-    except Exception as exc:
-        logger.error(f"Error fetching JS snippet from {request.url}: {type(exc).__name__} - {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error: {type(exc).__name__}")
 
 
