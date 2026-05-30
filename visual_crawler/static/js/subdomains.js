@@ -788,13 +788,29 @@ function openJsSecretsDrawer(subdomain) {
 
   title.textContent = `${subdomain} — JS Secrets`;
   const duration = data.scan_duration_secs ? `${data.scan_duration_secs.toFixed(1)}s` : '—';
-  subtitle.textContent = `${data.findings_count || data.findings.length} secret${(data.findings_count || data.findings.length) !== 1 ? 's' : ''} found — ${data.js_files_analyzed || 0}/${data.js_files_total || 0} JS files analyzed — scan duration: ${duration}`;
 
   const findings = data.findings || [];
+  const highRisk = findings.filter(f => !f.is_likely_public);
+  const likelyPublic = findings.filter(f => f.is_likely_public);
 
-  // Secret cards
+  subtitle.textContent = `${highRisk.length} high-risk, ${likelyPublic.length} likely public — ${data.js_files_analyzed || 0}/${data.js_files_total || 0} JS files analyzed — scan duration: ${duration}`;
+
+  // Secret cards - high-risk first, then likely public
   let cardsHtml = '';
-  for (const f of findings) {
+  if (highRisk.length > 0) {
+    cardsHtml += '<div style="margin-bottom:1rem;font-weight:600;color:#ef4444;">High-Risk Secrets</div>';
+  }
+  const sortedFindings = [...highRisk, ...likelyPublic];
+
+  let renderedHighRisk = false;
+  for (let i = 0; i < sortedFindings.length; i++) {
+    const f = sortedFindings[i];
+
+    // Add "Likely Public" header after high-risk section
+    if (!renderedHighRisk && f.is_likely_public && likelyPublic.length > 0) {
+      cardsHtml += '<div style="margin:1.5rem 0 1rem 0;font-weight:600;color:#f59e0b;">Likely Public Keys (Verify)</div>';
+      renderedHighRisk = true;
+    }
     const fileUrl = f.file ? (f.file.startsWith('http') ? f.file : `https://${subdomain}${f.file}`) : '';
     const fileLink = fileUrl ? `<a href="${escHtml(fileUrl)}" target="_blank" rel="noopener">${escHtml(f.file || '')}</a>` : escHtml(f.file || '');
     const location = f.line ? `:${f.line}:${f.start_column || 0}` : '';
@@ -816,12 +832,21 @@ function openJsSecretsDrawer(subdomain) {
       }
     }
 
-    cardsHtml += `<div class="security-finding-card security-card-high">
+    // Badge styling based on is_likely_public
+    const badgeClass = f.is_likely_public ? 'severity-medium' : 'severity-critical';
+    const badgeText = f.is_likely_public ? 'LIKELY PUBLIC' : 'SECRET';
+    const cardClass = f.is_likely_public ? 'security-card-medium' : 'security-card-high';
+    const contextHint = f.is_likely_public
+      ? `<div class="security-finding-desc" style="color:#f59e0b;font-style:italic;">⚠️ This may be a public/test key — verify if sensitive</div>`
+      : '';
+
+    cardsHtml += `<div class="security-finding-card ${cardClass}">
       <div class="security-finding-top">
-        <span class="severity-badge severity-critical">SECRET</span>
+        <span class="severity-badge ${badgeClass}">${badgeText}</span>
         <span class="security-finding-name">${escHtml(f.description || f.rule_id || 'Secret detected')}</span>
       </div>
       <div class="security-finding-template">${escHtml(f.rule_id || '')}</div>
+      ${contextHint}
       ${snippetHtml}
       ${f.entropy !== undefined ? `<div class="security-finding-desc"><strong>Entropy:</strong> ${f.entropy.toFixed(2)}</div>` : ''}
       <div class="security-finding-match">
