@@ -827,7 +827,7 @@ function openJsSecretsDrawer(subdomain) {
 
     // Code snippet from backend (already extracted by scanner)
     let snippetHtml = '';
-    if (f.snippet) {
+    if (f.snippet && f.snippet.trim()) {
       // Backend provides snippet - highlight secret within it
       const secretIdx = f.snippet.indexOf(f.secret);
       if (secretIdx !== -1) {
@@ -848,6 +848,13 @@ function openJsSecretsDrawer(subdomain) {
           </code>
         </div>`;
       }
+    } else {
+      // No snippet from backend - always show secret
+      snippetHtml = `<div class="security-finding-desc" style="background:var(--surface2);padding:0.75rem;border-radius:4px;overflow-x:auto;margin-top:0.5rem;">
+        <code style="font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-all;">
+          <span style="background:rgba(239,68,68,0.2);color:#ef4444;font-weight:600;padding:0.1rem 0.2rem;border-radius:2px;">${escHtml(f.secret)}</span>
+        </code>
+      </div>`;
     }
 
     // Badge styling based on classification
