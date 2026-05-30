@@ -847,11 +847,21 @@ function openJsSecretsDrawer(subdomain) {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
 
-        // Highlight secret in snippet
-        const before = data.snippet.substring(0, data.secret_position);
-        const secretLen = f.secret.length;
-        const secret = data.snippet.substring(data.secret_position, data.secret_position + secretLen);
-        const after = data.snippet.substring(data.secret_position + secretLen);
+        // Highlight secret in snippet - search for actual secret value
+        const secretIdx = data.snippet.indexOf(f.secret);
+        let before, secret, after;
+
+        if (secretIdx !== -1) {
+          // Secret found in snippet - highlight it
+          before = data.snippet.substring(0, secretIdx);
+          secret = data.snippet.substring(secretIdx, secretIdx + f.secret.length);
+          after = data.snippet.substring(secretIdx + f.secret.length);
+        } else {
+          // Secret not found - use position fallback
+          before = data.snippet.substring(0, data.secret_position);
+          secret = data.snippet.substring(data.secret_position, data.secret_position + f.secret.length);
+          after = data.snippet.substring(data.secret_position + f.secret.length);
+        }
 
         const el = document.getElementById(snippetId);
         if (el) {
