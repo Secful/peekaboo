@@ -1257,8 +1257,14 @@ async def fetch_js_snippet(request: FetchJsSnippetRequest):
     Returns context_chars before and after secret position.
     """
     try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            resp = await client.get(request.url)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'application/javascript, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': request.url.rsplit('/', 1)[0] + '/'  # Use parent path as referer
+        }
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(request.url, headers=headers)
             resp.raise_for_status()
             content = resp.text
 
