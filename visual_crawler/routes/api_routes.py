@@ -296,6 +296,11 @@ async def js_secrets(request: JsSecretsRequest):
     # Extract domain from subdomain
     domain = '.'.join(request.subdomain.split('.')[-2:]) if '.' in request.subdomain else request.subdomain
 
+    # Log snippet presence and content for debugging
+    for idx, finding in enumerate(request.findings):
+        snippet_preview = finding.snippet[:100] if finding.snippet else "MISSING"
+        logger.warning(f"JS secret {idx+1}/{request.findings_count} for {request.subdomain}: rule={finding.rule_id}, snippet={snippet_preview!r}")
+
     logger.warning(f"Got {request.findings_count} JS secrets for subdomain {request.subdomain}")
 
     payload = {
