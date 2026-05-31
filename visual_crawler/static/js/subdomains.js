@@ -1032,11 +1032,11 @@ function applyOpenPortsPill(subdomain) {
   if (span.querySelector('.open-ports-pill')) return;
 
   const ports = data.open_ports || [];
-  if (ports.length === 0) return;
+  if (ports.length <= 2) return; // Only show pill if more than 2 ports
 
   const colorClass = 'security-pill-orange';
 
-  const label = ports.length === 1 ? '1 port' : `${ports.length} ports`;
+  const label = `${ports.length} ports`;
   const pill = document.createElement('span');
   pill.className = `open-ports-pill ${colorClass}`;
   pill.textContent = label;
@@ -1099,16 +1099,25 @@ function applyAgenticPill(subdomain) {
   if (span.querySelector('.agentic-pill')) return;
 
   const findings = data.findings || [];
-  if (findings.length === 0) return;
+
+  // Filter out llms.txt and llms-full.txt findings
+  const relevantFindings = findings.filter(f => {
+    const name = (f.name || '').toLowerCase().trim();
+    const path = (f.path || '').toLowerCase().trim();
+    return !name.includes('llms.txt') && !name.includes('llms-full.txt') &&
+           !path.endsWith('llms.txt') && !path.endsWith('llms-full.txt');
+  });
+
+  if (relevantFindings.length === 0) return;
 
   const pill = document.createElement('span');
   pill.className = 'agentic-pill security-pill-blue';
-  pill.textContent = `${findings.length} agentic`;
+  pill.textContent = `${relevantFindings.length} agentic`;
   pill.setAttribute('onclick', `event.stopPropagation(); openAgenticDrawer('${subdomain.replace(/'/g, "\\'")}')`);
 
   span.appendChild(document.createTextNode(' '));
   span.appendChild(pill);
-  console.log(`[agentic] Applied to ${subdomain} (${findings.length} findings)`);
+  console.log(`[agentic] Applied to ${subdomain} (${relevantFindings.length} findings)`);
 }
 
 function openAgenticDrawer(subdomain) {
@@ -1122,10 +1131,18 @@ function openAgenticDrawer(subdomain) {
 
   title.textContent = subdomain;
   const duration = data.scan_duration_secs ? `${data.scan_duration_secs.toFixed(1)}s` : '—';
-  const count = data.findings ? data.findings.length : 0;
-  subtitle.textContent = `${count} finding${count !== 1 ? 's' : ''} — scan duration: ${duration}`;
 
-  const findings = data.findings || [];
+  // Filter out llms.txt and llms-full.txt from drawer display
+  const allFindings = data.findings || [];
+  const findings = allFindings.filter(f => {
+    const name = (f.name || '').toLowerCase().trim();
+    const path = (f.path || '').toLowerCase().trim();
+    return !name.includes('llms.txt') && !name.includes('llms-full.txt') &&
+           !path.endsWith('llms.txt') && !path.endsWith('llms-full.txt');
+  });
+
+  subtitle.textContent = `${findings.length} finding${findings.length !== 1 ? 's' : ''} — scan duration: ${duration}`;
+
   let html = '';
   const _agenticSpecsToFetch = [];
   for (let i = 0; i < findings.length; i++) {
